@@ -21,8 +21,31 @@
 // and two GPIO pins to control the RESET, and D/C (data/command)
 // control lines. 
 
+#ifdef _LINUX_
+#include <stdint.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/i2c-dev.h>
+#include <math.h>
+#include <armbianio.h>
+#define PROGMEM
+#define memcpy_P memcpy
+// convert wire library constants into ArmbianIO values
+#define OUTPUT GPIO_OUT
+#define INPUT GPIO_IN
+#define HIGH 1
+#define LOW 0
+static int iHandle; // SPI handle
+#else // Arduino
+
 #include <Arduino.h>
 #include <SPI.h>
+#endif // LINUX
+
 #include <bb_spi_lcd.h>
 
 #ifdef HAL_ESP32_HAL_H_
@@ -607,6 +630,38 @@ const uint8_t ucSmallFont[]PROGMEM = {
     0x4c,0x00,0x00,0x08,0x3e,0x41,0x41,0x00,0x00,0x00,0x00,0x77,0x00,0x00,0x00,0x00,
     0x41,0x41,0x3e,0x08,0x00,0x02,0x01,0x02,0x01,0x00,0x00,0x3c,0x26,0x23,0x26,0x3c};
 
+// wrapper/adapter functions to make the code work on Linux
+#ifdef _LINUX_
+static int digitalRead(int iPin)
+{
+  return AIOReadGPIO(iPin);
+} /* digitalRead() */
+
+static void digitalWrite(int iPin, int iState)
+{
+   AIOWriteGPIO(iPin, iState);
+} /* digitalWrite() */
+
+static void pinMode(int iPin, int iMode)
+{
+   AIOAddGPIO(iPin, iMode);
+} /* pinMode() */
+
+static void delayMicroseconds(int iMS)
+{
+  usleep(iMS);
+} /* delayMicroseconds() */
+
+static uint8_t pgm_read_byte(uint8_t *ptr)
+{
+  return *ptr;
+}
+static int16_t pgm_read_word(uint8_t *ptr)
+{
+  return ptr[0] + (ptr[1]<<8);
+}
+#endif // _LINUX_
+
 // Sets the D/C pin to data or command mode
 void spilcdSetMode(int iMode)
 {
@@ -844,6 +899,9 @@ static spi_transaction_t t;
 #else
     if (iMode == MODE_COMMAND)
         spilcdSetMode(MODE_COMMAND);
+#ifdef _LINUX_
+    AIOWriteSPI(iHandle, pBuf, iLen);
+#else
     SPI.beginTransaction(SPISettings(iSPISpeed, MSBFIRST, iSPIMode));
 #ifdef HAL_ESP32_HAL_H_
     SPI.transferBytes(pBuf, ucRXBuf, iLen);
@@ -851,6 +909,7 @@ static spi_transaction_t t;
     SPI.transfer(pBuf, iLen);
 #endif
     SPI.endTransaction();
+#endif // _LINUX_
     if (iMode == MODE_COMMAND) // restore D/C pin to DATA
         spilcdSetMode(MODE_DATA);
 #endif
@@ -912,6 +971,7 @@ static unsigned char ucE1_1[] = {0x00, 0x25, 0x27, 0x05, 0x10, 0x09, 0x3a, 0x78,
 
 	return 0;
 } /* spilcdSetGamma() */
+#ifndef _LINUX_
 //
 // Configure a GPIO pin for input
 // Returns 0 if successful, -1 if unavailable
@@ -932,6 +992,7 @@ int spilcdReadPin(int iPin)
       return -1;
    return (digitalRead(iPin) == HIGH);
 } /* spilcdReadPin() */
+#endif // _LINUX_
 #ifdef ESP32_DMA
 //This function is called (in irq context!) just before a transmission starts. It will
 //set the D/C line to the value indicated in the user field.
@@ -957,12 +1018,16 @@ int i, iCount;
 	iLEDPin = -1; // assume it's not defined
 	if (iType != LCD_ILI9341 && iType != LCD_ST7735S && iType != LCD_ST7735R && iType != LCD_HX8357 && iType != LCD_SSD1351 && iType != LCD_ILI9342 && iType != LCD_ST7789 && iType != LCD_ST7789_135 && iType != LCD_ST7789_NOCS && iType != LCD_ST7735S_B)
 	{
+#ifndef _LINUX_
 		Serial.println("Unsupported display type\n");
+#endif // _LINUX_
 		return -1;
 	}
-    iMemoryX = iMemoryY = 0;
+	iMemoryX = iMemoryY = 0;
 	iLCDType = iType;
-    iSPIMode = (iType == LCD_ST7789_NOCS) ? SPI_MODE3 : SPI_MODE0;
+#ifndef _LINUX_
+	iSPIMode = (iType == LCD_ST7789_NOCS) ? SPI_MODE3 : SPI_MODE0;
+#endif
 	iSPISpeed = iSPIFreq;
 	iScrollOffset = 0; // current hardware scroll register value
 
@@ -973,7 +1038,9 @@ int i, iCount;
 
 	if (iDCPin == -1)
 	{
+#ifndef _LINUX_
 		Serial.println("One or more invalid GPIO pin numbers\n");
+#endif
 		return -1;
 	}
 #ifdef ESP32_DMA
@@ -1009,12 +1076,16 @@ int i, iCount;
 #ifdef HAL_ESP32_HAL_H_
     SPI.begin(iCLKPin, iMISOPin, iMOSIPin, iCS);
 #else
+#ifdef _LINUX_
+    iHandle = AIOOpenSPI(0, iSPIFreq); // DEBUG - open SPI channel 0 
+#else
     SPI.begin(); // simple Arduino init (e.g. AVR)
+#endif // _LINUX_
 #endif
 #endif
     
 	pinMode(iCSPin, OUTPUT);
-    pinMode(iDCPin, OUTPUT);
+	pinMode(iDCPin, OUTPUT);
 	if (iResetPin != -1)
 		pinMode(iResetPin, OUTPUT);
 	if (iLEDPin != -1)
@@ -1498,6 +1569,12 @@ void spilcdShutdown(void)
 	if (iLEDPin != -1)
 		myPinWrite(iLEDPin, 0); // turn off the backlight
     spilcdFreeBackbuffer();
+#ifdef _LINUX_
+	AIOCloseSPI(iHandle);
+	AIORemoveGPIO(iDCPin);
+	AIORemoveGPIO(iResetPin);
+	AIORemoveGPIO(iLEDPin);
+#endif // _LINUX_
 } /* spilcdShutdown() */
 
 //
