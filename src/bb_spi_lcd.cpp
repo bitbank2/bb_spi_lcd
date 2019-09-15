@@ -32,11 +32,14 @@
 #include <linux/i2c-dev.h>
 #include <math.h>
 #include <armbianio.h>
+#define false 0
+#define true 1
 #define PROGMEM
 #define memcpy_P memcpy
 // convert wire library constants into ArmbianIO values
 #define OUTPUT GPIO_OUT
 #define INPUT GPIO_IN
+#define INPUT_PULLUP GPIO_IN
 #define HIGH 1
 #define LOW 0
 static int iHandle; // SPI handle
@@ -971,7 +974,6 @@ static unsigned char ucE1_1[] = {0x00, 0x25, 0x27, 0x05, 0x10, 0x09, 0x3a, 0x78,
 
 	return 0;
 } /* spilcdSetGamma() */
-#ifndef _LINUX_
 //
 // Configure a GPIO pin for input
 // Returns 0 if successful, -1 if unavailable
@@ -992,7 +994,6 @@ int spilcdReadPin(int iPin)
       return -1;
    return (digitalRead(iPin) == HIGH);
 } /* spilcdReadPin() */
-#endif // _LINUX_
 #ifdef ESP32_DMA
 //This function is called (in irq context!) just before a transmission starts. It will
 //set the D/C line to the value indicated in the user field.
@@ -1010,7 +1011,7 @@ static void spi_pre_transfer_callback(spi_transaction_t *t)
 // Initialize the LCD controller and clear the display
 // LED pin is optional - pass as -1 to disable
 //
-int spilcdInit(int iType, int bInvert, int bFlipped, int32_t iSPIFreq, int iCS, int iDC, int iReset, int iLED, int iMISOPin, int iMOSIPin, int iCLKPin)
+int spilcdInit(int iType, int bFlipRGB, int bInvert, int bFlipped, int32_t iSPIFreq, int iCS, int iDC, int iReset, int iLED, int iMISOPin, int iMOSIPin, int iCLKPin)
 {
 unsigned char *s;
 int i, iCount;
@@ -1110,14 +1111,11 @@ int i, iCount;
 
 	spilcdWriteCommand(0x11);
 	delayMicroseconds(60000);
-    delayMicroseconds(60000);
+	delayMicroseconds(60000);
 	}
 	if (iLCDType == LCD_ST7789 || iLCDType == LCD_ST7789_135 || iLCDType == LCD_ST7789_NOCS)
 	{
-        uint8_t iBGR;
-        iBGR = 0;
-        if (iLCDType == LCD_ST7789_135 || iLCDType == LCD_ST7789_NOCS)
-            iBGR = 8; // reversed on some
+        uint8_t iBGR = (bFlipRGB) ? 8:0;
 		s = uc240x240InitList;
 		if (bFlipped)
 			s[6] = 0xc0 + iBGR; // flip 180
@@ -1662,13 +1660,13 @@ unsigned char ucBuf[8];
 		ucBuf[1] = y + h - 1;
 		myspiWrite(ucBuf, 2, MODE_DATA, 1);
 		spilcdWriteCommand(0x5c); // write RAM
-        bSetPosition = 0;
+		bSetPosition = 0;
 		return;
 	}
 	spilcdWriteCommand(0x2a); // set column address
 	if (iLCDType == LCD_ILI9341 || iLCDType == LCD_ILI9342 || iLCDType == LCD_ST7735R || iLCDType == LCD_ST7789 || iLCDType == LCD_ST7735S)
 	{
-        x += iMemoryX;
+		x += iMemoryX;
 		ucBuf[0] = (unsigned char)(x >> 8);
 		ucBuf[1] = (unsigned char)x;
 		x = x + w - 1;
@@ -1695,7 +1693,7 @@ unsigned char ucBuf[8];
 	spilcdWriteCommand(0x2b); // set row address
 	if (iLCDType == LCD_ILI9341 || iLCDType == LCD_ILI9342 || iLCDType == LCD_ST7735R || iLCDType == LCD_ST7735S || iLCDType == LCD_ST7789)
 	{
-        y += iMemoryY;
+		y += iMemoryY;
 		ucBuf[0] = (unsigned char)(y >> 8);
 		ucBuf[1] = (unsigned char)y;
 		y = y + h - 1;

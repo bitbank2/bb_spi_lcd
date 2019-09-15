@@ -6,8 +6,8 @@ all: sample
 sample: sample.o
 	$(CC) sample.o $(LIBS) -o sample
 
-sample.o: sample.cpp
-	$(CC) $(CFLAGS) sample.cpp
+sample.o: sample.c
+	$(CC) $(CFLAGS) sample.c
 
 clean:
 	rm *.o sample

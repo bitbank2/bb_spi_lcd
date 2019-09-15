@@ -20,11 +20,14 @@ int i;
 		printf("Error in AIOInit(); check if this board is supported\n");
 		return 0;
 	}
-	i = spilcdInit(LCD_ST7789_NOCS, 0, 1, 3250000, -1, 22, 13, 18, -1,-1,-1);
+// int spilcdInit(int iLCDType, int bFlipRGB, int bInvert, int bFlipped, int32_t iSPIFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
+	i = spilcdInit(LCD_ST7789, 0, 0, 0, 31250000, -1, 22, 13, 18, -1,-1,-1);
 	if (i == 0)
 	{
+		spilcdSetOrientation(LCD_ORIENTATION_ROTATED);
 		spilcdFill(0, 1);
-		spilcdWriteString(0,0,(char *)"Hello World!", 0x1f,0,FONT_NORMAL, 1);
+		for (i=0; i<30; i++)
+		spilcdWriteString(0,i*8,(char *)"Hello World!", 0x1f,0,FONT_NORMAL, 1);
 		printf("Successfully initialized bb_spi_lcd library\n");
 		printf("Press ENTER to quit\n");
 		getchar();
