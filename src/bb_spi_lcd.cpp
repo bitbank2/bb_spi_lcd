@@ -39,7 +39,7 @@
 // convert wire library constants into ArmbianIO values
 #define OUTPUT GPIO_OUT
 #define INPUT GPIO_IN
-#define INPUT_PULLUP GPIO_IN
+#define INPUT_PULLUP GPIO_IN_PULLUP
 #define HIGH 1
 #define LOW 0
 static int iHandle; // SPI handle
