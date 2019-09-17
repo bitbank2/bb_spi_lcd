@@ -2,7 +2,7 @@
 #define SPI_LCD_H
 //
 // SPI_LCD using the SPI interface
-// Copyright (c) 2017 Larry Bank
+// Copyright (c) 2017-2019 Larry Bank
 // email: bitbank@pobox.com
 // Project started 4/25/2017
 //
@@ -35,6 +35,10 @@ typedef enum
  MODE_COMMAND
 } DC_MODE;
 
+#if defined(_LINUX_) && defined(__cplusplus)
+extern "C" {
+#endif
+
 // Sets the D/C pin to data or command mode
 void spilcdSetMode(int iMode);
 
@@ -45,7 +49,7 @@ void spilcdSetMode(int iMode);
 int spilcdSetGamma(int iMode);
 
 // Initialize the library
-int spilcdInit(int iLCDType, int bInvert, int bFlipped, int32_t iSPIFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
+int spilcdInit(int iLCDType, int bFlipRGB, int bInvert, int bFlipped, int32_t iSPIFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
 
 //
 // Initialize the touch controller
@@ -220,8 +224,11 @@ enum {
    LCD_ST7789_NOCS, // 240x240 without CS, vertical offset of 80, MODE3
 };
 
-
 // touch panel types
 #define TOUCH_XPT2046 1
+
+#if defined(_LINUX_) && defined(__cplusplus)
+}
+#endif
 
 #endif // SPI_LCD_H

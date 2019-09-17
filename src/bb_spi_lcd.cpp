@@ -21,8 +21,34 @@
 // and two GPIO pins to control the RESET, and D/C (data/command)
 // control lines. 
 
+#ifdef _LINUX_
+#include <stdint.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/i2c-dev.h>
+#include <math.h>
+#include <armbianio.h>
+#define false 0
+#define true 1
+#define PROGMEM
+#define memcpy_P memcpy
+// convert wire library constants into ArmbianIO values
+#define OUTPUT GPIO_OUT
+#define INPUT GPIO_IN
+#define INPUT_PULLUP GPIO_IN_PULLUP
+#define HIGH 1
+#define LOW 0
+static int iHandle; // SPI handle
+#else // Arduino
+
 #include <Arduino.h>
 #include <SPI.h>
+#endif // LINUX
+
 #include <bb_spi_lcd.h>
 
 #ifdef HAL_ESP32_HAL_H_
@@ -607,6 +633,38 @@ const uint8_t ucSmallFont[]PROGMEM = {
     0x4c,0x00,0x00,0x08,0x3e,0x41,0x41,0x00,0x00,0x00,0x00,0x77,0x00,0x00,0x00,0x00,
     0x41,0x41,0x3e,0x08,0x00,0x02,0x01,0x02,0x01,0x00,0x00,0x3c,0x26,0x23,0x26,0x3c};
 
+// wrapper/adapter functions to make the code work on Linux
+#ifdef _LINUX_
+static int digitalRead(int iPin)
+{
+  return AIOReadGPIO(iPin);
+} /* digitalRead() */
+
+static void digitalWrite(int iPin, int iState)
+{
+   AIOWriteGPIO(iPin, iState);
+} /* digitalWrite() */
+
+static void pinMode(int iPin, int iMode)
+{
+   AIOAddGPIO(iPin, iMode);
+} /* pinMode() */
+
+static void delayMicroseconds(int iMS)
+{
+  usleep(iMS);
+} /* delayMicroseconds() */
+
+static uint8_t pgm_read_byte(uint8_t *ptr)
+{
+  return *ptr;
+}
+static int16_t pgm_read_word(uint8_t *ptr)
+{
+  return ptr[0] + (ptr[1]<<8);
+}
+#endif // _LINUX_
+
 // Sets the D/C pin to data or command mode
 void spilcdSetMode(int iMode)
 {
@@ -844,6 +902,9 @@ static spi_transaction_t t;
 #else
     if (iMode == MODE_COMMAND)
         spilcdSetMode(MODE_COMMAND);
+#ifdef _LINUX_
+    AIOWriteSPI(iHandle, pBuf, iLen);
+#else
     SPI.beginTransaction(SPISettings(iSPISpeed, MSBFIRST, iSPIMode));
 #ifdef HAL_ESP32_HAL_H_
     SPI.transferBytes(pBuf, ucRXBuf, iLen);
@@ -851,6 +912,7 @@ static spi_transaction_t t;
     SPI.transfer(pBuf, iLen);
 #endif
     SPI.endTransaction();
+#endif // _LINUX_
     if (iMode == MODE_COMMAND) // restore D/C pin to DATA
         spilcdSetMode(MODE_DATA);
 #endif
@@ -949,7 +1011,7 @@ static void spi_pre_transfer_callback(spi_transaction_t *t)
 // Initialize the LCD controller and clear the display
 // LED pin is optional - pass as -1 to disable
 //
-int spilcdInit(int iType, int bInvert, int bFlipped, int32_t iSPIFreq, int iCS, int iDC, int iReset, int iLED, int iMISOPin, int iMOSIPin, int iCLKPin)
+int spilcdInit(int iType, int bFlipRGB, int bInvert, int bFlipped, int32_t iSPIFreq, int iCS, int iDC, int iReset, int iLED, int iMISOPin, int iMOSIPin, int iCLKPin)
 {
 unsigned char *s;
 int i, iCount;
@@ -957,12 +1019,16 @@ int i, iCount;
 	iLEDPin = -1; // assume it's not defined
 	if (iType != LCD_ILI9341 && iType != LCD_ST7735S && iType != LCD_ST7735R && iType != LCD_HX8357 && iType != LCD_SSD1351 && iType != LCD_ILI9342 && iType != LCD_ST7789 && iType != LCD_ST7789_135 && iType != LCD_ST7789_NOCS && iType != LCD_ST7735S_B)
 	{
+#ifndef _LINUX_
 		Serial.println("Unsupported display type\n");
+#endif // _LINUX_
 		return -1;
 	}
-    iMemoryX = iMemoryY = 0;
+	iMemoryX = iMemoryY = 0;
 	iLCDType = iType;
-    iSPIMode = (iType == LCD_ST7789_NOCS) ? SPI_MODE3 : SPI_MODE0;
+#ifndef _LINUX_
+	iSPIMode = (iType == LCD_ST7789_NOCS) ? SPI_MODE3 : SPI_MODE0;
+#endif
 	iSPISpeed = iSPIFreq;
 	iScrollOffset = 0; // current hardware scroll register value
 
@@ -973,7 +1039,9 @@ int i, iCount;
 
 	if (iDCPin == -1)
 	{
+#ifndef _LINUX_
 		Serial.println("One or more invalid GPIO pin numbers\n");
+#endif
 		return -1;
 	}
 #ifdef ESP32_DMA
@@ -1009,12 +1077,16 @@ int i, iCount;
 #ifdef HAL_ESP32_HAL_H_
     SPI.begin(iCLKPin, iMISOPin, iMOSIPin, iCS);
 #else
+#ifdef _LINUX_
+    iHandle = AIOOpenSPI(0, iSPIFreq); // DEBUG - open SPI channel 0 
+#else
     SPI.begin(); // simple Arduino init (e.g. AVR)
+#endif // _LINUX_
 #endif
 #endif
     
 	pinMode(iCSPin, OUTPUT);
-    pinMode(iDCPin, OUTPUT);
+	pinMode(iDCPin, OUTPUT);
 	if (iResetPin != -1)
 		pinMode(iResetPin, OUTPUT);
 	if (iLEDPin != -1)
@@ -1039,14 +1111,11 @@ int i, iCount;
 
 	spilcdWriteCommand(0x11);
 	delayMicroseconds(60000);
-    delayMicroseconds(60000);
+	delayMicroseconds(60000);
 	}
 	if (iLCDType == LCD_ST7789 || iLCDType == LCD_ST7789_135 || iLCDType == LCD_ST7789_NOCS)
 	{
-        uint8_t iBGR;
-        iBGR = 0;
-        if (iLCDType == LCD_ST7789_135 || iLCDType == LCD_ST7789_NOCS)
-            iBGR = 8; // reversed on some
+        uint8_t iBGR = (bFlipRGB) ? 8:0;
 		s = uc240x240InitList;
 		if (bFlipped)
 			s[6] = 0xc0 + iBGR; // flip 180
@@ -1498,6 +1567,12 @@ void spilcdShutdown(void)
 	if (iLEDPin != -1)
 		myPinWrite(iLEDPin, 0); // turn off the backlight
     spilcdFreeBackbuffer();
+#ifdef _LINUX_
+	AIOCloseSPI(iHandle);
+	AIORemoveGPIO(iDCPin);
+	AIORemoveGPIO(iResetPin);
+	AIORemoveGPIO(iLEDPin);
+#endif // _LINUX_
 } /* spilcdShutdown() */
 
 //
@@ -1585,13 +1660,13 @@ unsigned char ucBuf[8];
 		ucBuf[1] = y + h - 1;
 		myspiWrite(ucBuf, 2, MODE_DATA, 1);
 		spilcdWriteCommand(0x5c); // write RAM
-        bSetPosition = 0;
+		bSetPosition = 0;
 		return;
 	}
 	spilcdWriteCommand(0x2a); // set column address
 	if (iLCDType == LCD_ILI9341 || iLCDType == LCD_ILI9342 || iLCDType == LCD_ST7735R || iLCDType == LCD_ST7789 || iLCDType == LCD_ST7735S)
 	{
-        x += iMemoryX;
+		x += iMemoryX;
 		ucBuf[0] = (unsigned char)(x >> 8);
 		ucBuf[1] = (unsigned char)x;
 		x = x + w - 1;
@@ -1618,7 +1693,7 @@ unsigned char ucBuf[8];
 	spilcdWriteCommand(0x2b); // set row address
 	if (iLCDType == LCD_ILI9341 || iLCDType == LCD_ILI9342 || iLCDType == LCD_ST7735R || iLCDType == LCD_ST7735S || iLCDType == LCD_ST7789)
 	{
-        y += iMemoryY;
+		y += iMemoryY;
 		ucBuf[0] = (unsigned char)(y >> 8);
 		ucBuf[1] = (unsigned char)y;
 		y = y + h - 1;
@@ -2767,6 +2842,41 @@ int spilcdDrawTile150(int x, int y, int iTileWidth, int iTileHeight, unsigned ch
         return -1; // tile must fit in 4k SPI block size
     
     iPitch32 = iPitch / 4;
+    if (iOrientation == LCD_ORIENTATION_ROTATED) // need to rotate the data
+    {
+    int iDestWidth = (iTileWidth*3)/2;
+    iLocalPitch = (iTileHeight * 3)/2; // offset to next output line
+    for (j=0; j<iTileHeight; j+=2)
+    {
+        d16 = (uint16_t *)&ucRXBuf[(j*3)]; //+(iLocalPitch * 2 * (iDestWidth-1))];
+        s32 = (uint32_t*)&pTile[(iTileHeight-2-j)*iPitch];
+        for (i=0; i<iTileWidth; i+=2) // turn 2x2 pixels into 3x3
+        {
+            ul32A = s32[0];
+            ul32B = s32[iPitch32]; // get 2x2 pixels
+            // top row
+            ul32Avg = ((ul32A & u32Magic) >> 1);
+            ul32Avg2 = ((ul32B & u32Magic) >> 1);
+            u16Avg = (uint16_t)(ul32Avg + (ul32Avg >> 16)); // average the 2 pixels
+            d16[2] = __builtin_bswap16((uint16_t)ul32A); // first pixel
+            d16[2+iLocalPitch] = __builtin_bswap16(u16Avg); // middle (new) pixel
+            d16[2+(iLocalPitch*2)] = __builtin_bswap16((uint16_t)(ul32A >> 16)); // 3rd pixel
+            u16Avg2 = (uint16_t)(ul32Avg2 + (ul32Avg2 >> 16)); // bottom line averaged pixel
+            d16[1] = __builtin_bswap16((uint16_t)(ul32Avg + ul32Avg2)); // vertical average
+            d16[1+(iLocalPitch*2)] = __builtin_bswap16((uint16_t)((ul32Avg + ul32Avg2)>>16)); // vertical average
+            d16[0] = __builtin_bswap16((uint16_t)ul32B); // last line 1st
+            d16[0+iLocalPitch] = __builtin_bswap16(u16Avg2); // middle pixel
+            d16[0+(iLocalPitch*2)] = __builtin_bswap16((uint16_t)(ul32B >> 16)); // 3rd pixel
+            u16Avg = (u16Avg & u16Magic) >> 1;
+            u16Avg2 = (u16Avg2 & u16Magic) >> 1;
+            d16[1+iLocalPitch] = __builtin_bswap16(u16Avg + u16Avg2); // middle pixel
+            d16 += (3*iLocalPitch);
+            s32 += 1;
+        } // for i;
+    } // for j
+    } // rotated 90
+    else // normal orientation
+    {
     iLocalPitch = (iTileWidth * 3)/2; // offset to next output line
     d16 = (uint16_t *)ucRXBuf;
     for (j=0; j<iTileHeight; j+=2)
@@ -2797,6 +2907,7 @@ int spilcdDrawTile150(int x, int y, int iTileWidth, int iTileHeight, unsigned ch
         } // for i;
         d16 += iLocalPitch*2; // skip lines we already output
     } // for j
+    } // normal orientation
     spilcdSetPosition((x*3)/2, (y*3)/2, (iTileWidth*3)/2, (iTileHeight*3)/2, bRender);
     myspiWrite(ucRXBuf, (iTileWidth*iTileHeight*9)/2, MODE_DATA, bRender);
     return 0;
