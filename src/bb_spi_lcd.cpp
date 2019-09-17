@@ -2842,6 +2842,41 @@ int spilcdDrawTile150(int x, int y, int iTileWidth, int iTileHeight, unsigned ch
         return -1; // tile must fit in 4k SPI block size
     
     iPitch32 = iPitch / 4;
+    if (iOrientation == LCD_ORIENTATION_ROTATED) // need to rotate the data
+    {
+    int iDestWidth = (iTileWidth*3)/2;
+    iLocalPitch = (iTileHeight * 3)/2; // offset to next output line
+    for (j=0; j<iTileHeight; j+=2)
+    {
+        d16 = (uint16_t *)&ucRXBuf[(j*3)]; //+(iLocalPitch * 2 * (iDestWidth-1))];
+        s32 = (uint32_t*)&pTile[(iTileHeight-2-j)*iPitch];
+        for (i=0; i<iTileWidth; i+=2) // turn 2x2 pixels into 3x3
+        {
+            ul32A = s32[0];
+            ul32B = s32[iPitch32]; // get 2x2 pixels
+            // top row
+            ul32Avg = ((ul32A & u32Magic) >> 1);
+            ul32Avg2 = ((ul32B & u32Magic) >> 1);
+            u16Avg = (uint16_t)(ul32Avg + (ul32Avg >> 16)); // average the 2 pixels
+            d16[2] = __builtin_bswap16((uint16_t)ul32A); // first pixel
+            d16[2+iLocalPitch] = __builtin_bswap16(u16Avg); // middle (new) pixel
+            d16[2+(iLocalPitch*2)] = __builtin_bswap16((uint16_t)(ul32A >> 16)); // 3rd pixel
+            u16Avg2 = (uint16_t)(ul32Avg2 + (ul32Avg2 >> 16)); // bottom line averaged pixel
+            d16[1] = __builtin_bswap16((uint16_t)(ul32Avg + ul32Avg2)); // vertical average
+            d16[1+(iLocalPitch*2)] = __builtin_bswap16((uint16_t)((ul32Avg + ul32Avg2)>>16)); // vertical average
+            d16[0] = __builtin_bswap16((uint16_t)ul32B); // last line 1st
+            d16[0+iLocalPitch] = __builtin_bswap16(u16Avg2); // middle pixel
+            d16[0+(iLocalPitch*2)] = __builtin_bswap16((uint16_t)(ul32B >> 16)); // 3rd pixel
+            u16Avg = (u16Avg & u16Magic) >> 1;
+            u16Avg2 = (u16Avg2 & u16Magic) >> 1;
+            d16[1+iLocalPitch] = __builtin_bswap16(u16Avg + u16Avg2); // middle pixel
+            d16 += (3*iLocalPitch);
+            s32 += 1;
+        } // for i;
+    } // for j
+    } // rotated 90
+    else // normal orientation
+    {
     iLocalPitch = (iTileWidth * 3)/2; // offset to next output line
     d16 = (uint16_t *)ucRXBuf;
     for (j=0; j<iTileHeight; j+=2)
@@ -2872,6 +2907,7 @@ int spilcdDrawTile150(int x, int y, int iTileWidth, int iTileHeight, unsigned ch
         } // for i;
         d16 += iLocalPitch*2; // skip lines we already output
     } // for j
+    } // normal orientation
     spilcdSetPosition((x*3)/2, (y*3)/2, (iTileWidth*3)/2, (iTileHeight*3)/2, bRender);
     myspiWrite(ucRXBuf, (iTileWidth*iTileHeight*9)/2, MODE_DATA, bRender);
     return 0;
