@@ -674,6 +674,32 @@ void spilcdSetMode(int iMode)
 #endif
 } /* spilcdSetMode() */
 
+// Init sequence for the SSD1331 OLED display
+// Courtesy of Adafruit's SSD1331 library
+static unsigned char ucSSD1331InitList[] = {
+    1, 0xae,    // display off
+    1, 0xa0,    // set remap
+    1, 0x72,    // RGB 0x76 == BGR
+    2, 0xa1, 0x00,  // set start line
+    2, 0xa2, 0x00,  // set display offset
+    1, 0xa4,    // normal display
+    2, 0xa8, 0x3f,  // set multiplex 1/64 duty
+    2, 0xad, 0x8e, // set master configuration
+    2, 0xb0, 0x0b, // disable power save
+    2, 0xb1, 0x31, // phase period adjustment
+    2, 0xb3, 0xf0, // clock divider
+    2, 0x8a, 0x64, // precharge a
+    2, 0x8b, 0x78, // precharge b
+    2, 0x8c, 0x64, // precharge c
+    2, 0xbb, 0x3a, // set precharge level
+    2, 0xbe, 0x3e, // set vcomh
+    2, 0x87, 0x06, // master current control
+    2, 0x81, 0x91, // contrast for color a
+    2, 0x82, 0x50, // contrast for color b
+    2, 0x83, 0x7D, // contrast for color c
+    1, 0xAF, // display on, normal
+    0
+};
 // List of command/parameters to initialize the SSD1351 OLED display
 static unsigned char ucOLEDInitList[] = {
 	2, 0xfd, 0x12, // unlock the controller
@@ -1017,7 +1043,7 @@ unsigned char *s;
 int i, iCount;
    
 	iLEDPin = -1; // assume it's not defined
-	if (iType != LCD_ILI9341 && iType != LCD_ST7735S && iType != LCD_ST7735R && iType != LCD_HX8357 && iType != LCD_SSD1351 && iType != LCD_ILI9342 && iType != LCD_ST7789 && iType != LCD_ST7789_135 && iType != LCD_ST7789_NOCS && iType != LCD_ST7735S_B)
+	if (iType != LCD_ILI9341 && iType != LCD_ST7735S && iType != LCD_ST7735R && iType != LCD_HX8357 && iType != LCD_SSD1331 && iType != LCD_SSD1351 && iType != LCD_ILI9342 && iType != LCD_ST7789 && iType != LCD_ST7789_135 && iType != LCD_ST7789_NOCS && iType != LCD_ST7735S_B)
 	{
 #ifndef _LINUX_
 		Serial.println("Unsupported display type\n");
@@ -1101,7 +1127,8 @@ int i, iCount;
 		myPinWrite(iResetPin, 1);
 		delayMicroseconds(60000);
 	}
-	if (iLCDType != LCD_SSD1351) // no backlight and no soft reset on OLED
+
+	if (iLCDType != LCD_SSD1351 && iLCDType != LCD_SSD1331) // no backlight and no soft reset on OLED
 	{
 	if (iLEDPin != -1)
 		myPinWrite(iLEDPin, 1); // turn on the backlight
@@ -1143,6 +1170,16 @@ int i, iCount;
             iLCDType = LCD_ST7789;
         }
 	} // ST7789
+    else if (iLCDType == LCD_SSD1331)
+    {
+        s = ucSSD1331InitList;
+
+        iCurrentWidth = iWidth = 96;
+        iCurrentHeight = iHeight = 64;
+
+        if (bFlipRGB)
+            ucSSD1331InitList[6] = 0x76;
+    }
 	else if (iLCDType == LCD_SSD1351)
 	{
 		s = ucOLEDInitList; // do the commands manually
@@ -1227,6 +1264,7 @@ int i, iCount;
 		iCurrentWidth = iWidth = 128;
 		iCurrentHeight = iHeight = 160;
 	}
+
 	iCount = 1;
     bSetPosition = 1; // don't let the data writes affect RAM
 	while (iCount)
@@ -1237,12 +1275,18 @@ int i, iCount;
 			spilcdWriteCommand(*s++);
 			for(i=0; i<iCount-1; i++)
 			{
-				spilcdWriteData8(*s++);
+                // hackhackhack
+                // the ssd1331 is kind of like the ssd1306 in that it expects the parameters
+                // to each command to have the DC pin LOW while being sent
+                if (iLCDType != LCD_SSD1331)
+                    spilcdWriteData8(*s++);
+                else
+                    spilcdWriteCommand(*s++);
 			}
 		}
 	}
     bSetPosition = 0;
-	if (iLCDType != LCD_SSD1351)
+	if (iLCDType != LCD_SSD1351 && iLCDType != LCD_SSD1331)
 	{
 		spilcdWriteCommand(0x11); // sleep out
 		delayMicroseconds(60000);
@@ -1271,6 +1315,14 @@ void spilcdScrollReset(void)
 		spilcdWriteData8(0x00);
 		return;
 	}
+    else if (iLCDType == LCD_SSD1331)
+    {
+        spilcdWriteCommand(0xa1);
+        spilcdWriteCommand(0x00);
+        spilcdWriteCommand(0xa2);
+        spilcdWriteCommand(0x00);
+        return;
+    }
 	spilcdWriteCommand(0x37); // scroll start address
 	spilcdWriteData16(0, 1);
 	if (iLCDType == LCD_HX8357)
@@ -1293,6 +1345,12 @@ void spilcdScroll(int iLines, int iFillColor)
 		spilcdWriteData8(iScrollOffset);
 		return;
 	}
+    else if (iLCDType == LCD_SSD1331)
+    {
+        spilcdWriteCommand(0xa1);
+        spilcdWriteCommand(iScrollOffset);
+        return;
+    }
 	else
 	{
 		spilcdWriteCommand(0x37); // Vertical scrolling start address
@@ -1560,7 +1618,7 @@ void spilcdShowBuffer(int iStartX, int iStartY, int cx, int cy)
 //
 void spilcdShutdown(void)
 {
-	if (iLCDType == LCD_SSD1351)
+	if (iLCDType == LCD_SSD1351 || iLCDType == LCD_SSD1331)
 		spilcdWriteCommand(0xae); // Display Off
 	else
 		spilcdWriteCommand(0x29); // Display OFF
@@ -1663,6 +1721,21 @@ unsigned char ucBuf[8];
 		bSetPosition = 0;
 		return;
 	}
+    else if (iLCDType == LCD_SSD1331)
+    {
+        spilcdWriteCommand(0x15);
+        ucBuf[0] = x;
+        ucBuf[1] = x + w - 1;
+        myspiWrite(ucBuf, 2, MODE_COMMAND, 1);
+
+        spilcdWriteCommand(0x75);
+        ucBuf[0] = y;
+        ucBuf[1] = y + h - 1;
+        myspiWrite(ucBuf, 2, MODE_COMMAND, 1);
+
+        bSetPosition = 0;
+        return;
+    }
 	spilcdWriteCommand(0x2a); // set column address
 	if (iLCDType == LCD_ILI9341 || iLCDType == LCD_ILI9342 || iLCDType == LCD_ST7735R || iLCDType == LCD_ST7789 || iLCDType == LCD_ST7735S)
 	{
@@ -2296,6 +2369,7 @@ unsigned short *pus = (unsigned short *)ucTXBuf;
 	spilcdScrollReset();
 	spilcdSetPosition(0,0,iWidth,iHeight, bRender);
 	usData = (usData >> 8) | (usData << 8); // swap hi/lo byte for LCD
+
     for (y=0; y<iHeight; y++)
     {
 // have to do this every time because the buffer gets overrun (no half-duplex mode in Arduino SPI library)
