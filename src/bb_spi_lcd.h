@@ -217,6 +217,7 @@ enum {
    LCD_ST7735R, // 128x160
    LCD_ST7735S, // 80x160 with offset of 24,0
    LCD_ST7735S_B, // 80x160 with offset of 26,2
+   LCD_SSD1331,
    LCD_SSD1351,
    LCD_ILI9342,
    LCD_ST7789,  // 240x240
