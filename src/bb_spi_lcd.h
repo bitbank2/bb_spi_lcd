@@ -29,6 +29,28 @@ enum {
 };
 #endif
 
+// Proportional font data taken from Adafruit_GFX library
+/// Font data stored PER GLYPH
+#ifndef _ADAFRUIT_GFX_H
+typedef struct {
+  uint16_t bitmapOffset; ///< Pointer into GFXfont->bitmap
+  uint8_t width;         ///< Bitmap dimensions in pixels
+  uint8_t height;        ///< Bitmap dimensions in pixels
+  uint8_t xAdvance;      ///< Distance to advance cursor (x axis)
+  int8_t xOffset;        ///< X dist from cursor pos to UL corner
+  int8_t yOffset;        ///< Y dist from cursor pos to UL corner
+} GFXglyph;
+
+/// Data stored for FONT AS A WHOLE
+typedef struct {
+  uint8_t *bitmap;  ///< Glyph bitmaps, concatenated
+  GFXglyph *glyph;  ///< Glyph array
+  uint8_t first;    ///< ASCII extents (first char)
+  uint8_t last;     ///< ASCII extents (last char)
+  uint8_t yAdvance; ///< Newline distance (y axis)
+} GFXfont;
+#endif // _ADAFRUIT_GFX_H
+
 typedef enum
 {
  MODE_DATA = 0,
@@ -41,6 +63,10 @@ extern "C" {
 
 // Sets the D/C pin to data or command mode
 void spilcdSetMode(int iMode);
+//
+// Provide a small temporary buffer for use by the graphics functions
+//
+void spilcdSetTXBuffer(uint8_t *pBuf, int iSize);
 
 //
 // Choose the gamma curve between 2 choices (0/1)
@@ -137,6 +163,14 @@ int spilcdWriteString(int x, int y, char *szText, int iFGColor, int iBGColor, in
 // This function only allows the FONT_NORMAL and FONT_SMALL sizes
 // 
 int spilcdWriteStringFast(int x, int y, char *szText, unsigned short usFGColor, unsigned short usBGColor, int iFontSize);
+//
+// Draw a string in a proportional font you supply
+//
+int spilcdWriteStringCustom(GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, uint16_t usBGColor, int bBlank);
+//
+// Get the width and upper/lower bounds of text in a custom font
+//
+void spilcdGetStringBox(GFXfont *pFont, char *szMsg, int *width, int *top, int *bottom);
 
 // Sets a pixel to the given color
 // Coordinate system is pixels, not text rows (0-239, 0-319)
@@ -222,6 +256,15 @@ enum {
    LCD_ST7789,  // 240x240
    LCD_ST7789_135, // 135x240
    LCD_ST7789_NOCS, // 240x240 without CS, vertical offset of 80, MODE3
+   LCD_SSD1283A // 132x132
+};
+
+// Errors returned by various drawing functions
+enum {
+  BB_ERROR_SUCCESS=0, // no error
+  BB_ERROR_INV_PARAM, // invalid parameter
+  BB_ERROR_NO_BUFFER, // no backbuffer defined
+  BB_ERROR_SMALL_BUFFER // SPI data buffer too small
 };
 
 // touch panel types

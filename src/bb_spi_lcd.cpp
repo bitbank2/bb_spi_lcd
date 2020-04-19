@@ -20,6 +20,9 @@
 // The ILITEK LCD display controllers communicate through the SPI interface
 // and two GPIO pins to control the RESET, and D/C (data/command)
 // control lines. 
+//#if defined(ADAFRUIT_PYBADGE_M4_EXPRESS)
+//#define SPI SPI1
+//#endif
 
 #ifdef _LINUX_
 #include <stdint.h>
@@ -70,16 +73,14 @@ static int iHandle; // SPI handle
 static spi_transaction_t trans[8];
 static spi_device_handle_t spi;
 //static TaskHandle_t xTaskToNotify = NULL;
-
+// ESP32 has enough memory to spare 4K
 DMA_ATTR uint8_t ucTXBuf[4096]="";
+static int iTXBufSize = 4096; // max reasonable size
 #else
-#ifdef __AVR__
-static unsigned char ucTXBuf[480];
-#else
-static unsigned char ucTXBuf[4096];
-#endif // __AVR__
+static int iTXBufSize;
+static unsigned char *ucTXBuf;
 #endif
-
+#define LCD_DELAY 0xff
 static unsigned char ucRXBuf[4096]; // DEBUG - won't work on small AVR's
 static void myPinWrite(int iPin, int iValue);
 static int32_t iSPISpeed;
@@ -664,6 +665,14 @@ static int16_t pgm_read_word(uint8_t *ptr)
   return ptr[0] + (ptr[1]<<8);
 }
 #endif // _LINUX_
+//
+// Provide a small temporary buffer for use by the graphics functions
+//
+void spilcdSetTXBuffer(uint8_t *pBuf, int iSize)
+{
+  ucTXBuf = pBuf;
+  iTXBufSize = iSize;
+} /* spilcdSetTXBuffer() */
 
 // Sets the D/C pin to data or command mode
 void spilcdSetMode(int iMode)
@@ -722,6 +731,35 @@ static unsigned char uc240InitList[] = {
         3, 0xb1, 0x00, 0x10, // FrameRate Control 119Hz
         0
 };
+// List of command/parameters for the SSD1283A display
+static unsigned char uc132InitList[] = {
+    3, 0x10, 0x2F,0x8E,
+    3, 0x11, 0x00,0x0C,
+    3, 0x07, 0x00,0x21,
+    3, 0x28, 0x00,0x06,
+    3, 0x28, 0x00,0x05,
+    3, 0x27, 0x05,0x7F,
+    3, 0x29, 0x89,0xA1,
+    3, 0x00, 0x00,0x01,
+    LCD_DELAY, 100,
+    3, 0x29, 0x80,0xB0,
+    LCD_DELAY, 30,
+    3, 0x29, 0xFF,0xFE,
+    3, 0x07, 0x02,0x23,
+    LCD_DELAY, 30,
+    3, 0x07, 0x02,0x33,
+    3, 0x01, 0x21,0x83,
+    3, 0x03, 0x68,0x30,
+    3, 0x2F, 0xFF,0xFF,
+    3, 0x2C, 0x80,0x00,
+    3, 0x27, 0x05,0x70,
+    3, 0x02, 0x03,0x00,
+    3, 0x0B, 0x58,0x0C,
+    3, 0x12, 0x06,0x09,
+    3, 0x13, 0x31,0x00,
+    0
+};
+
 // List of command/parameters to initialize the ili9342 display
 static unsigned char uc320InitList[] = {
         2, 0xc0, 0x23, // Power control
@@ -1017,7 +1055,7 @@ unsigned char *s;
 int i, iCount;
    
 	iLEDPin = -1; // assume it's not defined
-	if (iType != LCD_ILI9341 && iType != LCD_ST7735S && iType != LCD_ST7735R && iType != LCD_HX8357 && iType != LCD_SSD1351 && iType != LCD_ILI9342 && iType != LCD_ST7789 && iType != LCD_ST7789_135 && iType != LCD_ST7789_NOCS && iType != LCD_ST7735S_B)
+	if (iType != LCD_ILI9341 && iType != LCD_ST7735S && iType != LCD_ST7735R && iType != LCD_HX8357 && iType != LCD_SSD1351 && iType != LCD_ILI9342 && iType != LCD_ST7789 && iType != LCD_ST7789_135 && iType != LCD_ST7789_NOCS && iType != LCD_ST7735S_B && iType != LCD_SSD1283A)
 	{
 #ifndef _LINUX_
 		Serial.println("Unsupported display type\n");
@@ -1056,7 +1094,6 @@ int i, iCount;
     buscfg.max_transfer_sz=240*9*2;
     buscfg.quadwp_io_num=-1;
     buscfg.quadhd_io_num=-1;
-    buscfg.max_transfer_sz = 240*9*2;
     //Initialize the SPI bus
     ret=spi_bus_initialize(VSPI_HOST, &buscfg, 1);
     assert(ret==ESP_OK);
@@ -1165,6 +1202,12 @@ int i, iCount;
 		iCurrentWidth = iWidth = 240;
 		iCurrentHeight = iHeight = 320;
 	}
+        else if (iLCDType == LCD_SSD1283A)
+        {
+                s = uc132InitList;
+                iCurrentWidth = iWidth = 132;
+                iCurrentHeight = iHeight = 132;
+        }
 	else if (iLCDType == LCD_ILI9342)
 	{
 		s = uc320InitList;
@@ -1193,7 +1236,7 @@ int i, iCount;
     else if (iLCDType == LCD_ST7735S || iLCDType == LCD_ST7735S_B)
     {
         uint8_t iBGR = 0;
-        if (iLCDType == LCD_ST7735S_B)
+        if (bFlipRGB)
             iBGR = 8;
         s = uc80InitList;
         if (bInvert)
@@ -1234,11 +1277,16 @@ int i, iCount;
 		iCount = *s++;
 		if (iCount != 0)
 		{
-			spilcdWriteCommand(*s++);
-			for(i=0; i<iCount-1; i++)
-			{
+                        if (iCount == LCD_DELAY)
+                           delay(*s++);
+                        else
+                        {
+			  spilcdWriteCommand(*s++);
+			  for(i=0; i<iCount-1; i++)
+			  {
 				spilcdWriteData8(*s++);
-			}
+			  }
+                        }
 		}
 	}
     bSetPosition = 0;
@@ -1338,9 +1386,11 @@ void spilcdScroll(int iLines, int iFillColor)
 } /* spilcdScroll() */
 
 //
-// Draw a 1-bpp pattern into the backbuffer with the given color and translucency
+// Draw a 1-bpp pattern with the given color and translucency
 // 1 bits are drawn as color, 0 are transparent
 // The translucency value can range from 1 (barely visible) to 32 (fully opaque)
+// If there is a backbuffer, the bitmap is draw only into memory
+// If there is no backbuffer, the bitmap is drawn on the screen with a black background color
 //
 void spilcdDrawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY, int iCX, int iCY, uint16_t usColor, int iTranslucency)
 {
@@ -1349,9 +1399,6 @@ void spilcdDrawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY,
     uint16_t us, *d;
     uint32_t ulMask = 0x07e0f81f; // this allows all 3 values to be multipled at once
     uint32_t ulSrcClr, ulDestClr, ulDestTrans;
-    
-    if (pBackBuffer == NULL || iTranslucency < 0 || iTranslucency > 32 || iDestX + iCX > iCurrentWidth || iDestY + iCY > iCurrentHeight || iDestX < 0 || iDestY < 0 || iCX < 0 || iCY < 0)
-        return; // invalid parameter
     
     ulDestTrans = 32-iTranslucency; // inverted to combine src+dest
     ulSrcClr = (usColor & 0xf81f) | ((usColor & 0x06e0) << 16); // shift green to upper 16-bits
@@ -1362,6 +1409,33 @@ void spilcdDrawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY,
         iCY = (iCurrentHeight - iDestY);
     if (pPattern == NULL || iDestX < 0 || iDestY < 0 || iCX <=0 || iCY <= 0 || iTranslucency < 1 || iTranslucency > 32)
         return;
+    if (pBackBuffer == NULL) // no back buffer, draw opaque colors
+    {
+      uint16_t u16Clr;
+      u16Clr = (usColor >> 8) | (usColor << 8); // swap low/high bytes
+      spilcdSetPosition(iDestX, iDestY, iCX, iCY, 1);
+      for (y=0; y<iCY; y++)
+      {
+        s = &pPattern[y * iSrcPitch];
+        ucMask = uc = 0;
+        d = (uint16_t *)&ucTXBuf[0];
+        for (x=0; x<iCX; x++)
+        {
+            ucMask >>= 1;
+            if (ucMask == 0)
+            {
+                ucMask = 0x80;
+                uc = *s++;
+            }
+            if (uc & ucMask) // active pixel
+               *d++ = u16Clr;
+            else
+               *d++ = 0;
+        } // for x
+        myspiWrite(ucTXBuf, iCX*2, MODE_DATA, 1);
+      } // for y
+      return;
+    }
     for (y=0; y<iCY; y++)
     {
         int iDelta;
@@ -1407,7 +1481,7 @@ void spilcdDrawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY,
 void spilcdRectangle(int x, int y, int w, int h, unsigned short usColor1, unsigned short usColor2, int bFill, int bRender)
 {
 unsigned short *usTemp = (unsigned short *)ucRXBuf;
-int i, j, ty, th, iPerLine, iStart;
+int i, ty, th, iPerLine, iStart;
 uint16_t usColor;
     
 	// check bounds
@@ -1663,6 +1737,23 @@ unsigned char ucBuf[8];
 		bSetPosition = 0;
 		return;
 	}
+        else if (iLCDType == LCD_SSD1283A) // so does the SSD1283A
+        {
+		spilcdWriteCommand(0x44); // set col
+		ucBuf[0] = x + w + 1;
+                ucBuf[1] = x + 2;
+                myspiWrite(ucBuf, 2, MODE_DATA, 1);
+                spilcdWriteCommand(0x45); // set row
+		ucBuf[0] = y + h + 1;
+		ucBuf[1] = y + 2;
+		myspiWrite(ucBuf, 2, MODE_DATA, 1);
+		spilcdWriteCommand(0x21); // set col+row
+		ucBuf[0] = y + 2;
+		ucBuf[1] = x + 2;
+		myspiWrite(ucBuf, 2, MODE_DATA, 1);
+		spilcdWriteCommand(0x22); // write RAM
+		return;
+        }
 	spilcdWriteCommand(0x2a); // set column address
 	if (iLCDType == LCD_ILI9341 || iLCDType == LCD_ILI9342 || iLCDType == LCD_ST7735R || iLCDType == LCD_ST7789 || iLCDType == LCD_ST7735S)
 	{
@@ -1696,8 +1787,8 @@ unsigned char ucBuf[8];
 		y += iMemoryY;
 		ucBuf[0] = (unsigned char)(y >> 8);
 		ucBuf[1] = (unsigned char)y;
-		y = y + h - 1;
-		if ((y-iMemoryY) > iHeight-1) y = iMemoryY + iHeight-1;
+		y = y + h;
+		if ((y-iMemoryY) > iHeight-1) y = iMemoryY + iHeight;
 		ucBuf[2] = (unsigned char)(y >> 8);
 		ucBuf[3] = (unsigned char)y;
 		myspiWrite(ucBuf, 4, MODE_DATA, 1);
@@ -1764,6 +1855,193 @@ esp_err_t ret;
 #endif
 
 #ifndef __AVR__
+//
+// Draw a string in a proportional font you supply
+//
+int spilcdWriteStringCustom(GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, uint16_t usBGColor, int bBlank)
+{
+int i, j, k, iLen, dx, dy, cx, cy, c, iBitOff;
+int tx, ty;
+uint8_t *s, bits, uc;
+GFXglyph *pGlyph;
+#define TEMP_BUF_SIZE 64
+#define TEMP_HIGHWATER (TEMP_BUF_SIZE-8)
+uint16_t *d, u16Temp[TEMP_BUF_SIZE];
+
+   if (pFont == NULL || x < 0)
+      return -1;
+   usFGColor = (usFGColor >> 8) | (usFGColor << 8); // swap h/l bytes
+   usBGColor = (usBGColor >> 8) | (usBGColor << 8);
+
+   i = 0;
+   while (szMsg[i] && x < iWidth)
+   {
+      c = szMsg[i++];
+      if (c < pFont->first || c > pFont->last) // undefined character
+         continue; // skip it
+      c -= pFont->first; // first char of font defined
+      pGlyph = &pFont->glyph[c];
+      // set up the destination window (rectangle) on the display
+      dx = x + pGlyph->xOffset; // offset from character UL to start drawing
+      dy = y + pGlyph->yOffset;
+      cx = pGlyph->width;
+      cy = pGlyph->height;
+      iBitOff = 0; // bitmap offset (in bits)
+      if (dy + cy > iHeight)
+         cy = iHeight - dy;
+      else if (dy < 0) {
+         cy += dy;
+         iBitOff += (pGlyph->width * (-dy));
+         dy = 0;
+      }
+      s = pFont->bitmap + pGlyph->bitmapOffset; // start of bitmap data
+      // Bitmap drawing loop. Image is MSB first and each pixel is packed next
+      // to the next (continuing on to the next character line)
+      bits = uc = 0; // bits left in this font byte
+
+      if (bBlank) { // erase the areas around the char to not leave old bits
+         int miny, maxy;
+         c = '0' - pFont->first;
+         miny = y + pFont->glyph[c].yOffset;
+         c = 'y' - pFont->first;
+         maxy = y + pFont->glyph[c].yOffset + pFont->glyph[c].height;
+         spilcdSetPosition(x, miny, pGlyph->xAdvance, maxy-miny, 1);
+         if (iOrientation == LCD_ORIENTATION_NATIVE) {
+            // blank out area above character
+            for (ty=miny; ty<y+pGlyph->yOffset; ty++) {
+               for (tx=0; tx>pGlyph->xAdvance; tx++)
+                  u16Temp[tx] = usBGColor;
+               myspiWrite((uint8_t *)u16Temp, pGlyph->xAdvance*sizeof(uint16_t), MODE_DATA, 1);
+            } // for ty
+            // character area (with possible padding on L+R)
+            for (ty=0; ty<pGlyph->height; ty++) {
+               d = &u16Temp[0];
+               for (tx=0; tx<pGlyph->xOffset; tx++) { // left padding
+                  *d++ = usBGColor;
+               }
+            // character bitmap (center area)
+               for (tx=0; tx<pGlyph->width; tx++) {
+                  if (bits == 0) { // need more data
+                     uc = pgm_read_byte(&s[iBitOff>>3]);
+                     bits = 8;
+                     iBitOff += bits;
+                  }
+                  *d++ = (uc & 0x80) ? usFGColor : usBGColor;
+                  bits--;
+                  uc <<= 1;
+               } // for tx
+               // right padding
+               k = pGlyph->xAdvance - (int)(d - u16Temp); // remaining amount
+               for (tx=0; tx<k; tx++)
+               *d++ = usBGColor;
+               myspiWrite((uint8_t *)u16Temp, pGlyph->xAdvance*sizeof(uint16_t), MODE_DATA, 1);
+            } // for ty
+            // padding below the current character
+            ty = y + pGlyph->yOffset + pGlyph->height;
+            for (; ty < maxy; ty++) {
+               for (tx=0; tx<pGlyph->xAdvance; tx++)
+                  u16Temp[tx] = usBGColor;
+               myspiWrite((uint8_t *)u16Temp, pGlyph->xAdvance*sizeof(uint16_t), MODE_DATA, 1);
+            } // for ty
+         } else { // 90 degrees rotated
+             for (tx=0; tx<pGlyph->xAdvance; tx++) { // sweep across the whole width of this character
+                 d = &u16Temp[0];
+                 if (tx <pGlyph->xOffset || tx >= pGlyph->xOffset + pGlyph->width) { // blank area to L or R of char
+                     for (ty=miny; ty<maxy; ty++)
+                         *d++ = usBGColor;
+                 } else { // middle (drawn) area of character
+                     k = y + pGlyph->yOffset + pGlyph->height;
+                     // blank part below char
+                     for (ty=maxy; ty<k; ty++)
+                         *d++ = usBGColor;
+                     // Character box
+                     iBitOff = (tx-pGlyph->xOffset) + (pGlyph->width * (pGlyph->height-1)); // start at bottom
+                     for (ty=0; ty<pGlyph->height; ty++) {
+                        uc = pgm_read_byte(&s[iBitOff>>3]);
+                        *d++ = (uc & (0x80 >> (iBitOff & 7))) ? usFGColor : usBGColor;
+                        iBitOff -= pGlyph->width;
+                     } // for ty
+                     // blank part above char
+                     for (ty=miny; ty<y+pGlyph->yOffset; ty++)
+                         *d++ = usBGColor;
+                 }
+                 myspiWrite((uint8_t *)u16Temp, (maxy-miny)*sizeof(uint16_t), MODE_DATA, 1);
+             } // for tx
+         } // rotated, blanked
+      } else { // just draw the current character box
+         spilcdSetPosition(dx, dy, cx, cy, 1);
+         if (iOrientation == LCD_ORIENTATION_NATIVE) {
+            iLen = cx * cy; // total pixels to draw
+            d = &u16Temp[0]; // point to start of output buffer
+            for (j=0; j<iLen; j++) {
+               if (uc == 0) { // need to read more font data
+                  j += bits;
+                  while (bits > 0) {
+                     *d++ = usBGColor; // draw any remaining 0 bits
+                     bits--;
+                  }
+                  uc = pgm_read_byte(&s[iBitOff>>3]); // get more font bitmap data
+                  bits = 8 - (iBitOff & 7); // we might not be on a byte boundary
+                  iBitOff += bits; // because of a clipped line
+                  uc <<= (8-bits);
+                  k = (int)(d-u16Temp); // number of words in output buffer
+                  if (k >= TEMP_HIGHWATER) { // time to write it
+                     myspiWrite((uint8_t *)u16Temp, k*sizeof(uint16_t), MODE_DATA, 1);
+                     d = &u16Temp[0];
+                  }
+               } // if we ran out of bits
+               *d++ = (uc & 0x80) ? usFGColor : usBGColor;
+               bits--; // next bit
+               uc <<= 1;
+            } // for j
+            k = (int)(d-u16Temp);
+            if (k) // write any remaining data
+               myspiWrite((uint8_t *)u16Temp, k*sizeof(uint16_t), MODE_DATA, 1);
+         } else { // rotated 90 degrees
+            for (tx=0; tx<pGlyph->width; tx++) {
+               iBitOff = tx + (pGlyph->width * (pGlyph->height-1)); // start at bottom
+               d = &u16Temp[0];
+               for (ty=0; ty<pGlyph->height; ty++) {
+                  uc = pgm_read_byte(&s[iBitOff>>3]);
+                  *d++ = (uc & (0x80 >> (iBitOff & 7))) ? usFGColor : usBGColor; 
+                  iBitOff -= pGlyph->width;
+               } // for ty
+               myspiWrite((uint8_t *)u16Temp, pGlyph->height*sizeof(uint16_t), MODE_DATA, 1);
+            } // for tx
+         } // rotated
+      } // quicker drawing
+      x += pGlyph->xAdvance; // width of this character
+   } // while drawing characters
+   return 0;
+
+} /* spilcdWriteStringCustom() */
+//
+// Get the width of text in a custom font
+//
+void spilcdGetStringBox(GFXfont *pFont, char *szMsg, int *width, int *top, int *bottom)
+{
+int cx = 0;
+int c, i = 0;
+GFXglyph *pGlyph;
+int miny, maxy;
+
+   if (width == NULL || top == NULL || bottom == NULL || pFont == NULL || szMsg == NULL) return; // bad pointers
+   miny = 100; maxy = 0;
+   while (szMsg[i]) {
+      c = szMsg[i++];
+      if (c < pFont->first || c > pFont->last) // undefined character
+         continue; // skip it
+      c -= pFont->first; // first char of font defined
+      pGlyph = &pFont->glyph[c];
+      cx += pGlyph->xAdvance;
+      if (pGlyph->yOffset < miny) miny = pGlyph->yOffset;
+      if (pGlyph->height+pGlyph->yOffset > maxy) maxy = pGlyph->height+pGlyph->yOffset;
+   }
+   *width = cx;
+   *top = miny;
+   *bottom = maxy;
+} /* spilcdGetStringBox() */
+
 //
 // Draw a string of small (8x8) text as quickly as possible
 // by writing it to the LCD in a single SPI write
@@ -2286,25 +2564,34 @@ int spilcdSetOrientation(int iOrient)
 //
 int spilcdFill(unsigned short usData, int bRender)
 {
-int i, y;
+int i, cx, tx, x, y;
 int iOldOrient;
-unsigned short *pus = (unsigned short *)ucTXBuf;
+uint16_t u16Temp[160];
 
-	// make sure we're in landscape mode to use the correct coordinates
-	iOldOrient = iOrientation;
-	iOrientation = LCD_ORIENTATION_NATIVE;
-	spilcdScrollReset();
-	spilcdSetPosition(0,0,iWidth,iHeight, bRender);
-	usData = (usData >> 8) | (usData << 8); // swap hi/lo byte for LCD
+    // make sure we're in landscape mode to use the correct coordinates
+    iOldOrient = iOrientation;
+    iOrientation = LCD_ORIENTATION_NATIVE;
+    spilcdScrollReset();
+    spilcdSetPosition(0,0,iWidth,iHeight, bRender);
+    usData = (usData >> 8) | (usData << 8); // swap hi/lo byte for LCD
+    // fit within our temp buffer
+    cx = 1; tx = iWidth;
+    if (iWidth > 160)
+    {
+       cx = 2; tx = iWidth/2;
+    }
     for (y=0; y<iHeight; y++)
     {
+       for (x=0; x<cx; x++)
+       {
 // have to do this every time because the buffer gets overrun (no half-duplex mode in Arduino SPI library)
-        for (i=0; i<iWidth; i++)
-            pus[i] = usData;
-        myspiWrite(ucTXBuf, iWidth*2, MODE_DATA, bRender); // fill with data byte
+            for (i=0; i<tx; i++)
+                u16Temp[i] = usData;
+            myspiWrite((uint8_t *)u16Temp, tx*2, MODE_DATA, bRender); // fill with data byte
+       } // for x
     } // for y
     iOrientation = iOldOrient;
-	return 0;
+    return 0;
 } /* spilcdFill() */
 //
 // Draw a 16x16 tile as 16x13 (with priority to non-black pixels)
@@ -2766,7 +3053,7 @@ int spilcdDrawTile(int x, int y, int iTileWidth, int iTileHeight, unsigned char 
     if (iOrientation == LCD_ORIENTATION_ROTATED) // need to rotate the data
     {
         // First convert to big-endian order
-        d = ucRXBuf;
+        d = ucTXBuf;
         for (j=0; j<iTileWidth; j++)
         {
             s = &pTile[j*2];
@@ -2785,20 +3072,20 @@ int spilcdDrawTile(int x, int y, int iTileWidth, int iTileHeight, unsigned char 
         if (((x + iScrollOffset) % iHeight) > iHeight-iTileWidth) // need to write in 2 parts since it won't wrap
         {
             int iStart = (iHeight - ((x+iScrollOffset) % iHeight));
-            myspiWrite(ucRXBuf, iStart*iTileHeight*2, MODE_DATA, bRender); // first N lines
+            myspiWrite(ucTXBuf, iStart*iTileHeight*2, MODE_DATA, bRender); // first N lines
             spilcdSetPosition(x+iStart, y, iTileWidth-iStart, iTileWidth, bRender);
-            myspiWrite(&ucRXBuf[iStart*iTileHeight*2], (iTileWidth*iTileHeight*2)-(iStart*iTileHeight*2), MODE_DATA, bRender);
+            myspiWrite(&ucTXBuf[iStart*iTileHeight*2], (iTileWidth*iTileHeight*2)-(iStart*iTileHeight*2), MODE_DATA, bRender);
         }
         else // can write in one shot
         {
-            myspiWrite(ucRXBuf, iTileWidth*iTileHeight*2, MODE_DATA, bRender);
+            myspiWrite(ucTXBuf, iTileWidth*iTileHeight*2, MODE_DATA, bRender);
         }
     }
     else // native orientation
     {
         uint16_t *s16, *d16;
         // First convert to big-endian order
-        d16 = (uint16_t *)ucRXBuf;
+        d16 = (uint16_t *)ucTXBuf;
         for (j=0; j<iTileHeight; j++)
         {
             s16 = (uint16_t*)&pTile[j*iPitch];
@@ -2811,13 +3098,13 @@ int spilcdDrawTile(int x, int y, int iTileWidth, int iTileHeight, unsigned char 
         if (((y + iScrollOffset) % iHeight) > iHeight-iTileHeight) // need to write in 2 parts since it won't wrap
         {
             int iStart = (iHeight - ((y+iScrollOffset) % iHeight));
-            myspiWrite(ucRXBuf, iStart*iTileWidth*2, MODE_DATA, bRender); // first N lines
+            myspiWrite(ucTXBuf, iStart*iTileWidth*2, MODE_DATA, bRender); // first N lines
             spilcdSetPosition(x, y+iStart, iTileWidth, iTileHeight-iStart, bRender);
-            myspiWrite(&ucRXBuf[iStart*iTileWidth*2], (iTileWidth*iTileHeight*2)-(iStart*iTileWidth*2), MODE_DATA, bRender);
+            myspiWrite(&ucTXBuf[iStart*iTileWidth*2], (iTileWidth*iTileHeight*2)-(iStart*iTileWidth*2), MODE_DATA, bRender);
         }
         else // can write in one shot
         {
-            myspiWrite(ucRXBuf, iTileWidth*iTileHeight*2, MODE_DATA, bRender);
+            myspiWrite(ucTXBuf, iTileWidth*iTileHeight*2, MODE_DATA, bRender);
         }
     } // portrait orientation
     return 0;
@@ -2844,7 +3131,6 @@ int spilcdDrawTile150(int x, int y, int iTileWidth, int iTileHeight, unsigned ch
     iPitch32 = iPitch / 4;
     if (iOrientation == LCD_ORIENTATION_ROTATED) // need to rotate the data
     {
-    int iDestWidth = (iTileWidth*3)/2;
     iLocalPitch = (iTileHeight * 3)/2; // offset to next output line
     for (j=0; j<iTileHeight; j+=2)
     {
@@ -3524,7 +3810,7 @@ void spilcdFreeBackbuffer(void)
 //
 void spilcdRotateBitmap(uint8_t *pSrc, uint8_t *pDest, int iBpp, int iWidth, int iHeight, int iPitch, int iCenterX, int iCenterY, int iAngle)
 {
-int32_t i, j, x, y;
+int32_t i, x, y;
 int16_t pre_sin[512], pre_cos[512], *pSin, *pCos;
 int32_t tx, ty, sa, ca;
 uint8_t *s, *d, uc, ucMask;
