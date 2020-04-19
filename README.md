@@ -21,12 +21,13 @@ Features:<br>
 - Supports display modes: 0/180 degree rotated, inverted, BGR or RGB color order
 - Supports 90/270 degree rotated operation (software does the rotation)
 - Optimized primitives for text, lines, rectangles, ellipses and bitmap drawing
+- Fast (50x) drawing of Adafruit format custom fonts with optional blanking mode to erase old data without flickering
 - Load and display 4 and 16-bit Windows BMP files
 - Deferred rendering allows quickly preparing a back buffer, then displaying it
 <br>
 
 
-If you find this code useful, please consider buying me a cup of coffee
+If you find this code useful, please consider sending a donation to support my work
 
 [![paypal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=SR4F44J2UR8S4)
 
