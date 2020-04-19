@@ -1927,7 +1927,6 @@ esp_err_t ret;
 } /* spilcdWriteDataDMA() */
 #endif
 
-#ifndef __AVR__
 //
 // Draw a string in a proportional font you supply
 //
@@ -1936,13 +1935,17 @@ int spilcdWriteStringCustom(GFXfont *pFont, int x, int y, char *szMsg, uint16_t 
 int i, j, k, iLen, dx, dy, cx, cy, c, iBitOff;
 int tx, ty;
 uint8_t *s, bits, uc;
-GFXglyph *pGlyph;
+GFXfont font;
+GFXglyph glyph, *pGlyph;
 #define TEMP_BUF_SIZE 64
 #define TEMP_HIGHWATER (TEMP_BUF_SIZE-8)
 uint16_t *d, u16Temp[TEMP_BUF_SIZE];
 
    if (pFont == NULL || x < 0)
       return -1;
+   // in case of running on AVR, get copy of data from FLASH
+   memcpy_P(&font, pFont, sizeof(font));
+   pGlyph = &glyph;
    usFGColor = (usFGColor >> 8) | (usFGColor << 8); // swap h/l bytes
    usBGColor = (usBGColor >> 8) | (usBGColor << 8);
 
@@ -1950,10 +1953,10 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
    while (szMsg[i] && x < iWidth)
    {
       c = szMsg[i++];
-      if (c < pFont->first || c > pFont->last) // undefined character
+      if (c < font.first || c > font.last) // undefined character
          continue; // skip it
-      c -= pFont->first; // first char of font defined
-      pGlyph = &pFont->glyph[c];
+      c -= font.first; // first char of font defined
+      memcpy_P(&glyph, &font.glyph[c], sizeof(glyph));
       // set up the destination window (rectangle) on the display
       dx = x + pGlyph->xOffset; // offset from character UL to start drawing
       dy = y + pGlyph->yOffset;
@@ -1967,17 +1970,17 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
          iBitOff += (pGlyph->width * (-dy));
          dy = 0;
       }
-      s = pFont->bitmap + pGlyph->bitmapOffset; // start of bitmap data
+      s = font.bitmap + pGlyph->bitmapOffset; // start of bitmap data
       // Bitmap drawing loop. Image is MSB first and each pixel is packed next
       // to the next (continuing on to the next character line)
       bits = uc = 0; // bits left in this font byte
 
       if (bBlank) { // erase the areas around the char to not leave old bits
          int miny, maxy;
-         c = '0' - pFont->first;
-         miny = y + pFont->glyph[c].yOffset;
-         c = 'y' - pFont->first;
-         maxy = y + pFont->glyph[c].yOffset + pFont->glyph[c].height;
+         c = '0' - font.first;
+         miny = y + (int8_t)pgm_read_byte(&font.glyph[c].yOffset);
+         c = 'y' - font.first;
+         maxy = y + (int8_t)pgm_read_byte(&font.glyph[c].yOffset) + pgm_read_byte(&font.glyph[c].height);
          spilcdSetPosition(x, miny, pGlyph->xAdvance, maxy-miny, 1);
          if (iOrientation == LCD_ORIENTATION_NATIVE) {
             // blank out area above character
@@ -2025,7 +2028,7 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
                  } else { // middle (drawn) area of character
                      k = y + pGlyph->yOffset + pGlyph->height;
                      // blank part below char
-                     for (ty=maxy; ty<k; ty++)
+                     for (ty=k; ty<maxy; ty++)
                          *d++ = usBGColor;
                      // Character box
                      iBitOff = (tx-pGlyph->xOffset) + (pGlyph->width * (pGlyph->height-1)); // start at bottom
@@ -2095,17 +2098,23 @@ void spilcdGetStringBox(GFXfont *pFont, char *szMsg, int *width, int *top, int *
 {
 int cx = 0;
 int c, i = 0;
-GFXglyph *pGlyph;
+GFXfont font;
+GFXglyph glyph, *pGlyph;
 int miny, maxy;
 
+   if (pFont == NULL)
+      return;
+   // in case of running on AVR, get copy of data from FLASH
+   memcpy_P(&font, pFont, sizeof(font));
+   pGlyph = &glyph;
    if (width == NULL || top == NULL || bottom == NULL || pFont == NULL || szMsg == NULL) return; // bad pointers
    miny = 100; maxy = 0;
    while (szMsg[i]) {
       c = szMsg[i++];
-      if (c < pFont->first || c > pFont->last) // undefined character
+      if (c < font.first || c > font.last) // undefined character
          continue; // skip it
-      c -= pFont->first; // first char of font defined
-      pGlyph = &pFont->glyph[c];
+      c -= font.first; // first char of font defined
+      memcpy_P(&glyph, &font.glyph[c], sizeof(glyph));
       cx += pGlyph->xAdvance;
       if (pGlyph->yOffset < miny) miny = pGlyph->yOffset;
       if (pGlyph->height+pGlyph->yOffset > maxy) maxy = pGlyph->height+pGlyph->yOffset;
@@ -2115,6 +2124,7 @@ int miny, maxy;
    *bottom = maxy;
 } /* spilcdGetStringBox() */
 
+#ifndef __AVR__
 //
 // Draw a string of small (8x8) text as quickly as possible
 // by writing it to the LCD in a single SPI write
