@@ -75,13 +75,18 @@ static spi_device_handle_t spi;
 //static TaskHandle_t xTaskToNotify = NULL;
 // ESP32 has enough memory to spare 4K
 DMA_ATTR uint8_t ucTXBuf[4096]="";
+static unsigned char ucRXBuf[4096];
 static int iTXBufSize = 4096; // max reasonable size
 #else
 static int iTXBufSize;
 static unsigned char *ucTXBuf;
+static unsigned char ucRXBuf[648];
 #endif
 #define LCD_DELAY 0xff
-static unsigned char ucRXBuf[4096]; // DEBUG - won't work on small AVR's
+#ifdef __AVR__
+volatile uint8_t *outDC, *outCS; // port registers for fast I/O
+uint8_t bitDC, bitCS; // bit mask for the chosen pins
+#endif
 static void myPinWrite(int iPin, int iValue);
 static int32_t iSPISpeed;
 static int iCSPin, iDCPin, iResetPin, iLEDPin; // pin numbers for the GPIO control lines
@@ -677,61 +682,44 @@ void spilcdSetTXBuffer(uint8_t *pBuf, int iSize)
 // Sets the D/C pin to data or command mode
 void spilcdSetMode(int iMode)
 {
+#ifdef __AVR__
+    if (iMode == MODE_DATA)
+       *outDC |= bitDC;
+    else
+       *outDC &= ~bitDC;
+#else
 	myPinWrite(iDCPin, iMode == MODE_DATA);
+#endif
 #ifdef HAL_ESP32_HAL_H_
 	delayMicroseconds(1); // some systems are so fast that it needs to be delayed
 #endif
 } /* spilcdSetMode() */
 
-// Init sequence for the SSD1331 OLED display
-// Courtesy of Adafruit's SSD1331 library
-static unsigned char ucSSD1331InitList[] = {
-    1, 0xae,    // display off
-    1, 0xa0,    // set remap
-    1, 0x72,    // RGB 0x76 == BGR
-    2, 0xa1, 0x00,  // set start line
-    2, 0xa2, 0x00,  // set display offset
-    1, 0xa4,    // normal display
-    2, 0xa8, 0x3f,  // set multiplex 1/64 duty
-    2, 0xad, 0x8e, // set master configuration
-    2, 0xb0, 0x0b, // disable power save
-    2, 0xb1, 0x31, // phase period adjustment
-    2, 0xb3, 0xf0, // clock divider
-    2, 0x8a, 0x64, // precharge a
-    2, 0x8b, 0x78, // precharge b
-    2, 0x8c, 0x64, // precharge c
-    2, 0xbb, 0x3a, // set precharge level
-    2, 0xbe, 0x3e, // set vcomh
-    2, 0x87, 0x06, // master current control
-    2, 0x81, 0x91, // contrast for color a
-    2, 0x82, 0x50, // contrast for color b
-    2, 0x83, 0x7D, // contrast for color c
-    1, 0xAF, // display on, normal
+// List of command/parameters to initialize the ST7789 LCD
+const unsigned char uc240x240InitList[]PROGMEM = {
+    1, 0x13, // partial mode off
+    1, 0x21, // display inversion off
+    2, 0x36,0x08,    // memory access 0xc0 for 180 degree flipped
+    2, 0x3a,0x55,    // pixel format; 5=RGB565
+    3, 0x37,0x00,0x00, //
+    6, 0xb2,0x0c,0x0c,0x00,0x33,0x33, // Porch control
+    2, 0xb7,0x35,    // gate control
+    2, 0xbb,0x1a,    // VCOM
+    2, 0xc0,0x2c,    // LCM
+    2, 0xc2,0x01,    // VDV & VRH command enable
+    2, 0xc3,0x0b,    // VRH set
+    2, 0xc4,0x20,    // VDV set
+    2, 0xc6,0x0f,    // FR control 2
+    3, 0xd0, 0xa4, 0xa1,     // Power control 1
+    15, 0xe0, 0x00,0x19,0x1e,0x0a,0x09,0x15,0x3d,0x44,0x51,0x12,0x03,
+        0x00,0x3f,0x3f,     // gamma 1
+    15, 0xe1, 0x00,0x18,0x1e,0x0a,0x09,0x25,0x3f,0x43,0x52,0x33,0x03,
+        0x00,0x3f,0x3f,        // gamma 2
+    1, 0x29,    // display on
     0
 };
-// List of command/parameters to initialize the SSD1351 OLED display
-static unsigned char ucOLEDInitList[] = {
-	2, 0xfd, 0x12, // unlock the controller
-	2, 0xfd, 0xb1, // unlock the command
-	1, 0xae,	// display off
-	2, 0xb3, 0xf1,  // clock divider
-	2, 0xca, 0x7f,	// mux ratio
-	2, 0xa0, 0x74,	// set remap
-	3, 0x15, 0x00, 0x7f,	// set column
-	3, 0x75, 0x00, 0x7f,	// set row
-	2, 0xb5, 0x00,	// set GPIO state
-	2, 0xab, 0x01,	// function select (internal diode drop)
-	2, 0xb1, 0x32,	// precharge
-	2, 0xbe, 0x05,	// vcomh
-	1, 0xa6,	// set normal display mode
-	4, 0xc1, 0xc8, 0x80, 0xc8, // contrast ABC
-	2, 0xc7, 0x0f,	// contrast master
-	4, 0xb4, 0xa0,0xb5,0x55,	// set VSL
-	2, 0xb6, 0x01,	// precharge 2
-	1, 0xaf,	// display ON
-	0};
 // List of command/parameters to initialize the ili9341 display
-static unsigned char uc240InitList[] = {
+const unsigned char uc240InitList[]PROGMEM = {
         4, 0xEF, 0x03, 0x80, 0x02,
         4, 0xCF, 0x00, 0XC1, 0X30,
         5, 0xED, 0x64, 0x03, 0X12, 0X81,
@@ -757,8 +745,55 @@ static unsigned char uc240InitList[] = {
         3, 0xb1, 0x00, 0x10, // FrameRate Control 119Hz
         0
 };
+// Init sequence for the SSD1331 OLED display
+// Courtesy of Adafruit's SSD1331 library
+const unsigned char ucSSD1331InitList[] PROGMEM = {
+    1, 0xae,    // display off
+    1, 0xa0,    // set remap
+    1, 0x72,    // RGB 0x76 == BGR
+    2, 0xa1, 0x00,  // set start line
+    2, 0xa2, 0x00,  // set display offset
+    1, 0xa4,    // normal display
+    2, 0xa8, 0x3f,  // set multiplex 1/64 duty
+    2, 0xad, 0x8e, // set master configuration
+    2, 0xb0, 0x0b, // disable power save
+    2, 0xb1, 0x31, // phase period adjustment
+    2, 0xb3, 0xf0, // clock divider
+    2, 0x8a, 0x64, // precharge a
+    2, 0x8b, 0x78, // precharge b
+    2, 0x8c, 0x64, // precharge c
+    2, 0xbb, 0x3a, // set precharge level
+    2, 0xbe, 0x3e, // set vcomh
+    2, 0x87, 0x06, // master current control
+    2, 0x81, 0x91, // contrast for color a
+    2, 0x82, 0x50, // contrast for color b
+    2, 0x83, 0x7D, // contrast for color c
+    1, 0xAF, // display on, normal
+    0,0
+};
+// List of command/parameters to initialize the SSD1351 OLED display
+const unsigned char ucOLEDInitList[] PROGMEM = {
+	2, 0xfd, 0x12, // unlock the controller
+	2, 0xfd, 0xb1, // unlock the command
+	1, 0xae,	// display off
+	2, 0xb3, 0xf1,  // clock divider
+	2, 0xca, 0x7f,	// mux ratio
+	2, 0xa0, 0x74,	// set remap
+	3, 0x15, 0x00, 0x7f,	// set column
+	3, 0x75, 0x00, 0x7f,	// set row
+	2, 0xb5, 0x00,	// set GPIO state
+	2, 0xab, 0x01,	// function select (internal diode drop)
+	2, 0xb1, 0x32,	// precharge
+	2, 0xbe, 0x05,	// vcomh
+	1, 0xa6,	// set normal display mode
+	4, 0xc1, 0xc8, 0x80, 0xc8, // contrast ABC
+	2, 0xc7, 0x0f,	// contrast master
+	4, 0xb4, 0xa0,0xb5,0x55,	// set VSL
+	2, 0xb6, 0x01,	// precharge 2
+	1, 0xaf,	// display ON
+	0};
 // List of command/parameters for the SSD1283A display
-static unsigned char uc132InitList[] = {
+const unsigned char uc132InitList[]PROGMEM = {
     3, 0x10, 0x2F,0x8E,
     3, 0x11, 0x00,0x0C,
     3, 0x07, 0x00,0x21,
@@ -787,7 +822,7 @@ static unsigned char uc132InitList[] = {
 };
 
 // List of command/parameters to initialize the ili9342 display
-static unsigned char uc320InitList[] = {
+const unsigned char uc320InitList[]PROGMEM = {
         2, 0xc0, 0x23, // Power control
         2, 0xc1, 0x10, // Power control
         3, 0xc5, 0x3e, 0x28, // VCM control
@@ -803,32 +838,9 @@ static unsigned char uc320InitList[] = {
 //        3, 0xb1, 0x00, 0x10, // FrameRate Control 119Hz
         0
 };
-// List of command/parameters to initialize the ST7789 LCD
-static unsigned char uc240x240InitList[] = {
-	1, 0x13, // partial mode off
-	1, 0x21, // display inversion off
-	2, 0x36,0x08,	// memory access 0xc0 for 180 degree flipped
-	2, 0x3a,0x55,	// pixel format; 5=RGB565
-	3, 0x37,0x00,0x00, //
-	6, 0xb2,0x0c,0x0c,0x00,0x33,0x33, // Porch control
-	2, 0xb7,0x35,	// gate control
-	2, 0xbb,0x1a,	// VCOM
-	2, 0xc0,0x2c,	// LCM
-	2, 0xc2,0x01,	// VDV & VRH command enable
-	2, 0xc3,0x0b,	// VRH set
-	2, 0xc4,0x20,	// VDV set
-	2, 0xc6,0x0f,	// FR control 2
-	3, 0xd0, 0xa4, 0xa1, 	// Power control 1
-	15, 0xe0, 0x00,0x19,0x1e,0x0a,0x09,0x15,0x3d,0x44,0x51,0x12,0x03,
-		0x00,0x3f,0x3f, 	// gamma 1
-	15, 0xe1, 0x00,0x18,0x1e,0x0a,0x09,0x25,0x3f,0x43,0x52,0x33,0x03,
-		0x00,0x3f,0x3f,		// gamma 2
-	1, 0x29,	// display on
-	0
-};
 
 // List of command/parameters to initialize the st7735s display
-static unsigned char uc80InitList[] = {
+const unsigned char uc80InitList[]PROGMEM = {
 //        4, 0xb1, 0x01, 0x2c, 0x2d,    // frame rate control
 //        4, 0xb2, 0x01, 0x2c, 0x2d,    // frame rate control (idle mode)
 //        7, 0xb3, 0x01, 0x2c, 0x2d, 0x01, 0x2c, 0x2d, // frctrl - partial mode
@@ -855,7 +867,7 @@ static unsigned char uc80InitList[] = {
     0
 };
 // List of command/parameters to initialize the st7735r display
-static unsigned char uc128InitList[] = {
+const unsigned char uc128InitList[]PROGMEM = {
 //	4, 0xb1, 0x01, 0x2c, 0x2d,	// frame rate control
 //	4, 0xb2, 0x01, 0x2c, 0x2d,	// frame rate control (idle mode)
 //	7, 0xb3, 0x01, 0x2c, 0x2d, 0x01, 0x2c, 0x2d, // frctrl - partial mode
@@ -880,7 +892,7 @@ static unsigned char uc128InitList[] = {
 	0
 };
 // List of command/parameters to initialize the hx8357 display
-static unsigned char uc480InitList[] = {
+const unsigned char uc480InitList[]PROGMEM = {
 	2, 0x3a, 0x55,
 	2, 0xc2, 0x44,
 	5, 0xc5, 0x00, 0x00, 0x00, 0x00,
@@ -948,7 +960,13 @@ static void myspiWrite(unsigned char *pBuf, int iLen, int iMode, int bRender)
         return; // don't write it to the display
     
     if (iCSPin != -1)
+    {
+#ifdef __AVR__
+      *outCS &= ~bitCS;
+#else
         myPinWrite(iCSPin, 0);
+#endif // __AVR__
+    }
 #ifdef ESP32_DMA
     esp_err_t ret;
 static spi_transaction_t t;
@@ -981,7 +999,13 @@ static spi_transaction_t t;
         spilcdSetMode(MODE_DATA);
 #endif
     if (iCSPin != -1)
-        myPinWrite(iCSPin, 1);
+    {
+#ifdef __AVR__
+       *outCS |= bitCS;
+#else
+       myPinWrite(iCSPin, 1);
+#endif
+    }
 } /* myspiWrite() */
 
 //
@@ -1008,32 +1032,32 @@ int spilcdSetGamma(int iMode)
 {
 int i;
 unsigned char *sE0, *sE1;
-static unsigned char ucE0_0[] = {0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1, 0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00};
-static unsigned char ucE1_0[] = {0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1, 0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F};
-static unsigned char ucE0_1[] = {0x1f, 0x1a, 0x18, 0x0a, 0x0f, 0x06, 0x45, 0x87, 0x32, 0x0a, 0x07, 0x02, 0x07, 0x05, 0x00};
-static unsigned char ucE1_1[] = {0x00, 0x25, 0x27, 0x05, 0x10, 0x09, 0x3a, 0x78, 0x4d, 0x05, 0x18, 0x0d, 0x38, 0x3a, 0x1f};
+const unsigned char ucE0_0[] PROGMEM = {0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1, 0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00};
+const unsigned char ucE1_0[] PROGMEM = {0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1, 0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F};
+const unsigned char ucE0_1[] PROGMEM = {0x1f, 0x1a, 0x18, 0x0a, 0x0f, 0x06, 0x45, 0x87, 0x32, 0x0a, 0x07, 0x02, 0x07, 0x05, 0x00};
+const unsigned char ucE1_1[] PROGMEM = {0x00, 0x25, 0x27, 0x05, 0x10, 0x09, 0x3a, 0x78, 0x4d, 0x05, 0x18, 0x0d, 0x38, 0x3a, 0x1f};
 
 	if (iMode < 0 || iMode > 1 || iLCDType != LCD_ILI9341)
 		return 1;
 	if (iMode == 0)
 	{
-		sE0 = ucE0_0;
-		sE1 = ucE1_0;
+		sE0 = (unsigned char *)ucE0_0;
+		sE1 = (unsigned char *)ucE1_0;
 	}
 	else
 	{
-		sE0 = ucE0_1;
-		sE1 = ucE1_1;
+		sE0 = (unsigned char *)ucE0_1;
+		sE1 = (unsigned char *)ucE1_1;
 	}
 	spilcdWriteCommand(0xe0);
 	for(i=0; i<16; i++)
 	{
-		spilcdWriteData8(*sE0++);
+		spilcdWriteData8(pgm_read_byte(sE0++));
 	}
 	spilcdWriteCommand(0xe1);
 	for(i=0; i<16; i++)
 	{
-		spilcdWriteData8(*sE1++);
+		spilcdWriteData8(pgm_read_byte(sE1++));
 	}
 
 	return 0;
@@ -1077,9 +1101,24 @@ static void spi_pre_transfer_callback(spi_transaction_t *t)
 //
 int spilcdInit(int iType, int bFlipRGB, int bInvert, int bFlipped, int32_t iSPIFreq, int iCS, int iDC, int iReset, int iLED, int iMISOPin, int iMOSIPin, int iCLKPin)
 {
-unsigned char *s;
+unsigned char *s, *d;
 int i, iCount;
    
+#ifdef __AVR__
+(void)iMISOPin; (void)iMOSIPin; (void)iCLKPin;
+{ // setup fast I/O
+  uint8_t port;
+    port = digitalPinToPort(iDC);
+    outDC = portOutputRegister(port);
+    bitDC = digitalPinToBitMask(iDC);
+    if (iCS != -1) {
+      port = digitalPinToPort(iCS);
+      outCS = portOutputRegister(port);
+      bitCS = digitalPinToBitMask(iCS);
+    }
+}
+#endif
+
 	iLEDPin = -1; // assume it's not defined
 	if (iType != LCD_ILI9341 && iType != LCD_ST7735S && iType != LCD_ST7735R && iType != LCD_HX8357 && iType != LCD_SSD1331 && iType != LCD_SSD1351 && iType != LCD_ILI9342 && iType != LCD_ST7789 && iType != LCD_ST7789_135 && iType != LCD_ST7789_NOCS && iType != LCD_ST7735S_B)
 	{
@@ -1177,10 +1216,13 @@ int i, iCount;
 	delayMicroseconds(60000);
 	delayMicroseconds(60000);
 	}
+    d = &ucRXBuf[256]; // point to middle otherwise full duplex SPI will overwrite our data
 	if (iLCDType == LCD_ST7789 || iLCDType == LCD_ST7789_135 || iLCDType == LCD_ST7789_NOCS)
 	{
         uint8_t iBGR = (bFlipRGB) ? 8:0;
-		s = uc240x240InitList;
+		s = (unsigned char *)&uc240x240InitList[0];
+        memcpy_P(d, s, sizeof(uc240x240InitList));
+        s = d;
 		if (bFlipped)
 			s[6] = 0xc0 + iBGR; // flip 180
 		else
@@ -1209,25 +1251,31 @@ int i, iCount;
 	} // ST7789
     else if (iLCDType == LCD_SSD1331)
     {
-        s = ucSSD1331InitList;
+        s = (unsigned char *)ucSSD1331InitList;
+        memcpy_P(d, ucSSD1331InitList, sizeof(ucSSD1331InitList));
+        s = d;
 
         iCurrentWidth = iWidth = 96;
         iCurrentHeight = iHeight = 64;
 
         if (bFlipRGB)
-            ucSSD1331InitList[6] = 0x76;
+        { // copy to RAM to modify it
+            s[6] = 0x76;
+        }
     }
 	else if (iLCDType == LCD_SSD1351)
 	{
-		s = ucOLEDInitList; // do the commands manually
-
+		s = (unsigned char *)ucOLEDInitList; // do the commands manually
+                memcpy_P(d, s, sizeof(ucOLEDInitList));
                 iCurrentWidth = iWidth = 128;
                 iCurrentHeight = iHeight = 128;
 	}
     // Send the commands/parameters to initialize the LCD controller
 	else if (iLCDType == LCD_ILI9341)
-	{
-		s = uc240InitList;
+	{  // copy to RAM to modify
+            s = (unsigned char *)uc240InitList;
+            memcpy_P(d, s, sizeof(uc240InitList));
+            s = d;
         if (bInvert)
             s[52] = 0x21; // invert pixels
         else
@@ -1241,13 +1289,16 @@ int i, iCount;
 	}
         else if (iLCDType == LCD_SSD1283A)
         {
-                s = uc132InitList;
+                s = (unsigned char *)uc132InitList;
+                memcpy_P(d, s, sizeof(uc132InitList));
                 iCurrentWidth = iWidth = 132;
                 iCurrentHeight = iHeight = 132;
         }
 	else if (iLCDType == LCD_ILI9342)
 	{
-		s = uc320InitList;
+		s = (unsigned char *)uc320InitList;
+                memcpy_P(d, s, sizeof(uc320InitList));
+                s = d;
 		if (bFlipped)
 			s[15] = 0xc8; // flip 180
 		else
@@ -1262,7 +1313,9 @@ int i, iCount;
                 spilcdWriteData16(0x0001, 1);
                 delayMicroseconds(60000);
 
-		s = uc480InitList;
+		s = (unsigned char *)uc480InitList;
+                memcpy_P(d, s, sizeof(uc480InitList));
+                s = d;
 		if (bFlipped)
 			s[65] = 0x88; // flip 180
 		else
@@ -1275,7 +1328,9 @@ int i, iCount;
         uint8_t iBGR = 0;
         if (bFlipRGB)
             iBGR = 8;
-        s = uc80InitList;
+        s = (unsigned char *)uc80InitList;
+        memcpy_P(d, s, sizeof(uc80InitList));
+        s = d;
         if (bInvert)
            s[55] = 0x21; // invert on
         else
@@ -1299,7 +1354,9 @@ int i, iCount;
     }
 	else // ST7735R
 	{
-		s = uc128InitList;
+		s = (unsigned char *)uc128InitList;
+                memcpy_P(d, s, sizeof(uc128InitList));
+                s = d;
 		if (bFlipped)
 			s[5] = 0x00; // flipped 180 degrees
 		else
@@ -1310,30 +1367,37 @@ int i, iCount;
 
 	iCount = 1;
     bSetPosition = 1; // don't let the data writes affect RAM
+    s = d; // start of RAM copy of our data
 	while (iCount)
 	{
 		iCount = *s++;
 		if (iCount != 0)
 		{
-             if (iCount == LCD_DELAY)
-                 delay(*s++);
-             else
-             {
-	             spilcdWriteCommand(*s++);
+               unsigned char uc;
+               if (iCount == LCD_DELAY)
+               {
+                 uc = *s++;
+                 delay(uc);
+               }
+               else
+               {
+                 uc = *s++;
+                   spilcdWriteCommand(uc);
                  for (i=0; i<iCount-1; i++)
                  {
-                     // hackhackhack
-                     // the ssd1331 is kind of like the ssd1306 in that it expects the parameters
-                     // to each command to have the DC pin LOW while being sent
-                     if (iLCDType != LCD_SSD1331)
-                         spilcdWriteData8(*s++);
-                     else
-                         spilcdWriteCommand(*s++);
-			     } // for i
-             }
-         }
-	}
-    bSetPosition = 0;
+                    uc = *s++;
+                 // hackhackhack
+                 // the ssd1331 is kind of like the ssd1306 in that it expects the parameters
+                 // to each command to have the DC pin LOW while being sent
+                    if (iLCDType != LCD_SSD1331)
+                        spilcdWriteData8(uc);
+                    else
+                        spilcdWriteCommand(uc);
+                 } // for i
+              }
+          }
+	  }
+        bSetPosition = 0;
 	if (iLCDType != LCD_SSD1351 && iLCDType != LCD_SSD1331)
 	{
 		spilcdWriteCommand(0x11); // sleep out
@@ -1415,7 +1479,7 @@ void spilcdScroll(int iLines, int iFillColor)
 	if (iFillColor != -1) // fill the exposed lines
 	{
 	int i, iStart;
-	uint16_t usTemp[320];
+	uint16_t *usTemp = (uint16_t *)ucRXBuf;
 	uint32_t *d;
 	uint32_t u32Fill;
 		// quickly prepare a full line's worth of the color
@@ -1459,7 +1523,7 @@ void spilcdDrawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY,
     uint32_t ulSrcClr, ulDestClr, ulDestTrans;
     
     ulDestTrans = 32-iTranslucency; // inverted to combine src+dest
-    ulSrcClr = (usColor & 0xf81f) | ((usColor & 0x06e0) << 16); // shift green to upper 16-bits
+    ulSrcClr = (usColor & 0xf81f) | ((uint32_t)(usColor & 0x06e0) << 16); // shift green to upper 16-bits
     ulSrcClr *= iTranslucency; // prepare for color blending
     if (iDestX+iCX > iCurrentWidth) // trim to fit on display
         iCX = (iCurrentWidth - iDestX);
@@ -1522,7 +1586,7 @@ void spilcdDrawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY,
                 us = d[0]; // read destination pixel
                 us = (us >> 8) | (us << 8); // fix the byte order
                 // The fast way to combine 2 RGB565 colors
-                ulDestClr = (us & 0xf81f) | ((us & 0x06e0) << 16);
+                ulDestClr = (us & 0xf81f) | ((uint32_t)(us & 0x06e0) << 16);
                 ulDestClr = (ulDestClr * ulDestTrans);
                 ulDestClr += ulSrcClr; // combine old and new colors
                 ulDestClr = (ulDestClr >> 5) & ulMask; // done!
@@ -1587,7 +1651,7 @@ uint16_t usColor;
 			for (i=0; i<th; i++)
             {
                 usColor = (usColor1 >> 8) | (usColor1 << 8); // swap byte order
-                memset16(usTemp, usColor, iPerLine);
+                memset16((uint16_t*)usTemp, usColor, iPerLine);
                 myspiWrite((unsigned char *)usTemp, iPerLine*2, MODE_DATA, bRender);
                 // Update the color components
                 iRAcc += iDR;
@@ -1616,36 +1680,36 @@ uint16_t usColor;
         usColor = (usColor1 >> 8) | (usColor1 << 8); // swap byte order
 		// draw top/bottom
 		spilcdSetPosition(x, y, w, 1, bRender);
-        memset16(usTemp, usColor, w);
+        memset16((uint16_t*)usTemp, usColor, w);
         myspiWrite((unsigned char *)usTemp, w*2, MODE_DATA, bRender);
 		spilcdSetPosition(x, y + h-1, w, 1, bRender);
-        memset16(usTemp, usColor, w);
+        memset16((uint16_t*)usTemp, usColor, w);
 		myspiWrite((unsigned char *)usTemp, w*2, MODE_DATA, bRender);
 		// draw left/right
 		if (((ty + iScrollOffset) % iHeight) > iHeight-th)	
 		{
 			iStart = (iHeight - ((ty+iScrollOffset) % iHeight));
 			spilcdSetPosition(x, y, 1, iStart, bRender);
-            memset16(usTemp, usColor, iStart);
+            memset16((uint16_t*)usTemp, usColor, iStart);
 			myspiWrite((unsigned char *)usTemp, iStart*2, MODE_DATA, bRender);
 			spilcdSetPosition(x+w-1, y, 1, iStart, bRender);
-            memset16(usTemp, usColor, iStart);
+            memset16((uint16_t*)usTemp, usColor, iStart);
 			myspiWrite((unsigned char *)usTemp, iStart*2, MODE_DATA, bRender);
 			// second half
 			spilcdSetPosition(x,y+iStart, 1, h-iStart, bRender);
-            memset16(usTemp, usColor, h-iStart);
+            memset16((uint16_t*)usTemp, usColor, h-iStart);
 			myspiWrite((unsigned char *)usTemp, (h-iStart)*2, MODE_DATA, bRender);
 			spilcdSetPosition(x+w-1, y+iStart, 1, h-iStart, bRender);
-            memset16(usTemp, usColor, h-iStart);
+            memset16((uint16_t*)usTemp, usColor, h-iStart);
 			myspiWrite((unsigned char *)usTemp, (h-iStart)*2, MODE_DATA, bRender);
 		}
 		else // can do it in 1 shot
 		{
 			spilcdSetPosition(x, y, 1, h, bRender);
-            memset16(usTemp, usColor, h);
+            memset16((uint16_t*)usTemp, usColor, h);
 			myspiWrite((unsigned char *)usTemp, h*2, MODE_DATA, bRender);
 			spilcdSetPosition(x + w-1, y, 1, h, bRender);
-            memset16(usTemp, usColor, h);
+            memset16((uint16_t*)usTemp, usColor, h);
 			myspiWrite((unsigned char *)usTemp, h*2, MODE_DATA, bRender);
 		}
 	} // outline
@@ -1695,7 +1759,7 @@ void spilcdShutdown(void)
 	if (iLCDType == LCD_SSD1351 || iLCDType == LCD_SSD1331)
 		spilcdWriteCommand(0xae); // Display Off
 	else
-		spilcdWriteCommand(0x29); // Display OFF
+		spilcdWriteCommand(0x28); // Display OFF
 	if (iLEDPin != -1)
 		myPinWrite(iLEDPin, 0); // turn off the backlight
     spilcdFreeBackbuffer();
@@ -1950,7 +2014,7 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
    usBGColor = (usBGColor >> 8) | (usBGColor << 8);
 
    i = 0;
-   while (szMsg[i] && x < iWidth)
+   while (szMsg[i] && x < iCurrentWidth)
    {
       c = szMsg[i++];
       if (c < font.first || c > font.last) // undefined character
@@ -1963,8 +2027,8 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
       cx = pGlyph->width;
       cy = pGlyph->height;
       iBitOff = 0; // bitmap offset (in bits)
-      if (dy + cy > iHeight)
-         cy = iHeight - dy;
+      if (dy + cy > iCurrentHeight)
+         cy = iCurrentHeight - dy;
       else if (dy < 0) {
          cy += dy;
          iBitOff += (pGlyph->width * (-dy));
@@ -2079,7 +2143,8 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
                d = &u16Temp[0];
                for (ty=0; ty<pGlyph->height; ty++) {
                   uc = pgm_read_byte(&s[iBitOff>>3]);
-                  *d++ = (uc & (0x80 >> (iBitOff & 7))) ? usFGColor : usBGColor; 
+                  uc <<= (iBitOff & 7);
+                  *d++ = (uc & 0x80) ? usFGColor : usBGColor;
                   iBitOff -= pGlyph->width;
                } // for ty
                myspiWrite((uint8_t *)u16Temp, pGlyph->height*sizeof(uint16_t), MODE_DATA, 1);
@@ -2237,7 +2302,10 @@ uint8_t *pFont;
 //
 int spilcdWriteString(int x, int y, char *szMsg, int usFGColor, int usBGColor, int iFontSize, int bRender)
 {
-int i, j, k, l, iMaxLen, iLen;
+int i, j, k, iMaxLen, iLen;
+#ifndef __AVR__
+int l;
+#endif
 unsigned char *s;
 unsigned short usFG = (usFGColor >> 8) | (usFGColor << 8);
 unsigned short usBG = (usBGColor >> 8) | (usBGColor << 8);
@@ -2254,8 +2322,7 @@ uint16_t usPitch = iScreenPitch/2;
 		if (iLen < 0) return -1;
 		for (i=0; i<iLen; i++)
 		{
-			unsigned short usTemp[512];
-			unsigned short *usD;
+			uint16_t *usD, *usTemp = (uint16_t *)ucRXBuf;
             uint8_t ucMask;
 			s = (uint8_t *)&ucBigFont[((unsigned char)szMsg[i]-32)*64];
 			usD = &usTemp[0];
@@ -2288,7 +2355,7 @@ uint16_t usPitch = iScreenPitch/2;
                                 *usD++ = usBG;
                         } // for j
                     }
-                } // for l
+                } // for j
 			}
 			else // not rotated
 			{ // portrait
@@ -2330,8 +2397,7 @@ uint16_t usPitch = iScreenPitch/2;
 #endif // !__AVR__
     if (iFontSize == FONT_NORMAL || iFontSize == FONT_SMALL) // draw the 6x8 or 8x8 font
 	{
-		unsigned short usTemp[64];
-		unsigned short *usD;
+		uint16_t *usD, *usTemp = (uint16_t *)ucRXBuf;
         int cx;
         uint8_t c, *pFont;
 
@@ -2411,8 +2477,7 @@ uint16_t usPitch = iScreenPitch/2;
 	} // 6x8 and 8x8
     if (iFontSize == FONT_STRETCHED) // 8x8 stretched to 16x16
     {
-        unsigned short usTemp[256];
-        unsigned short *usD;
+        uint16_t *usD, *usTemp = (uint16_t *)ucRXBuf;
         uint8_t c;
         
         if ((16*iLen) + x > iMaxLen) iLen = (iMaxLen - x)/16; // can't display it all
@@ -2515,7 +2580,7 @@ void DrawScaledPixel(int32_t iCX, int32_t iCY, int32_t x, int32_t y, int32_t iXF
     spilcdSetPosition(x, y, 1, 1, bRender);
     myspiWrite(ucBuf, 2, MODE_DATA, bRender);
 } /* DrawScaledPixel() */
-void DrawScaledLine(int32_t iCX, int32_t iCY, int32_t x, int32_t y, int32_t iXFrac, int32_t iYFrac, unsigned short *pBuf, int bRender)
+void DrawScaledLine(int32_t iCX, int32_t iCY, int32_t x, int32_t y, int32_t iXFrac, int32_t iYFrac, uint16_t *pBuf, int bRender)
 {
     int32_t iLen, x2;
     if (iXFrac != 0x10000) x = (x * iXFrac) >> 16;
@@ -2536,8 +2601,8 @@ void DrawScaledLine(int32_t iCX, int32_t iCY, int32_t x, int32_t y, int32_t iXFr
     {
     int i;
     unsigned short us = pBuf[0];
-      for (i=0; i<iLen; i++)
-        pBuf[i+1] = us;
+      for (i=1; i<iLen; i++)
+        pBuf[i] = us;
     }
     myspiWrite((uint8_t*)&pBuf[1], iLen*2, MODE_DATA, bRender);
 #endif
@@ -2546,15 +2611,19 @@ void DrawScaledLine(int32_t iCX, int32_t iCY, int32_t x, int32_t y, int32_t iXFr
 // Draw the 8 pixels around the Bresenham circle
 // (scaled to make an ellipse)
 //
-void BresenhamCircle(int32_t iCX, int32_t iCY, int32_t x, int32_t y, int32_t iXFrac, int32_t iYFrac, unsigned short iColor, uint16_t *pFill, int bRender)
+void BresenhamCircle(int32_t iCX, int32_t iCY, int32_t x, int32_t y, int32_t iXFrac, int32_t iYFrac, uint16_t iColor, uint16_t *pFill, int bRender)
 {
     if (pFill != NULL) // draw a filled ellipse
     {
+        static int prev_y = -1;
         // for a filled ellipse, draw 4 lines instead of 8 pixels
-        DrawScaledLine(iCX, iCY, x, y, iXFrac, iYFrac, pFill, bRender);
-        DrawScaledLine(iCX, iCY, x, -y, iXFrac, iYFrac, pFill, bRender);
         DrawScaledLine(iCX, iCY, y, x, iXFrac, iYFrac, pFill, bRender);
         DrawScaledLine(iCX, iCY, y, -x, iXFrac, iYFrac, pFill, bRender);
+        if (y != prev_y) {
+            DrawScaledLine(iCX, iCY, x, y, iXFrac, iYFrac, pFill, bRender);
+            DrawScaledLine(iCX, iCY, x, -y, iXFrac, iYFrac, pFill, bRender);
+            prev_y = y;
+        }
     }
     else // draw 8 pixels around the edges
     {
@@ -2573,7 +2642,7 @@ void spilcdEllipse(int32_t iCenterX, int32_t iCenterY, int32_t iRadiusX, int32_t
 {
     int32_t iRadius, iXFrac, iYFrac;
     int32_t iDelta, x, y;
-    uint16_t us, *pus, usTemp[320]; // up to 320 pixels wide
+    uint16_t us, *pus, *usTemp = (uint16_t *)ucRXBuf; // up to 320 pixels wide
     
     if (iRadiusX > iRadiusY) // use X as the primary radius
     {
@@ -2609,7 +2678,7 @@ void spilcdEllipse(int32_t iCenterX, int32_t iCenterY, int32_t iRadiusX, int32_t
     }
     iDelta = 3 - (2 * iRadius);
     x = 0; y = iRadius;
-    while (x <= y)
+    while (x < y)
     {
         BresenhamCircle(iCenterX, iCenterY, x, y, iXFrac, iYFrac, usColor, pus, bRender);
         x++;
@@ -2649,7 +2718,7 @@ int spilcdFill(unsigned short usData, int bRender)
 {
 int i, cx, tx, x, y;
 int iOldOrient;
-uint16_t u16Temp[160];
+uint16_t *u16Temp = (uint16_t *)ucRXBuf;
 
     // make sure we're in landscape mode to use the correct coordinates
     iOldOrient = iOrientation;
@@ -2682,7 +2751,7 @@ uint16_t u16Temp[160];
 //
 int spilcdDrawRetroTile(int x, int y, unsigned char *pTile, int iPitch, int bRender)
 {
-    unsigned char ucTemp[416];
+    unsigned char *ucTemp = ucRXBuf;
     int i, j, iPitch16;
     uint16_t *s, *d, u16A, u16B;
     
@@ -2734,7 +2803,7 @@ int spilcdDrawRetroTile(int x, int y, unsigned char *pTile, int iPitch, int bRen
 //
 int spilcdDrawSmallTile(int x, int y, unsigned char *pTile, int iPitch, int bRender)
 {
-    unsigned char ucTemp[448];
+    unsigned char *ucTemp = ucRXBuf;
     int i, j, iPitch32;
     uint16_t *d;
     uint32_t *s;
@@ -3042,7 +3111,7 @@ int spilcdDraw53Tile(int x, int y, int cx, int cy, unsigned char *pTile, int iPi
 //
 int spilcdDrawMaskedTile(int x, int y, unsigned char *pTile, int iPitch, int iColMask, int iRowMask, int bRender)
 {
-    unsigned char ucTemp[512]; // fix the byte order first to write it more quickly
+    unsigned char *ucTemp = ucRXBuf; // fix the byte order first to write it more quickly
     int i, j;
     unsigned char *s, *d;
     int iNumCols, iNumRows, iTotalSize;
@@ -3145,7 +3214,7 @@ int spilcdDrawTile(int x, int y, int iTileWidth, int iTileHeight, unsigned char 
             {
                 // combine the 2 pixels into a single write for better memory performance
                 ul32 = __builtin_bswap16(*(uint16_t *)&s[iPitch]);
-                ul32 |= (__builtin_bswap16(*(uint16_t *)s) << 16); // swap byte order (MSB first)
+                ul32 |= ((uint32_t)__builtin_bswap16(*(uint16_t *)s) << 16); // swap byte order (MSB first)
                 *(uint32_t *)d = ul32;
                 d += 4;
                 s -= iPitch*2;
@@ -3297,7 +3366,7 @@ void spilcdDrawLine(int x1, int y1, int x2, int y2, unsigned short usColor, int 
     int i, error;
     int xinc, yinc;
     int iLen, x, y;
-    uint16_t usTemp[320], us;
+    uint16_t *usTemp = (uint16_t *)ucRXBuf, us;
 
     if (x1 < 0 || x2 < 0 || y1 < 0 || y2 < 0 || x1 >= iCurrentWidth || x2 >= iCurrentWidth || y1 >= iCurrentHeight || y2 >= iCurrentHeight)
         return;
@@ -3424,7 +3493,7 @@ int spilcdDrawBMP(uint8_t *pBMP, int iDestX, int iDestY, int bStretch, int iTran
     uint16_t usPalette[256];
     int16_t cx, cy, bpp, y; // offset to bitmap data
     int j, x;
-    uint16_t *pus, us, *d, usTemp[320]; // process a line at a time
+    uint16_t *pus, us, *d, *usTemp = (uint16_t *)ucRXBuf; // process a line at a time
     uint8_t bFlipped = false;
     
     if (pBMP[0] != 'B' || pBMP[1] != 'M') // must start with 'BM'
