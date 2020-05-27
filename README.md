@@ -17,13 +17,14 @@ such as ellipses, translucent/transparent rotating bitmaps, and transparent text
 
 Features:<br>
 ---------<br>
-- Supports the most popular display controllers (SSD1351, ST7735, ST7789, ILI9341, ILI9342, HX8357)
-- Supports display modes: 0/180 degree rotated, inverted, BGR or RGB color order
-- Supports 90/270 degree rotated operation (software does the rotation)
-- Optimized primitives for text, lines, rectangles, ellipses and bitmap drawing
-- Fast (50x) drawing of Adafruit format custom fonts with optional blanking mode to erase old data without flickering
-- Load and display 4 and 16-bit Windows BMP files
-- Deferred rendering allows quickly preparing a back buffer, then displaying it
+- Supports the most popular display controllers (SSD1351, ST7735, ST7789, ILI9341, ILI9342, HX8357, ILI9468)<br>
+- Supports display modes: 0/180 degree rotated, inverted, BGR or RGB color order<br>
+- Supports 90/270 degree rotated operation (software does the rotation)<br>
+- Optimized primitives for text, lines, rectangles, ellipses and bitmap drawing<br>
+- Fast (50x) drawing of Adafruit format custom fonts with optional blanking mode to erase old data without flickering<br>
+- Load and display 4 and 16-bit Windows BMP files<br>
+- Deferred rendering allows quickly preparing a back buffer, then displaying it<br>
+- Callbacks allow working with non-SPI displays (e.g. 8/16-bit parallel)<br>
 <br>
 
 

@@ -29,9 +29,24 @@ enum {
 };
 #endif
 
+//
+// Data callback function for custom (non-SPI) LCDs
+// e.g. 8/16-bit parallel/8080
+// The last parameter can be MODE_DATA or MODE_COMMAND
+// CS toggle must be handled by the callback function
+//
+typedef void (*DATACALLBACK)(uint8_t *pData, int len, int iMode);
+
+//
+// Reset callback function for custom (non-SPI) LCDs
+// e.g. 8/16-bit parallel/8080
+// Use it to prepare the GPIO lines and reset the display
+//
+typedef void (*RESETCALLBACK)(void);
+
 // Proportional font data taken from Adafruit_GFX library
 /// Font data stored PER GLYPH
-#ifndef _ADAFRUIT_GFX_H
+#if !defined( _ADAFRUIT_GFX_H ) && !defined( _GFXFONT_H_ )
 typedef struct {
   uint16_t bitmapOffset; ///< Pointer into GFXfont->bitmap
   uint8_t width;         ///< Bitmap dimensions in pixels
@@ -208,6 +223,12 @@ void spilcdSetPosition(int x, int y, int w, int h, int bRender);
 int spilcdDrawBMP(uint8_t *pBMP, int iDestX, int iDestY, int bStretch, int iTransparent, int bRender);
 
 //
+// Give bb_spi_lcd two callback functions to talk to the LCD
+// useful when not using SPI or providing an optimized interface
+//
+void spilcdSetCallbacks(RESETCALLBACK pfnReset, DATACALLBACK pfnData);
+
+//
 // Show part or all of the back buffer on the display
 // Used after delayed rendering of graphics
 //
@@ -247,7 +268,7 @@ void spilcdRotateBitmap(uint8_t *pSrc, uint8_t *pDest, int iBpp, int iWidth, int
 enum {
    LCD_INVALID=0,
    LCD_ILI9341,
-   LCD_HX8357,
+   LCD_HX8357, // 320x480
    LCD_ST7735R, // 128x160
    LCD_ST7735S, // 80x160 with offset of 24,0
    LCD_ST7735S_B, // 80x160 with offset of 26,2
@@ -257,7 +278,9 @@ enum {
    LCD_ST7789,  // 240x240
    LCD_ST7789_135, // 135x240
    LCD_ST7789_NOCS, // 240x240 without CS, vertical offset of 80, MODE3
-   LCD_SSD1283A // 132x132
+   LCD_SSD1283A, // 132x132
+   LCD_ILI9486, // 320x480
+   LCD_VALID_MAX
 };
 
 // Errors returned by various drawing functions

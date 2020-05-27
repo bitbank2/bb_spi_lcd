@@ -95,6 +95,9 @@ static int iOrientation = LCD_ORIENTATION_NATIVE; // default to 'natural' orient
 static int iLCDType;
 static int iWidth, iHeight;
 static int iCurrentWidth, iCurrentHeight; // reflects virtual size due to orientation
+// User-provided callback for writing data/commands
+static DATACALLBACK pfnDataCallback = NULL;
+static RESETCALLBACK pfnResetCallback = NULL;
 // For back buffer support
 static int iScreenPitch, iOffset, iMaxOffset;
 static int iSPIMode;
@@ -891,6 +894,27 @@ const unsigned char uc128InitList[]PROGMEM = {
 		0x06,0x06,0x02,0x0f,
 	0
 };
+// List of command/parameters to initialize the ILI9486 display
+const unsigned char ucILI9486InitList[] PROGMEM = {
+   2, 0x01, 0x00,
+   LCD_DELAY, 50,
+   2, 0x28, 0x00,
+   3, 0xc0, 0xd, 0xd,
+   3, 0xc1, 0x43, 0x00,
+   2, 0xc2, 0x00,
+   3, 0xc5, 0x00, 0x48,
+   4, 0xb6, 0x00, 0x22, 0x3b,
+   16, 0xe0,0x0f,0x24,0x1c,0x0a,0x0f,0x08,0x43,0x88,0x32,0x0f,0x10,0x06,0x0f,0x07,0x00,
+   16, 0xe1,0x0f,0x38,0x30,0x09,0x0f,0x0f,0x4e,0x77,0x3c,0x07,0x10,0x05,0x23,0x1b,0x00,
+   1, 0x20,
+   2, 0x36,0x0a,
+   2, 0x3a,0x55,
+   1, 0x11,
+   LCD_DELAY, 150,
+   1, 0x29,
+   LCD_DELAY, 25,
+   0
+};
 // List of command/parameters to initialize the hx8357 display
 const unsigned char uc480InitList[]PROGMEM = {
 	2, 0x3a, 0x55,
@@ -958,7 +982,11 @@ static void myspiWrite(unsigned char *pBuf, int iLen, int iMode, int bRender)
     }
     if (!bRender)
         return; // don't write it to the display
-    
+    if (pfnDataCallback != NULL)
+    {
+       (*pfnDataCallback)(pBuf, iLen, iMode);
+       return;
+    } 
     if (iCSPin != -1)
     {
 #ifdef __AVR__
@@ -1094,7 +1122,15 @@ static void spi_pre_transfer_callback(spi_transaction_t *t)
 //{
 //}
 #endif
-
+//
+// Give bb_spi_lcd two callback functions to talk to the LCD
+// useful when not using SPI or providing an optimized interface
+//
+void spilcdSetCallbacks(RESETCALLBACK pfnReset, DATACALLBACK pfnData)
+{
+   pfnDataCallback = pfnData;
+   pfnResetCallback = pfnReset;
+}
 //
 // Initialize the LCD controller and clear the display
 // LED pin is optional - pass as -1 to disable
@@ -1104,6 +1140,14 @@ int spilcdInit(int iType, int bFlipRGB, int bInvert, int bFlipped, int32_t iSPIF
 unsigned char *s, *d;
 int i, iCount;
    
+   iMemoryX = iMemoryY = 0;
+   iLCDType = iType;
+
+  if (pfnResetCallback != NULL)
+  {
+     (*pfnResetCallback)();
+     goto start_of_init;
+  }
 #ifdef __AVR__
 (void)iMISOPin; (void)iMOSIPin; (void)iCLKPin;
 { // setup fast I/O
@@ -1120,15 +1164,13 @@ int i, iCount;
 #endif
 
 	iLEDPin = -1; // assume it's not defined
-	if (iType != LCD_ILI9341 && iType != LCD_ST7735S && iType != LCD_ST7735R && iType != LCD_HX8357 && iType != LCD_SSD1331 && iType != LCD_SSD1351 && iType != LCD_ILI9342 && iType != LCD_ST7789 && iType != LCD_ST7789_135 && iType != LCD_ST7789_NOCS && iType != LCD_ST7735S_B)
+	if (iType <= LCD_INVALID || iType >= LCD_VALID_MAX)
 	{
 #ifndef _LINUX_
 		Serial.println("Unsupported display type\n");
 #endif // _LINUX_
 		return -1;
 	}
-	iMemoryX = iMemoryY = 0;
-	iLCDType = iType;
 #ifndef _LINUX_
 	iSPIMode = (iType == LCD_ST7789_NOCS) ? SPI_MODE3 : SPI_MODE0;
 #endif
@@ -1216,6 +1258,7 @@ int i, iCount;
 	delayMicroseconds(60000);
 	delayMicroseconds(60000);
 	}
+start_of_init:
     d = &ucRXBuf[256]; // point to middle otherwise full duplex SPI will overwrite our data
 	if (iLCDType == LCD_ST7789 || iLCDType == LCD_ST7789_135 || iLCDType == LCD_ST7789_NOCS)
 	{
@@ -1323,6 +1366,26 @@ int i, iCount;
 		iCurrentWidth = iWidth = 320;
 		iCurrentHeight = iHeight = 480;
 	}
+        else if (iLCDType == LCD_ILI9486)
+        {
+            uint8_t ucBGRFlags;
+            s = (unsigned char *)ucILI9486InitList;
+            memcpy_P(d, s, sizeof(ucILI9486InitList));
+            s = d;
+            ucBGRFlags = 0xa; // normal direction, RGB color order
+            if (bInvert)
+               d[63] = 0x21; // invert display command
+            if (bFlipRGB || bFlipped)
+            {
+               if (bFlipRGB)
+                  ucBGRFlags |= 8;
+               if (bFlipped) // rotate 180
+                  ucBGRFlags ^= 0xc0;
+               d[66] = ucBGRFlags;
+            }
+            iCurrentWidth = iWidth = 320;
+            iCurrentHeight = iHeight = 480;
+        }
     else if (iLCDType == LCD_ST7735S || iLCDType == LCD_ST7735S_B)
     {
         uint8_t iBGR = 0;
@@ -1892,7 +1955,7 @@ unsigned char ucBuf[8];
         return;
     }
 	spilcdWriteCommand(0x2a); // set column address
-	if (iLCDType == LCD_ILI9341 || iLCDType == LCD_ILI9342 || iLCDType == LCD_ST7735R || iLCDType == LCD_ST7789 || iLCDType == LCD_ST7735S)
+	if (iLCDType == LCD_ILI9341 || iLCDType == LCD_ILI9342 || iLCDType == LCD_ST7735R || iLCDType == LCD_ST7789 || iLCDType == LCD_ST7735S || iLCDType == LCD_ILI9486)
 	{
 		x += iMemoryX;
 		ucBuf[0] = (unsigned char)(x >> 8);
@@ -1919,7 +1982,7 @@ unsigned char ucBuf[8];
 		myspiWrite(ucBuf, 8, MODE_DATA, 1);
 	}
 	spilcdWriteCommand(0x2b); // set row address
-	if (iLCDType == LCD_ILI9341 || iLCDType == LCD_ILI9342 || iLCDType == LCD_ST7735R || iLCDType == LCD_ST7735S || iLCDType == LCD_ST7789)
+	if (iLCDType == LCD_ILI9341 || iLCDType == LCD_ILI9342 || iLCDType == LCD_ST7735R || iLCDType == LCD_ST7735S || iLCDType == LCD_ST7789 || iLCDType == LCD_ILI9486)
 	{
 		y += iMemoryY;
 		ucBuf[0] = (unsigned char)(y >> 8);
