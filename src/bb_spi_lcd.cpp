@@ -80,7 +80,7 @@ static int iTXBufSize = 4096; // max reasonable size
 #else
 static int iTXBufSize;
 static unsigned char *ucTXBuf;
-static unsigned char ucRXBuf[648];
+static unsigned char ucRXBuf[4096];
 #endif
 #define LCD_DELAY 0xff
 #ifdef __AVR__
@@ -111,6 +111,10 @@ static void spilcdWriteData8(unsigned char c);
 static void spilcdWriteData16(unsigned short us, int bRender);
 void spilcdSetPosition(int x, int y, int w, int h, int bRender);
 int spilcdFill(unsigned short usData, int bRender);
+const unsigned char ucE0_0[] PROGMEM = {0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1, 0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00};
+const unsigned char ucE1_0[] PROGMEM = {0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1, 0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F};
+const unsigned char ucE0_1[] PROGMEM = {0x1f, 0x1a, 0x18, 0x0a, 0x0f, 0x06, 0x45, 0x87, 0x32, 0x0a, 0x07, 0x02, 0x07, 0x05, 0x00};
+const unsigned char ucE1_1[] PROGMEM = {0x00, 0x25, 0x27, 0x05, 0x10, 0x09, 0x3a, 0x78, 0x4d, 0x05, 0x18, 0x0d, 0x38, 0x3a, 0x1f};
 
 // small (8x8) font
 const uint8_t ucFont[]PROGMEM = {
@@ -1060,10 +1064,6 @@ int spilcdSetGamma(int iMode)
 {
 int i;
 unsigned char *sE0, *sE1;
-const unsigned char ucE0_0[] PROGMEM = {0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1, 0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00};
-const unsigned char ucE1_0[] PROGMEM = {0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1, 0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F};
-const unsigned char ucE0_1[] PROGMEM = {0x1f, 0x1a, 0x18, 0x0a, 0x0f, 0x06, 0x45, 0x87, 0x32, 0x0a, 0x07, 0x02, 0x07, 0x05, 0x00};
-const unsigned char ucE1_1[] PROGMEM = {0x00, 0x25, 0x27, 0x05, 0x10, 0x09, 0x3a, 0x78, 0x4d, 0x05, 0x18, 0x0d, 0x38, 0x3a, 0x1f};
 
 	if (iMode < 0 || iMode > 1 || iLCDType != LCD_ILI9341)
 		return 1;
@@ -3541,6 +3541,139 @@ void spilcdDrawLine(int x1, int y1, int x2, int y2, unsigned short usColor, int 
         }
     } // y major case
 } /* spilcdDrawLine() */
+//
+// Decompress one line of 8-bit RLE data
+//
+unsigned char * DecodeRLE8(unsigned char *s, int iWidth, uint16_t *d, uint16_t *usPalette)
+{
+unsigned char c, ucRepeat, ucCount, ucColor;
+long l;
+
+   ucRepeat = 0;
+   ucCount = 0;
+
+   while (iWidth > 0)
+   {
+      if (ucCount) // some non-repeating bytes to deal with
+      {  
+         while (ucCount && iWidth > 0)
+         {  
+            ucCount--;
+            iWidth--; 
+            ucColor = *s++;
+            *d++ = usPalette[ucColor];
+         } 
+         l = (long)s;
+         if (l & 1) s++; // compressed data pointer must always be even
+      }
+      if (ucRepeat == 0 && iWidth > 0) // get a new repeat code or command byte
+      {
+         ucRepeat = *s++;
+         if (ucRepeat == 0) // command code
+         {
+            c = *s++;
+            switch (c)
+            {
+               case 0: // end of line
+                 break; // we already deal with this
+               case 1: // end of bitmap
+                 break; // we already deal with this
+               case 2: // move
+                 c = *s++; // debug - delta X
+                 d += c; iWidth -= c;
+                 c = *s++; // debug - delta Y
+                 break;
+               default: // uncompressed data
+                 ucCount = c;
+                 break;
+            } // switch on command byte
+         }
+         else
+         {
+            ucColor = *s++; // get the new colors
+         }     
+      }
+      while (ucRepeat && iWidth > 0)
+      {
+         ucRepeat--;
+         *d++ = usPalette[ucColor];
+         iWidth--;
+      } // while decoding the current line
+   } // while pixels on the current line to draw
+   return s;
+} /* DecodeRLE8() */
+
+//
+// Decompress one line of 4-bit RLE data
+//
+unsigned char * DecodeRLE4(unsigned char *s, int iWidth, uint16_t *d, uint16_t *usPalette)
+{
+unsigned char c, ucOdd, ucRepeat, ucCount, ucColor, uc1, uc2;
+long l;
+
+   ucRepeat = 0;
+   ucCount = 0;
+
+   while (iWidth > 0)
+   {
+      if (ucCount) // some non-repeating bytes to deal with
+      {
+         while (ucCount && iWidth > 0)
+         {
+            ucCount--;
+            iWidth--;
+            ucColor = *s++;
+            uc1 = ucColor >> 4; uc2 = ucColor & 0xf;
+            *d++ = usPalette[uc1];
+            if (ucCount && iWidth)
+            {
+               *d++ = usPalette[uc2];
+               ucCount--;
+               iWidth--;
+            }
+         }
+         l = (long)s;
+         if (l & 1) s++; // compressed data pointer must always be even
+      }
+      if (ucRepeat == 0 && iWidth > 0) // get a new repeat code or command byte
+      {
+         ucRepeat = *s++;
+         if (ucRepeat == 0) // command code
+         {
+            c = *s++;
+            switch (c)
+            {
+               case 0: // end of line
+                 break; // we already deal with this
+               case 1: // end of bitmap
+                 break; // we already deal with this
+               case 2: // move
+                 c = *s++; // debug - delta X
+                 d += c; iWidth -= c;
+                 c = *s++; // debug - delta Y
+                 break;
+               default: // uncompressed data
+                 ucCount = c;
+                 break;
+            } // switch on command byte
+         }
+         else
+         {
+            ucOdd = 0; // start on an even source pixel
+            ucColor = *s++; // get the new colors
+            uc1 = ucColor >> 4; uc2 = ucColor & 0xf;
+         }     
+      }
+      while (ucRepeat && iWidth > 0)
+      {
+         ucRepeat--;
+         *d++ = (ucOdd) ? usPalette[uc2] : usPalette[uc1]; 
+         ucOdd = !ucOdd;
+         iWidth--;
+      } // while decoding the current line
+   } // while pixels on the current line to draw
+   return s;
+} /* DecodeRLE4() */
 
 //
 // Draw a 4, 8 or 16-bit Windows uncompressed bitmap onto the display
@@ -3554,6 +3687,8 @@ int spilcdDrawBMP(uint8_t *pBMP, int iDestX, int iDestY, int bStretch, int iTran
 {
     int iOffBits, iPitch;
     uint16_t usPalette[256];
+    uint8_t *pCompressed;
+    uint8_t ucCompression;
     int16_t cx, cy, bpp, y; // offset to bitmap data
     int j, x;
     uint16_t *pus, us, *d, *usTemp = (uint16_t *)ucRXBuf; // process a line at a time
@@ -3563,6 +3698,9 @@ int spilcdDrawBMP(uint8_t *pBMP, int iDestX, int iDestY, int bStretch, int iTran
         return -1; // not a BMP file
     cx = pBMP[18] | pBMP[19]<<8;
     cy = pBMP[22] | pBMP[23]<<8;
+    ucCompression = pBMP[30]; // 0 = uncompressed, 1/2/4 = RLE compressed
+    if (ucCompression > 4) // unsupported feature
+        return -1;
     if (cy > 0) // BMP is flipped vertically (typical)
         bFlipped = true;
     else
@@ -3602,11 +3740,42 @@ int spilcdDrawBMP(uint8_t *pBMP, int iDestX, int iDestY, int bStretch, int iTran
             usPalette[x] = (us >> 8) | (us << 8); // swap byte order for writing to the display
         }
     }
+    if (ucCompression) // need to do it differently for RLE compressed
+    { 
+    uint16_t *d = (uint16_t *)ucRXBuf;
+    int y, iStartY, iEndY, iDeltaY;
+   
+       pCompressed = &pBMP[iOffBits]; // start of compressed data
+       if (bFlipped)
+       {  
+          iStartY = iDestY + cy - 1;
+          iEndY = iDestY - 1;
+          iDeltaY = -1;
+       }
+       else
+       {  
+          iStartY = iDestY;
+          iEndY = iDestY + cy;
+          iDeltaY = 1;
+       }
+       for (y=iStartY; y!= iEndY; y += iDeltaY)
+       {  
+          spilcdSetPosition(iDestX, y, cx, 1, bRender);
+          if (bpp == 4)
+             pCompressed = DecodeRLE4(pCompressed, cx, d, usPalette);
+          else
+             pCompressed = DecodeRLE8(pCompressed, cx, d, usPalette);
+          spilcdWriteDataBlock((uint8_t *)d, cx*2, bRender);
+       } 
+       return 0;
+    } // RLE compressed
+
     if (bFlipped)
     {
         iOffBits += (cy-1) * iPitch; // start from bottom
         iPitch = -iPitch;
     }
+
     // Handle the 2 LCD orientations. The LCD memory is always the same, so I need to write
     // the pixels differently when the display is rotated
     if (iOrientation == LCD_ORIENTATION_ROTATED)
@@ -3978,7 +4147,7 @@ int spilcdDrawBMP(uint8_t *pBMP, int iDestX, int iDestY, int bStretch, int iTran
         } // 1:1
     } // non-rotated
     return 0;
-} /* spilcdLoadBMP() */
+} /* spilcdDrawBMP() */
 
 #ifndef __AVR__
 //
