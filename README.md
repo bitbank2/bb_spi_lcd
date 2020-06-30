@@ -22,7 +22,7 @@ Features:<br>
 - Supports 90/270 degree rotated operation (software does the rotation)<br>
 - Optimized primitives for text, lines, rectangles, ellipses and bitmap drawing<br>
 - Fast (50x) drawing of Adafruit format custom fonts with optional blanking mode to erase old data without flickering<br>
-- Load and display 4 and 16-bit Windows BMP files<br>
+- Load and display 4, 8 and 16-bit Windows BMP files (including RLE)<br>
 - Deferred rendering allows quickly preparing a back buffer, then displaying it<br>
 - Callbacks allow working with non-SPI displays (e.g. 8/16-bit parallel)<br>
 <br>
