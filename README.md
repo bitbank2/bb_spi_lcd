@@ -17,9 +17,11 @@ such as ellipses, translucent/transparent rotating bitmaps, and transparent text
 
 Features:<br>
 ---------<br>
-- Supports the most popular display controllers (SSD1351, ST7735, ST7789, ILI9341, ILI9342, HX8357, ILI9468)<br>
-- Supports display modes: 0/180 degree rotated, inverted, BGR or RGB color order<br>
-- Supports 90/270 degree rotated operation (software does the rotation)<br>
+- Supports the most popular display controllers (SSD1351, ST7735, ST7789, ILI9225, ILI9341, ILI9342, HX8357, ILI9468)<br>
+- 5 built in font sizes (6x8, 8x8, 12x16, 16x16, 16x32)
+- Supports display modes: 0/90/180/270 degree rotated, inverted, BGR or RGB color order<br>
+- Direct display drawing, backbuffer (RAM) drawing or both simultaneously
+- DMA on SAMD21, SAMD51 and ESP32 targets<br>
 - Optimized primitives for text, lines, rectangles, ellipses and bitmap drawing<br>
 - Fast (50x) drawing of Adafruit format custom fonts with optional blanking mode to erase old data without flickering<br>
 - Load and display 4, 8 and 16-bit Windows BMP files (including RLE)<br>
