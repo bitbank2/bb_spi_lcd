@@ -20,7 +20,10 @@ Features:<br>
 - Supports the most popular display controllers (SSD1351, ST7735, ST7789, ILI9225, ILI9341, ILI9342, HX8357, ILI9468)<br>
 - 5 built in font sizes (6x8, 8x8, 12x16, 16x16, 16x32)
 - Supports display modes: 0/90/180/270 degree rotated, inverted, BGR or RGB color order<br>
-- Direct display drawing, backbuffer (RAM) drawing or both simultaneously
+- Direct display drawing, backbuffer (RAM) drawing or both simultaneously<br>
+- Display object structure (SPILCD) allows multiple simultaenous displays of different types to be controlled by a single MCU<br>
+- Bit Bang option allows controlling SPI displays on any GPIO pins<br>
+- Communication callback functions allows controlling parallel and custom connected displays<br>
 - DMA on SAMD21, SAMD51 and ESP32 targets<br>
 - Optimized primitives for text, lines, rectangles, ellipses and bitmap drawing<br>
 - Fast (50x) drawing of Adafruit format custom fonts with optional blanking mode to erase old data without flickering<br>
