@@ -22,11 +22,12 @@
 // these are defined the same in the OLED library
 #ifndef __SS_OLED_H__
 enum {
-  FONT_NORMAL=0,
-  FONT_LARGE,
-  FONT_SMALL,
-  FONT_STRETCHED,
-  FONT_12x16
+   FONT_6x8 = 0,
+   FONT_8x8,
+   FONT_12x16,
+   FONT_16x16,
+   FONT_16x32,
+   FONT_COUNT
 };
 #endif
 
@@ -192,7 +193,7 @@ int spilcdWriteStringFast(SPILCD *pLCD, int x, int y, char *szText, unsigned sho
 //
 // Draw a string in a proportional font you supply
 //
-int spilcdWriteStringCustom(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, uint16_t usBGColor, int bBlank);
+int spilcdWriteStringCustom(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, uint16_t usBGColor, int bBlank, int iFlags);
 //
 // Get the width and upper/lower bounds of text in a custom font
 //

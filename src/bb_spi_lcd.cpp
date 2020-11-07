@@ -2650,10 +2650,10 @@ uint16_t *usD;
 int cx;
 uint8_t *pFont;
 
-    if (iFontSize != FONT_SMALL && iFontSize != FONT_NORMAL)
+    if (iFontSize != FONT_6x8 && iFontSize != FONT_8x8)
         return -1; // invalid size
-    cx = (iFontSize == FONT_NORMAL) ? 8:6;
-    pFont = (iFontSize == FONT_NORMAL) ? (uint8_t *)ucFont : (uint8_t *)ucSmallFont;
+    cx = (iFontSize == FONT_8x8) ? 8:6;
+    pFont = (iFontSize == FONT_8x8) ? (uint8_t *)ucFont : (uint8_t *)ucSmallFont;
     iLen = strlen(szMsg);
 	if (iLen <=0) return -1; // can't use this function
 
@@ -2704,7 +2704,7 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
     if (usBGColor == -1)
         iFlags = DRAW_TO_RAM; // transparent text doesn't get written to the display
 #ifndef __AVR__
-	if (iFontSize == FONT_LARGE) // draw 16x32 font
+	if (iFontSize == FONT_16x32) // draw 16x32 font
 	{
 		if (iLen*16 + x > pLCD->iCurrentWidth) iLen = (pLCD->iCurrentWidth - x) / 16;
 		if (iLen < 0) return -1;
@@ -2750,14 +2750,14 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
 		} // for each character
 	}
 #endif // !__AVR__
-    if (iFontSize == FONT_NORMAL || iFontSize == FONT_SMALL) // draw the 6x8 or 8x8 font
+    if (iFontSize == FONT_8x8 || iFontSize == FONT_6x8) // draw the 6x8 or 8x8 font
 	{
 		uint16_t *usD, *usTemp = (uint16_t *)ucRXBuf;
         int cx;
         uint8_t *pFont;
 
-        cx = (iFontSize == FONT_NORMAL) ? 8:6;
-        pFont = (iFontSize == FONT_NORMAL) ? (uint8_t *)ucFont : (uint8_t *)ucSmallFont;
+        cx = (iFontSize == FONT_8x8) ? 8:6;
+        pFont = (iFontSize == FONT_8x8) ? (uint8_t *)ucFont : (uint8_t *)ucSmallFont;
 		if ((cx*iLen) + x > pLCD->iCurrentWidth) iLen = (pLCD->iCurrentWidth - x)/cx; // can't display it all
 		if (iLen < 0)return -1;
 
@@ -2854,7 +2854,7 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
             myspiWrite(pLCD, (unsigned char *)&usTemp[0], 12*16*2, MODE_DATA, iFlags);
         }
     } // FONT_12x16
-    if (iFontSize == FONT_STRETCHED) // 8x8 stretched to 16x16
+    if (iFontSize == FONT_16x16) // 8x8 stretched to 16x16
     {
         uint16_t *usD, *usTemp = (uint16_t *)ucRXBuf;
         
@@ -2902,7 +2902,7 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
         if (usBGColor != -1) // don't write anything if we're doing transparent text
             myspiWrite(pLCD, (unsigned char *)&usTemp[0], 512, MODE_DATA, iFlags);
         }
-    } // FONT_STRETCHED
+    } // FONT_16x16
 	return 0;
 } /* spilcdWriteString() */
 //
@@ -3086,6 +3086,7 @@ int bX=0, bY=0, bV=0;
            pLCD->iCurrentWidth = pLCD->iHeight;
         break;
    }
+   pLCD->iScreenPitch = pLCD->iCurrentWidth * 2;
     if (pLCD->iLCDType == LCD_ST7789 && pLCD->iHeight == 240 && pLCD->iWidth == 240) {
         // special issue with memory offsets in certain orientations
         if (pLCD->iOrientation == LCD_ORIENTATION_180) {
@@ -3206,6 +3207,9 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
     int error;
     int xinc, yinc;
     int iLen, x, y;
+#ifndef ESP32_DMA
+    int i;
+#endif
     uint16_t *usTemp = (uint16_t *)ucRXBuf, us;
 
     if (x1 < 0 || x2 < 0 || y1 < 0 || y2 < 0 || x1 >= pLCD->iCurrentWidth || x2 >= pLCD->iCurrentWidth || y1 >= pLCD->iCurrentHeight || y2 >= pLCD->iCurrentHeight)
@@ -3748,16 +3752,16 @@ int spilcdAllocBackbuffer(SPILCD *pLCD)
 {
     if (pLCD->pBackBuffer != NULL) // already allocated
         return -1;
-    pLCD->iScreenPitch = pLCD->iWidth * 2;
-    pLCD->pBackBuffer = (uint8_t *)malloc(pLCD->iScreenPitch * pLCD->iHeight);
+    pLCD->iScreenPitch = pLCD->iCurrentWidth * 2;
+    pLCD->pBackBuffer = (uint8_t *)malloc(pLCD->iScreenPitch * pLCD->iCurrentHeight);
     if (pLCD->pBackBuffer == NULL) // no memory
         return -1;
-    memset(pLCD->pBackBuffer, 0, pLCD->iScreenPitch * pLCD->iHeight);
+    memset(pLCD->pBackBuffer, 0, pLCD->iScreenPitch * pLCD->iCurrentHeight);
     pLCD->iOffset = 0; // starting offset
-    pLCD->iMaxOffset = pLCD->iScreenPitch * pLCD->iHeight; // can't write past this point
+    pLCD->iMaxOffset = pLCD->iScreenPitch * pLCD->iCurrentHeight; // can't write past this point
     pLCD->iWindowX = pLCD->iWindowY = 0; // current window = whole display
-    pLCD->iWindowCX = pLCD->iWidth;
-    pLCD->iWindowCY = pLCD->iHeight;
+    pLCD->iWindowCX = pLCD->iCurrentWidth;
+    pLCD->iWindowCY = pLCD->iCurrentHeight;
     return 0;
 }
 //

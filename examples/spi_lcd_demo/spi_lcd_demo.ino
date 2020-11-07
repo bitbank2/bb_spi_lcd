@@ -27,17 +27,21 @@ uint8_t ucBombMask[] = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0
   0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
   0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
   0x00,0x00};
+
+SPILCD lcd;
+
 void setup() {
 //int spilcdInit(int iLCDType, int bFlipRGB, int bInvert, int bFlipped, int32_t iSPIFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
 #ifdef __AVR__
-  spilcdInit(LCD_ST7735S, 1, 0, 1, F_CPU/2, 10, 8, 9, A0, -1, -1, -1); // Prototype pin numbering
+  spilcdInit(&lcd, LCD_ST7735S, 1, 0, 1, F_CPU/2, 10, 8, 9, A0, -1, -1, -1); // Prototype pin numbering
 #else
-  spilcdInit(LCD_ST7789_135, 0, 0, 0, 32000000, 5, 16, -1, 4, -1, 19, 18); // TTGO T-Display pin numbering, 40Mhz
+  spilcdInit(&lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 5, 16, -1, 4, -1, 19, 18); // TTGO T-Display pin numbering, 40Mhz
 #endif
-   spilcdSetOrientation(LCD_ORIENTATION_ROTATED);
+   spilcdSetOrientation(&lcd, LCD_ORIENTATION_90);
 #ifndef __AVR__
-   spilcdAllocBackbuffer(); // can only allocate a back buffer on systems with enough RAM
+   spilcdAllocBackbuffer(&lcd); // can only allocate a back buffer on systems with enough RAM
 #endif
+  spilcdFill(&lcd, 0, DRAW_TO_LCD);
 }
 
 void loop() {
@@ -72,17 +76,17 @@ uint16_t r, g, b, usColor1, usColor2;
     iTime = millis();
     for (x=0; x<WIDTH-1; x+=2)
     {
-      spilcdDrawLine(x, 0, WIDTH-1-x, HEIGHT-1, usPal[i], 0);
+      spilcdDrawLine(&lcd, x, 0, WIDTH-1-x, HEIGHT-1, usPal[i], DRAW_TO_RAM);
     } // for x
     for (y=0; y<HEIGHT-1; y+=2)
     {
-      spilcdDrawLine(WIDTH-1, y, 0, HEIGHT-1-y, usPal[i], 0);
+      spilcdDrawLine(&lcd, WIDTH-1, y, 0, HEIGHT-1-y, usPal[i], DRAW_TO_RAM);
     }
-    spilcdShowBuffer(0,0,WIDTH,HEIGHT);
+    spilcdShowBuffer(&lcd, 0,0,WIDTH,HEIGHT, DRAW_TO_LCD);
     iTime = millis() - iTime;
-    spilcdWriteString(0,64, (char *)"Indirect Render", 0xffff, 0x0000, FONT_NORMAL, 1);
+    spilcdWriteString(&lcd, 0,64, (char *)"Indirect Render", 0xffff, 0x0000, FONT_8x8, DRAW_TO_LCD);
     sprintf(szTemp,"Time = %dms", (int)iTime);
-    spilcdWriteString(0, 72, szTemp, 0xffff, 0x0000, FONT_NORMAL, 1);
+    spilcdWriteString(&lcd, 0, 72, szTemp, 0xffff, 0x0000, FONT_8x8, DRAW_TO_LCD);
     delay(4000);
     
   for (i=0; i<250; i++)
@@ -92,7 +96,7 @@ uint16_t r, g, b, usColor1, usColor2;
     y = random(HEIGHT);
     r1 = random(4, WIDTH/2);
     r2 = random(4, WIDTH/2);
-    spilcdEllipse(x, y, r1, r2, usColor,1, 1);
+    spilcdEllipse(&lcd, x, y, r1, r2, usColor,1, DRAW_TO_LCD);
   }
   delay(4000);
   for (int count=0; count<5000; count++)
@@ -122,21 +126,21 @@ uint16_t r, g, b, usColor1, usColor2;
       if (yLogo == 0 || yLogo == 155)
          yDelta = -yDelta;
 
-    spilcdRectangle(0, 0, WIDTH, HEIGHT, usColor1, usColor2, 1, 0);
-    spilcdWriteString(x,y,(char *)"bb_spi_lcd Library", 0xffff,-1,FONT_NORMAL, 0);
-    spilcdWriteString(x,y+8,(char *)"by Larry Bank", 0xffff,-1,FONT_NORMAL, 0);
+    spilcdRectangle(&lcd, 0, 0, WIDTH, HEIGHT, usColor1, usColor2, 1, DRAW_TO_RAM);
+    spilcdWriteString(&lcd, x,y,(char *)"bb_spi_lcd Library", 0xffff,-1,FONT_8x8, DRAW_TO_RAM);
+    spilcdWriteString(&lcd, x,y+8,(char *)"by Larry Bank", 0xffff,-1,FONT_8x8, DRAW_TO_RAM);
     {
       int j;
       uint8_t u8Temp[8*40]; // holds the rotated mask
       spilcdRotateBitmap((uint8_t *)ucBombMask, u8Temp, 1, 40, 40, 8, 20, 20, i % 360);
       j = i % 120;
-      spilcdDrawPattern(u8Temp, 8, j,0,40,40,0x6ff,16);
-      spilcdDrawPattern(u8Temp, 8, 120-j,0,40,40,0xf81f,16);
-      spilcdDrawPattern(u8Temp, 8, j,90,40,40,0x6e0,16);
-      spilcdDrawPattern(u8Temp, 8, 120-j,90,40,40,0x6ff,16);
+      spilcdDrawPattern(&lcd, u8Temp, 8, j,0,40,40,0x6ff,16);
+      spilcdDrawPattern(&lcd, u8Temp, 8, 120-j,0,40,40,0xf81f,16);
+      spilcdDrawPattern(&lcd, u8Temp, 8, j,90,40,40,0x6e0,16);
+      spilcdDrawPattern(&lcd, u8Temp, 8, 120-j,90,40,40,0x6ff,16);
     }
 
-    spilcdShowBuffer(0,0,WIDTH,HEIGHT);
+    spilcdShowBuffer(&lcd, 0,0,WIDTH,HEIGHT, DRAW_TO_LCD);
     x += dx; y += dy;
     if (x == 0) dx = -dx;
     else if (x >= WIDTH-145) dx = -dx;
@@ -151,16 +155,16 @@ i = 0;
     iTime = millis();
     for (x=0; x<WIDTH-1; x+=2)
     {
-      spilcdDrawLine(x, 0, WIDTH-1-x, HEIGHT-1, usPal[i], 1);
+      spilcdDrawLine(&lcd, x, 0, WIDTH-1-x, HEIGHT-1, usPal[i], DRAW_TO_LCD);
     } // for x
     for (y=0; y<HEIGHT-1; y+=2)
     {
-      spilcdDrawLine(WIDTH-1, y, 0, HEIGHT-1-y, usPal[i], 1);
+      spilcdDrawLine(&lcd, WIDTH-1, y, 0, HEIGHT-1-y, usPal[i], DRAW_TO_LCD);
     }
     iTime = millis() - iTime;
-    spilcdWriteString(0,64, (char *)"Direct Render", 0xffff, 0x0000, FONT_NORMAL, 1);
+    spilcdWriteString(&lcd, 0,64, (char *)"Direct Render", 0xffff, 0x0000, FONT_8x8, DRAW_TO_LCD);
     sprintf(szTemp,"Time = %dms", (int)iTime);
-    spilcdWriteString(0, 72, szTemp, 0xffff, 0x0000, FONT_NORMAL, 1);
+    spilcdWriteString(&lcd, 0, 72, szTemp, 0xffff, 0x0000, FONT_8x8, DRAW_TO_LCD);
     delay(4000);
   } // for i
 #endif

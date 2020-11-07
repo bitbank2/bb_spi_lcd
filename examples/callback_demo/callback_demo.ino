@@ -19,6 +19,7 @@
 // D0-D1 -> PORTB 0, 1
 // D2-D7 -> PORTD 2-7
 
+SPILCD lcd;
 //
 // Called once during spilcdInit()
 // Use this function to set up the GPIO ports
@@ -76,9 +77,9 @@ uint8_t uc, ucWRL, ucWRH;
 // the setup function runs once when you press reset or power the board
 void setup()
 {
-  spilcdSetCallbacks(ResetCallback, DataCallback);
+  spilcdSetCallbacks(&lcd, ResetCallback, DataCallback);
 // int spilcdInit(int iLCDType, int bFlipRGB, int bInvert, int bFlipped, int32_t iSPIFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
-  spilcdInit(LCD_ILI9486, 0, 0, 0, 0, -1, -1, -1, -1,  -1, -1, -1);
+  spilcdInit(&lcd, LCD_ILI9486, FLAGS_NONE, 0, -1, -1, -1, -1,  -1, -1, -1);
 } /* setup() */
 
 void loop()
@@ -90,7 +91,7 @@ uint16_t usPal[] = {0xf800, 0x07e0, 0x001f, 0x7ff, 0xf81f, 0xffe0, 0xffff, 0x73e
   {
     for (y=0; y<480; y+=16)
     { // draw simple colored text down the length of the display
-      spilcdWriteString(0, y, (char *)"Hello World!", usPal[iFG], 0, FONT_STRETCHED, 1);
+      spilcdWriteString(&lcd, 0, y, (char *)"Hello World!", usPal[iFG], 0, FONT_16x16, DRAW_TO_LCD);
     }
   }
 } /* loop() */
