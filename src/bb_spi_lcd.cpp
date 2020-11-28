@@ -22,14 +22,19 @@
 // control lines. 
 //#if defined(ADAFRUIT_PYBADGE_M4_EXPRESS)
 //#define SPI SPI1
-//#include <SPI.h>
+#include <SPI.h>
 //#define SPI mySPI
 // MISO, SCK, MOSI
 //#endif
 
-#ifdef ARDUINO_SAMD_ZERO
+#if defined(__SAMD51__)
+#define ARDUINO_SAMD_ZERO
+#endif
+
+#if defined( ARDUINO_SAMD_ZERO )
 #include <SPI.h>
 #include "wiring_private.h" // pinPeripheral() function
+#include <Arduino.h>
 #include <Adafruit_ZeroDMA.h>
 #include "utility/dma.h"
 #define HAS_DMA
@@ -42,13 +47,23 @@ DmacDescriptor *desc;
 
 //SPIClass mySPI (&sercom0, 6, 8, 7, SPI_PAD_2_SCK_3, SERCOM_RX_PAD_1);
 
+#ifdef SEEED_WIO_TERMINAL
 SPIClass mySPI(
-  &sercom1,         // -> Sercom peripheral
-  34,               // MISO pin (also digital pin 12)
-  37,               // SCK pin  (also digital pin 13)
-  35,               // MOSI pin (also digital pin 11)
-  SPI_PAD_0_SCK_1,  // TX pad (MOSI, SCK pads)
-  SERCOM_RX_PAD_3); // RX pad (MISO pad)
+  &PERIPH_SPI3,         // -> Sercom peripheral
+  PIN_SPI3_MISO,    // MISO pin (also digital pin 12)
+  PIN_SPI3_SCK,     // SCK pin  (also digital pin 13)
+  PIN_SPI3_MOSI,    // MOSI pin (also digital pin 11)
+  PAD_SPI3_TX,  // TX pad (MOSI, SCK pads)
+  PAD_SPI3_RX); // RX pad (MISO pad)
+#else
+SPIClass mySPI(
+  &PERIPH_SPI,      // -> Sercom peripheral
+  PIN_SPI_MISO,     // MISO pin (also digital pin 12)
+  PIN_SPI_SCK,      // SCK pin  (also digital pin 13)
+  PIN_SPI_MOSI,     // MOSI pin (also digital pin 11)
+  PAD_SPI_TX,       // TX pad (MOSI, SCK pads)
+  PAD_SPI_RX);      // RX pad (MISO pad)
+#endif // WIO
 #endif // ARDUINO_SAMD_ZERO
 
 #ifdef _LINUX_
@@ -74,6 +89,10 @@ SPIClass mySPI(
 #define LOW 0
 static int iHandle; // SPI handle
 #else // Arduino
+// Use the default (non DMA) SPI library for boards we don't currently support
+#if !defined(HAL_ESP32_HAL_H_) && !defined(__SAMD51__) && !defined(ARDUINO_SAMD_ZERO)
+#define mySPI SPI
+#endif
 
 #include <Arduino.h>
 #include <SPI.h>
@@ -1207,13 +1226,13 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
 #ifdef _LINUX_
     AIOWriteSPI(iHandle, pBuf, iLen);
 #else
-    SPI.beginTransaction(SPISettings(pLCD->iSPISpeed, MSBFIRST, pLCD->iSPIMode));
+    mySPI.beginTransaction(SPISettings(pLCD->iSPISpeed, MSBFIRST, pLCD->iSPIMode));
 #ifdef HAL_ESP32_HAL_H_
     SPI.transferBytes(pBuf, ucRXBuf, iLen);
 #else
-    SPI.transfer(pBuf, iLen);
+    mySPI.transfer(pBuf, iLen);
 #endif
-    SPI.endTransaction();
+    mySPI.endTransaction();
 #endif // _LINUX_
     if (iMode == MODE_COMMAND) // restore D/C pin to DATA
         spilcdSetMode(pLCD, MODE_DATA);
@@ -1410,32 +1429,16 @@ if (pLCD->iMISOPin != pLCD->iMOSIPin)
 #ifdef _LINUX_
     iHandle = AIOOpenSPI(0, iSPIFreq); // DEBUG - open SPI channel 0 
 #else
-    SPI.begin(); // simple Arduino init (e.g. AVR)
+  mySPI.begin(); // simple Arduino init (e.g. AVR)
 #ifdef ARDUINO_SAMD_ZERO
-  // Assign pins 11, 12, 13 to SERCOM functionality
-//  pinPeripheral(11, PIO_SERCOM);
-//  pinPeripheral(12, PIO_SERCOM);
-//  pinPeripheral(13, PIO_SERCOM);
 
-//  myDMA.setTrigger(SERCOM1_DMAC_ID_TX);
-#ifdef __SAMD51__
-  // SERCOM2 is the 'native' SPI SERCOM on Metro M4
-  myDMA.setTrigger(SERCOM2_DMAC_ID_TX);
-#else
-  // SERCOM4 is the 'native' SPI SERCOM on most M0 boards
-  myDMA.setTrigger(SERCOM4_DMAC_ID_TX);
-#endif
+  myDMA.setTrigger(mySPI.getDMAC_ID_TX());
   myDMA.setAction(DMA_TRIGGER_ACTON_BEAT);
 
   stat = myDMA.allocate();
   desc = myDMA.addDescriptor(
     ucTXBuf,                    // move data from here
-#ifdef __SAMD51__
-    (void *)(&SERCOM2->SPI.DATA.reg), // to here (M4)
-#else
-    (void *)(&SERCOM4->SPI.DATA.reg), // to here (M0)
-#endif
-//    (void *)(&SERCOM1->SPI.DATA.reg), // to here (M0)
+    (void *)(mySPI.getDataRegister()),
     100,                      // this many...
     DMA_BEAT_SIZE_BYTE,               // bytes/hword/words
     true,                             // increment source addr?
