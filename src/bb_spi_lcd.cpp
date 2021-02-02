@@ -2821,11 +2821,22 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
             {
                 if (usBGColor == -1) // transparent text
                 {
+                    uint8_t c0, c1;
                     usD = (uint16_t *)&pLCD->pBackBuffer[pLCD->iOffset + (k*2*pLCD->iScreenPitch)];
                     for (j=0; j<6; j++)
                     {
-                        if (pgm_read_byte(&s[j]) & ucMask)
+                        c0 = pgm_read_byte(&s[j]);
+                        if (c0 & ucMask)
                             usD[0] = usD[1] = usD[usPitch] = usD[usPitch+1] = usFG;
+                        // test for smoothing diagonals
+                        if (k < 7 && j < 5) {
+                           uint8_t ucMask2 = ucMask << 1;
+                           c1 = pgm_read_byte(&s[j+1]);
+                           if ((c0 & ucMask) && (~c1 & ucMask) && (~c0 & ucMask2) && (c1 & ucMask2)) // first diagonal condition
+                               usD[usPitch+2] = usD[2*usPitch+1] = usFG;
+                           else if ((~c0 & ucMask) && (c1 & ucMask) && (c0 & ucMask2) && (~c1 & ucMask2))
+                               usD[usPitch+1] = usD[2*usPitch+2] = usFG;
+                        } // if not on last row and last col
                         usD += 2;
                     } // for j
                 }
