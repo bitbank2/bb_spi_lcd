@@ -2282,14 +2282,19 @@ unsigned char ucBuf[8];
 	spilcdWriteCommand(pLCD, 0x2b); // set row address
 	if (pLCD->iLCDType == LCD_ILI9341 || pLCD->iLCDType == LCD_ILI9342 || pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ILI9486)
 	{
+                if (pLCD->iCurrentHeight == 135 && pLCD->iOrientation == LCD_ORIENTATION_90)
+                   pLCD->iMemoryY+= 1; // ST7789 240x135 rotated 90 is off by 1
 		y += pLCD->iMemoryY;
 		ucBuf[0] = (unsigned char)(y >> 8);
 		ucBuf[1] = (unsigned char)y;
 		y = y + h;
-		if ((y-pLCD->iMemoryY) > pLCD->iHeight-1) y = pLCD->iMemoryY + pLCD->iHeight;
+		if ((y-pLCD->iMemoryY) > pLCD->iCurrentHeight-1) y = pLCD->iMemoryY + pLCD->iCurrentHeight;
 		ucBuf[2] = (unsigned char)(y >> 8);
 		ucBuf[3] = (unsigned char)y;
 		myspiWrite(pLCD, ucBuf, 4, MODE_DATA, iFlags);
+                if (pLCD->iCurrentHeight == 135 && pLCD->iOrientation == LCD_ORIENTATION_90)
+                   pLCD->iMemoryY -=1; // ST7789 240x135 rotated 90 is off by 1
+
 	}
 	else
 	{
