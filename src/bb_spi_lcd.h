@@ -216,6 +216,7 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
 // Public wrapper function to write data to the display
 //
 void spilcdWriteDataBlock(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags);
+void spilcdWritePixelsMasked(SPILCD *pLCD, int x, int y, uint8_t *pData, uint8_t *pMask, int iCount, int iFlags);
 void spilcdWriteCommand(SPILCD *pLCD, unsigned char c);
 int spilcdIsDMABusy(void);
 uint8_t * spilcdGetDMABuffer(void);

@@ -1253,7 +1253,70 @@ void spilcdWriteDataBlock(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags)
 {
   myspiWrite(pLCD, pData, iLen, MODE_DATA, iFlags);
 } /* spilcdWriteDataBlock() */
-
+//
+// spilcdWritePixelsMasked
+//
+void spilcdWritePixelsMasked(SPILCD *pLCD, int x, int y, uint8_t *pData, uint8_t *pMask, int iCount, int iFlags)
+{
+    int i, pix_count, bit_count;
+    uint8_t c, *s, *sPixels, *pEnd;
+    s = pMask; sPixels = pData;
+    pEnd = &pMask[(iCount+7)>>3];
+    i = 0;
+    bit_count = 8;
+    c = *s++; // get first byte
+    while (i<iCount && s < pEnd) {
+        // Count the number of consecutive pixels to skip
+        pix_count = 0;
+        while (bit_count && (c & 0x80) == 0) { // count 0's
+            if (c == 0) { // quick count remaining 0 bits
+                pix_count += bit_count;
+                bit_count = 0;
+                if (s < pEnd) {
+                    bit_count = 8;
+                    c = *s++;
+                }
+                continue;
+            }
+            pix_count++;
+            bit_count--;
+            c <<= 1;
+            if (bit_count == 0 && s < pEnd) {
+                bit_count = 8;
+                c = *s++;
+            }
+        }
+        // we've hit the first 1 bit, skip the source pixels we've counted
+        i += pix_count;
+        sPixels += pix_count*2; // skip RGB565 pixels
+        // Count the number of consecutive pixels to draw
+        pix_count = 0;
+        while (bit_count && (c & 0x80) == 0x80) { // count 1's
+            if (c == 0xff) {
+                pix_count += 8;
+                bit_count = 0;
+                if (s < pEnd) {
+                    c = *s++;
+                    bit_count = 8;
+                }
+                continue;
+            }
+            pix_count++;
+            bit_count--;
+            c <<= 1;
+            if (bit_count == 0 && s < pEnd) {
+                bit_count = 8;
+                c = *s++;
+            }
+        }
+        if (pix_count) {
+            spilcdSetPosition(pLCD, x+i, y, pix_count, 1, iFlags);
+            spilcdWriteDataBlock(pLCD, sPixels, pix_count*2, iFlags);
+        }
+        i += pix_count;
+        sPixels += pix_count*2;
+    } // while counting pixels
+} /* spilcdWritePixelsMasked() */
 //
 // Wrapper function to control a GPIO line
 //
