@@ -20,12 +20,12 @@
 // The ILITEK LCD display controllers communicate through the SPI interface
 // and two GPIO pins to control the RESET, and D/C (data/command)
 // control lines. 
-//#if defined(ADAFRUIT_PYBADGE_M4_EXPRESS)
+#if !defined(_LINUX_)
 //#define SPI SPI1
 #include <SPI.h>
 //#define SPI mySPI
 // MISO, SCK, MOSI
-//#endif
+#endif
 
 #if defined(__SAMD51__)
 #define ARDUINO_SAMD_ZERO
@@ -728,14 +728,19 @@ static void delayMicroseconds(int iMS)
   usleep(iMS);
 } /* delayMicroseconds() */
 
+static void delay(int ms)
+{
+  usleep(ms * 1000);
+} /* delay() */
+
 static uint8_t pgm_read_byte(uint8_t *ptr)
 {
   return *ptr;
 }
-static int16_t pgm_read_word(uint8_t *ptr)
-{
-  return ptr[0] + (ptr[1]<<8);
-}
+//static int16_t pgm_read_word(uint8_t *ptr)
+//{
+//  return ptr[0] + (ptr[1]<<8);
+//}
 #endif // _LINUX_
 //
 // Provide a small temporary buffer for use by the graphics functions
@@ -2597,9 +2602,9 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
       if (bBlank) { // erase the areas around the char to not leave old bits
          int miny, maxy;
          c = '0' - font.first;
-         miny = y + (int8_t)pgm_read_byte(&font.glyph[c].yOffset);
+         miny = y + (int8_t)pgm_read_byte((unsigned char *)&font.glyph[c].yOffset);
          c = 'y' - font.first;
-         maxy = y + (int8_t)pgm_read_byte(&font.glyph[c].yOffset) + pgm_read_byte(&font.glyph[c].height);
+         maxy = y + (int8_t)pgm_read_byte((unsigned char *)&font.glyph[c].yOffset) + pgm_read_byte((unsigned char *)&font.glyph[c].height);
          spilcdSetPosition(pLCD, x, miny, pGlyph->xAdvance, maxy-miny, iFlags);
             // blank out area above character
             for (ty=miny; ty<y+pGlyph->yOffset; ty++) {

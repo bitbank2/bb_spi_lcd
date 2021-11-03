@@ -10,6 +10,26 @@
 #include "bb_spi_lcd.h"
 #include <armbianio.h>
 
+// Pin definitions for Adafruit PiTFT HAT
+// GPIO 25 = Pin 22
+#define DC_PIN 22
+// GPIO 27 = Pin 13
+#define RESET_PIN -1
+// GPIO 8 = Pin 24
+#define CS_PIN 24
+// GPIO 24 = Pin 18
+#define LED_PIN 24
+#define LCD_TYPE LCD_ILI9341
+
+// Pin definitions for Waveshare 1.4" 240x240 ST7789 HAT
+//#define LCD_TYPE LCD_ST7789_240
+//#define DC_PIN 22
+//#define RESET_PIN 13
+//#define CS_PIN 24
+//#define LED_PIN 18
+SPILCD lcd;
+static uint8_t ucBuffer[4096];
+
 int main(int argc, char *argv[])
 {
 int i;
@@ -21,17 +41,18 @@ int i;
 		return 0;
 	}
 // int spilcdInit(int iLCDType, int bFlipRGB, int bInvert, int bFlipped, int32_t iSPIFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
-	i = spilcdInit(LCD_ST7789, 0, 0, 0, 31250000, -1, 22, 13, 18, -1,-1,-1);
+	i = spilcdInit(&lcd, LCD_TYPE, FLAGS_NONE, 31250000, CS_PIN, DC_PIN, RESET_PIN, LED_PIN, -1,-1,-1);
 	if (i == 0)
 	{
-		spilcdSetOrientation(LCD_ORIENTATION_ROTATED);
-		spilcdFill(0, 1);
+		spilcdSetTXBuffer(ucBuffer, 4096);
+		spilcdSetOrientation(&lcd, LCD_ORIENTATION_90);
+		spilcdFill(&lcd, 0, DRAW_TO_LCD);
 		for (i=0; i<30; i++)
-		spilcdWriteString(0,i*8,(char *)"Hello World!", 0x1f,0,FONT_NORMAL, 1);
+		spilcdWriteString(&lcd, 0,i*8,(char *)"Hello World!", 0x1f,0,FONT_8x8, DRAW_TO_LCD);
 		printf("Successfully initialized bb_spi_lcd library\n");
 		printf("Press ENTER to quit\n");
 		getchar();
-		spilcdShutdown();
+		spilcdShutdown(&lcd);
 	}
 	else
 	{

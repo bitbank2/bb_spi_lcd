@@ -110,7 +110,7 @@ extern "C" {
 #endif
 
 // Sets the D/C pin to data or command mode
-void spilcdSetMode(int iMode);
+void spilcdSetMode(SPILCD *pLCD, int iMode);
 //
 // Provide a small temporary buffer for use by the graphics functions
 //
