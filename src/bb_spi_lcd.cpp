@@ -3582,6 +3582,9 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
         return -1;
     if (iTransparent != -1) // transparent drawing can only happen on the back buffer
         iFlags = DRAW_TO_RAM;
+    if (iFlags & DRAW_TO_RAM && pLCD->pBackBuffer == NULL) {
+       return -1; // no back buffer defined, leave
+    }
     iOffBits = pBMP[10] | pBMP[11]<<8;
     iPitch = (cx * bpp) >> 3; // bytes per line
     iPitch = (iPitch + 3) & 0xfffc; // must be dword aligned

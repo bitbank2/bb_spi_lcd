@@ -14,19 +14,19 @@
 // GPIO 25 = Pin 22
 #define DC_PIN 22
 // GPIO 27 = Pin 13
-#define RESET_PIN -1
+//#define RESET_PIN -1
 // GPIO 8 = Pin 24
 #define CS_PIN 24
 // GPIO 24 = Pin 18
-#define LED_PIN 24
-#define LCD_TYPE LCD_ILI9341
+//#define LED_PIN 24
+//#define LCD_TYPE LCD_ILI9341
 
 // Pin definitions for Waveshare 1.4" 240x240 ST7789 HAT
-//#define LCD_TYPE LCD_ST7789_240
+#define LCD_TYPE LCD_ST7789_240
 //#define DC_PIN 22
-//#define RESET_PIN 13
+#define RESET_PIN 13
 //#define CS_PIN 24
-//#define LED_PIN 18
+#define LED_PIN 18
 SPILCD lcd;
 static uint8_t ucBuffer[4096];
 
@@ -46,7 +46,7 @@ int i;
 	{
 		spilcdSetTXBuffer(ucBuffer, 4096);
 		spilcdSetOrientation(&lcd, LCD_ORIENTATION_90);
-		spilcdFill(&lcd, 0, DRAW_TO_LCD);
+		spilcdFill(&lcd, 0xff, DRAW_TO_LCD);
 		for (i=0; i<30; i++)
 		spilcdWriteString(&lcd, 0,i*8,(char *)"Hello World!", 0x1f,0,FONT_8x8, DRAW_TO_LCD);
 		printf("Successfully initialized bb_spi_lcd library\n");
