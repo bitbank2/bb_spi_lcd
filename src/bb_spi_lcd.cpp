@@ -774,21 +774,21 @@ const unsigned char uc240x240InitList[]PROGMEM = {
     1, 0x13, // partial mode off
     1, 0x21, // display inversion off
     2, 0x36,0x08,    // memory access 0xc0 for 180 degree flipped
-    2, 0x3a,0x55,    // pixel format; 5=RGB565
+    2, 0x3a,0x05,    // pixel format; 5=RGB565
     3, 0x37,0x00,0x00, //
     6, 0xb2,0x0c,0x0c,0x00,0x33,0x33, // Porch control
     2, 0xb7,0x35,    // gate control
-    2, 0xbb,0x1a,    // VCOM
+    2, 0xbb,0x37, /*0x1a,*/    // VCOM
     2, 0xc0,0x2c,    // LCM
     2, 0xc2,0x01,    // VDV & VRH command enable
-    2, 0xc3,0x0b,    // VRH set
+    2, 0xc3,0x12, /*0x0b,*/    // VRH set
     2, 0xc4,0x20,    // VDV set
     2, 0xc6,0x0f,    // FR control 2
     3, 0xd0, 0xa4, 0xa1,     // Power control 1
-    15, 0xe0, 0x00,0x19,0x1e,0x0a,0x09,0x15,0x3d,0x44,0x51,0x12,0x03,
-        0x00,0x3f,0x3f,     // gamma 1
-    15, 0xe1, 0x00,0x18,0x1e,0x0a,0x09,0x25,0x3f,0x43,0x52,0x33,0x03,
-        0x00,0x3f,0x3f,        // gamma 2
+    15, 0xe0, 0xD0,0x04,0x0d,0x11,0x13,0x2b,0x3f,0x54,0x4c,0x18,0x0d,
+        0x0b,0x1f,0x23,     // gamma 1
+    15, 0xe1, 0xd0,0x04,0x0c,0x11,0x13,0x2c,0x3f,0x44,0x51,0x2f,0x1f,
+        0x1f,0x20,0x23,        // gamma 2
     1, 0x29,    // display on
     0
 };
@@ -1352,12 +1352,12 @@ unsigned char *sE0, *sE1;
 		sE1 = (unsigned char *)ucE1_1;
 	}
 	spilcdWriteCommand(pLCD, 0xe0);
-	for(i=0; i<16; i++)
+	for(i=0; i<14; i++)
 	{
 		spilcdWriteData8(pLCD, pgm_read_byte(sE0++));
 	}
 	spilcdWriteCommand(pLCD, 0xe1);
-	for(i=0; i<16; i++)
+	for(i=0; i<14; i++)
 	{
 		spilcdWriteData8(pLCD, pgm_read_byte(sE1++));
 	}
@@ -1402,6 +1402,7 @@ int spilcdInit(SPILCD *pLCD, int iType, int iFlags, int32_t iSPIFreq, int iCS, i
 unsigned char *s, *d;
 int i, iCount;
    
+    memset(pLCD, 0, sizeof(SPILCD));
     pLCD->iColStart = pLCD->iRowStart = pLCD->iMemoryX = pLCD->iMemoryY = 0;
     pLCD->iOrientation = 0;
     pLCD->iLCDType = iType;
@@ -1537,18 +1538,18 @@ if (pLCD->iMISOPin != pLCD->iMOSIPin)
 	{
         pinMode(pLCD->iResetPin, OUTPUT);
 		myPinWrite(pLCD->iResetPin, 1);
-		delayMicroseconds(60000);
+		delayMicroseconds(100000);
 		myPinWrite(pLCD->iResetPin, 0); // reset the controller
-		delayMicroseconds(60000);
+		delayMicroseconds(100000);
 		myPinWrite(pLCD->iResetPin, 1);
-		delayMicroseconds(60000);
+		delayMicroseconds(100000);
 	}
 	if (pLCD->iLCDType != LCD_SSD1351 && pLCD->iLCDType != LCD_SSD1331) // no backlight and no soft reset on OLED
 	{
         spilcdWriteCommand(pLCD, 0x01); // software reset
         delayMicroseconds(60000);
 
-        spilcdWriteCommand(pLCD, 0x11);
+        spilcdWriteCommand(pLCD, 0x11); // sleep out
         delayMicroseconds(60000);
         delayMicroseconds(60000);
 	}
@@ -2096,6 +2097,7 @@ void spilcdShutdown(SPILCD *pLCD)
     spilcdFreeBackbuffer(pLCD);
 #ifdef _LINUX_
 	AIOCloseSPI(iHandle);
+	AIORemoveGPIO(pLCD->iCSPin);
 	AIORemoveGPIO(pLCD->iDCPin);
 	AIORemoveGPIO(pLCD->iResetPin);
 	AIORemoveGPIO(pLCD->iLEDPin);

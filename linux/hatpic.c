@@ -8,19 +8,20 @@
 #include <armbianio.h>
 #include "../../AnimatedGIF/src/AnimatedGIF.h"
 #include "../../AnimatedGIF/src/gif.inl"
-#define DISPLAY_WIDTH 320
+//#define DISPLAY_WIDTH 320
 #define DISPLAY_HEIGHT 240
-
+#define DISPLAY_WIDTH 240
 // Pin definitions for Adafruit PiTFT HAT
 // GPIO 25 = Pin 22
 #define DC_PIN 22
 // GPIO 27 = Pin 13
-#define RESET_PIN -1
+#define RESET_PIN 13
 // GPIO 8 = Pin 24
 #define CS_PIN 24
 // GPIO 24 = Pin 18
 #define LED_PIN 18
-#define LCD_TYPE LCD_ILI9341
+//#define LCD_TYPE LCD_ILI9341
+#define LCD_TYPE LCD_ST7789_240
 SPILCD lcd;
 static uint8_t ucBuffer[4096], ucBuffer2[4096];
 GIFIMAGE gif;
@@ -154,10 +155,10 @@ int i, iLen;
      return -1;
   }
   printf("Successfully read file; size = %d bytes\n", iLen);
-        i = spilcdInit(&lcd, LCD_TYPE, FLAGS_NONE, 62500000, CS_PIN, DC_PIN, RESET_PIN, LED_PIN, -1,-1,-1);
+        spilcdSetTXBuffer(ucBuffer, 4096);
+        i = spilcdInit(&lcd, LCD_TYPE, FLAGS_NONE, 31250000, CS_PIN, DC_PIN, RESET_PIN, LED_PIN, -1,-1,-1);
         if (i == 0)
         {
-                spilcdSetTXBuffer(ucBuffer, 4096);
                 spilcdSetOrientation(&lcd, LCD_ORIENTATION_90);
                 spilcdFill(&lcd, 0, DRAW_TO_LCD);
 		if (pData[0] == 'B' && pData[1] == 'M') {
@@ -198,6 +199,8 @@ int i, iLen;
 			  } // while (1)
 		   }
 		}
+	} else {
+	   printf("Error initialized spilcd library\n");
 	}
 } /* main() */
 
