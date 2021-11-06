@@ -1,3 +1,11 @@
+//
+// HatPic - display a picture on a TFT 'HAT'
+// written by Larry Bank
+// 11/1/2021
+//
+// select the hat type here (defaults to WaveShare 1.3" ST7789 240x240
+//#define HAT_ADAFRUIT_PITFT
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -8,10 +16,23 @@
 #include <armbianio.h>
 #include "../../AnimatedGIF/src/AnimatedGIF.h"
 #include "../../AnimatedGIF/src/gif.inl"
-//#define DISPLAY_WIDTH 320
+#ifdef HAT_ADAFRUIT_PITFT
+#define DISPLAY_WIDTH 320
 #define DISPLAY_HEIGHT 240
+#define LCD_TYPE LCD_ILI9341
+
+#else // WaveShare 1.3" 240x240
+
 #define DISPLAY_WIDTH 240
-// Pin definitions for Adafruit PiTFT HAT
+#define DISPLAY_HEIGHT 240
+#define LCD_TYPE LCD_ST7789_240
+
+#endif
+
+// Common pins
+// bb_spi_lcd library uses the header pin number, not the BCM GPIO number
+// to reduce confusion
+
 // GPIO 25 = Pin 22
 #define DC_PIN 22
 // GPIO 27 = Pin 13
@@ -20,8 +41,7 @@
 #define CS_PIN 24
 // GPIO 24 = Pin 18
 #define LED_PIN 18
-//#define LCD_TYPE LCD_ILI9341
-#define LCD_TYPE LCD_ST7789_240
+
 SPILCD lcd;
 static uint8_t ucBuffer[4096], ucBuffer2[4096];
 GIFIMAGE gif;
@@ -138,30 +158,31 @@ int main(int argc, char **argv)
 uint8_t *pData;
 int i, iLen;
 
-        i = AIOInitBoard("Raspberry Pi");
-        if (i == 0) // problem
-        {
-                printf("Error in AIOInit(); check if this board is supported\n");
-                return 0;
-        }
+   i = AIOInitBoard("Raspberry Pi");
+   if (i == 0) // problem
+   {
+       printf("Error in AIOInit(); check if this board is supported\n");
+       return 0;
+   }
 
-  if (argc != 2) {
-    printf("Usage: hatpic <image file>\n");
-    return -1;
-  }
+   if (argc != 2) {
+       printf("Usage: hatpic <image file>\n");
+       return -1;
+   }
   pData = ReadFile(argv[1], &iLen);
   if (pData == NULL) {
      printf("Something went wrong :(\n");
      return -1;
   }
   printf("Successfully read file; size = %d bytes\n", iLen);
-        spilcdSetTXBuffer(ucBuffer, 4096);
-        i = spilcdInit(&lcd, LCD_TYPE, FLAGS_NONE, 31250000, CS_PIN, DC_PIN, RESET_PIN, LED_PIN, -1,-1,-1);
-        if (i == 0)
-        {
-                spilcdSetOrientation(&lcd, LCD_ORIENTATION_90);
-                spilcdFill(&lcd, 0, DRAW_TO_LCD);
-		if (pData[0] == 'B' && pData[1] == 'M') {
+  spilcdSetTXBuffer(ucBuffer, 4096);
+// Both LCD hats can handle the max SPI speed of 62.5Mhz
+  i = spilcdInit(&lcd, LCD_TYPE, FLAGS_NONE, 62500000, CS_PIN, DC_PIN, RESET_PIN, LED_PIN, -1,-1,-1);
+  if (i == 0)
+  {
+      spilcdSetOrientation(&lcd, LCD_ORIENTATION_90);
+      spilcdFill(&lcd, 0, DRAW_TO_LCD);
+      if (pData[0] == 'B' && pData[1] == 'M') {
                 spilcdDrawBMP(&lcd, pData, 0, 0, 0, -1, DRAW_TO_LCD);
 		} else if (pData[0] == 0xff && pData[1] == 0xd8) {
                 // JPEG
