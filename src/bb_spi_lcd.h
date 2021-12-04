@@ -20,7 +20,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 // these are defined the same in the OLED library
-#ifndef __SS_OLED_H__
+#if !defined( __SS_OLED_H__ ) && !defined( __ONEBITDISPLAY__ )
 enum {
    FONT_6x8 = 0,
    FONT_8x8,
@@ -74,6 +74,7 @@ typedef struct tagSPILCD
 // Proportional font data taken from Adafruit_GFX library
 /// Font data stored PER GLYPH
 #if !defined( _ADAFRUIT_GFX_H ) && !defined( _GFXFONT_H_ )
+#define _GFXFONT_H_
 typedef struct {
   uint16_t bitmapOffset; ///< Pointer into GFXfont->bitmap
   uint8_t width;         ///< Bitmap dimensions in pixels
@@ -93,11 +94,14 @@ typedef struct {
 } GFXfont;
 #endif // _ADAFRUIT_GFX_H
 
+#if !defined(BITBANK_LCD_MODES)
+#define BITBANK_LCD_MODES
 typedef enum
 {
  MODE_DATA = 0,
  MODE_COMMAND
 } DC_MODE;
+#endif
 
 // Initialization flags
 #define FLAGS_NONE    0
@@ -110,7 +114,7 @@ extern "C" {
 #endif
 
 // Sets the D/C pin to data or command mode
-void spilcdSetMode(SPILCD *pLCD, int iMode);
+void spilcdSetMode(int iMode);
 //
 // Provide a small temporary buffer for use by the graphics functions
 //
@@ -212,6 +216,12 @@ void spilcdEllipse(SPILCD *pLCD, int32_t centerX, int32_t centerY, int32_t radiu
 // Draw a line between 2 points using Bresenham's algorithm
 // 
 void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short usColor, int bRender);
+int spilcdDraw53Tile(SPILCD *pLCD, int x, int y, int cx, int cy, unsigned char *pTile, int iPitch, int iFlags);
+int spilcdDrawSmallTile(SPILCD *pLCD, int x, int y, unsigned char *pTile, int iPitch, int iFlags);
+int spilcdDrawTile(SPILCD *pLCD, int x, int y, int iTileWidth, int iTileHeight, unsigned char *pTile, int iPitch, int iFlags);
+int spilcdDrawTile150(SPILCD *pLCD, int x, int y, int iTileWidth, int iTileHeight, unsigned char *pTile, int iPitch, int iFlags);
+int spilcdDrawRetroTile(SPILCD *pLCD, int x, int y, unsigned char *pTile, int iPitch, int iFlags);
+int spilcdDrawMaskedTile(SPILCD *pLCD, int x, int y, unsigned char *pTile, int iPitch, int iColMask, int iRowMask, int iFlags);
 //
 // Public wrapper function to write data to the display
 //
@@ -253,6 +263,10 @@ void spilcdShowBuffer(SPILCD *pLCD, int x, int y, int cx, int cy, int iFlags);
 // Returns the current backbuffer address
 //
 uint16_t * spilcdGetBuffer(SPILCD *pLCD);
+//
+// Set the back buffer
+//
+void spilcdSetBuffer(SPILCD *pLCD, void *pBuffer);
 //
 // Allocate the back buffer for delayed rendering operations
 //
