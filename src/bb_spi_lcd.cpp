@@ -1577,7 +1577,7 @@ else
 	}
 start_of_init:
     d = &ucRXBuf[128]; // point to middle otherwise full duplex SPI will overwrite our data
-	if (pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7789_240 || pLCD->iLCDType == LCD_ST7789_135 || pLCD->iLCDType == LCD_ST7789_NOCS)
+	if (pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7789_172 || pLCD->iLCDType == LCD_ST7789_280 || pLCD->iLCDType == LCD_ST7789_240 || pLCD->iLCDType == LCD_ST7789_135 || pLCD->iLCDType == LCD_ST7789_NOCS)
 	{
         uint8_t iBGR = (pLCD->iLCDFlags & FLAGS_SWAP_RB) ? 8:0;
 		s = (unsigned char *)&uc240x240InitList[0];
@@ -1586,20 +1586,29 @@ start_of_init:
         s[6] = 0x00 + iBGR;
         pLCD->iCurrentWidth = pLCD->iWidth = 240;
         pLCD->iCurrentHeight = pLCD->iHeight = 320;
-		if (pLCD->iLCDType == LCD_ST7789_240 || pLCD->iLCDType == LCD_ST7789_NOCS)
-		{
+	if (pLCD->iLCDType == LCD_ST7789_240 || pLCD->iLCDType == LCD_ST7789_NOCS)
+	{
             pLCD->iCurrentWidth = pLCD->iWidth = 240;
             pLCD->iCurrentHeight = pLCD->iHeight = 240;
-		}
-		else if (pLCD->iLCDType == LCD_ST7789_135)
-		{
+	}
+	else if (pLCD->iLCDType == LCD_ST7789_135)
+	{
             pLCD->iCurrentWidth = pLCD->iWidth = 135;
             pLCD->iCurrentHeight = pLCD->iHeight = 240;
             pLCD->iColStart = pLCD->iMemoryX = 52;
             pLCD->iRowStart = pLCD->iMemoryY = 40;
-		}
+	} else if (pLCD->iLCDType == LCD_ST7789_280) {
+	    pLCD->iCurrentWidth = pLCD->iWidth = 240;
+	    pLCD->iCurrentHeight = pLCD->iHeight = 280;
+            pLCD->iRowStart = pLCD->iMemoryY = 20;
+	} else if (pLCD->iLCDType == LCD_ST7789_172) {
+            pLCD->iCurrentWidth = pLCD->iWidth = 172;
+            pLCD->iCurrentHeight = pLCD->iHeight = 320;
+            pLCD->iColStart = pLCD->iMemoryX = 34;
+            pLCD->iRowStart = pLCD->iMemoryY = 0;
+	}
         pLCD->iLCDType = LCD_ST7789; // treat them the same from here on
-	} // ST7789
+    } // ST7789
     else if (pLCD->iLCDType == LCD_SSD1331)
     {
         s = (unsigned char *)ucSSD1331InitList;
@@ -3766,11 +3775,15 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
 //
 unsigned char * DecodeRLE8(unsigned char *s, int iWidth, uint16_t *d, uint16_t *usPalette)
 {
-unsigned char c, ucRepeat, ucCount, ucColor=0;
+unsigned char c;
+static unsigned char ucColor, ucRepeat, ucCount;
 long l;
 
-   ucRepeat = 0;
-   ucCount = 0;
+   if (s == NULL) { // initialize
+      ucRepeat = 0;
+      ucCount = 0;
+      return s;
+   }
 
    while (iWidth > 0)
    {
@@ -3795,9 +3808,9 @@ long l;
             switch (c)
             {
                case 0: // end of line
-                 break; // we already deal with this
+                 return s;
                case 1: // end of bitmap
-                 break; // we already deal with this
+                 return s;
                case 2: // move
                  c = *s++; // debug - delta X
                  d += c; iWidth -= c;
@@ -3826,34 +3839,39 @@ long l;
 //
 // Decompress one line of 4-bit RLE data
 //
-unsigned char * DecodeRLE4(unsigned char *s, int iWidth, uint16_t *d, uint16_t *usPalette)
+unsigned char * DecodeRLE4(uint8_t *s, int iWidth, uint16_t *d, uint16_t *usPalette)
 {
-unsigned char c, ucOdd=0, ucRepeat, ucCount, ucColor, uc1=0, uc2=0;
-long l;
+uint8_t c, ucOdd=0, ucColor;
+static uint8_t uc1, uc2, ucRepeat, ucCount;
+int iStartWidth = iWidth;
 
-   ucRepeat = 0;
-   ucCount = 0;
+   if (s == NULL) { // initialize this bitmap
+      ucRepeat = 0;
+      ucCount = 0;
+      return s;
+   }
 
    while (iWidth > 0)
    {
       if (ucCount) // some non-repeating bytes to deal with
       {
-         while (ucCount && iWidth > 0)
+         while (ucCount > 0 && iWidth > 0)
          {
             ucCount--;
             iWidth--;
             ucColor = *s++;
             uc1 = ucColor >> 4; uc2 = ucColor & 0xf;
             *d++ = usPalette[uc1];
-            if (ucCount && iWidth)
+            if (ucCount > 0 && iWidth > 0)
             {
                *d++ = usPalette[uc2];
                ucCount--;
                iWidth--;
             }
          }
-         l = (long)s;
-         if (l & 1) s++; // compressed data pointer must always be even
+         if ((int)(intptr_t)s & 1) {
+            s++; // compressed data pointer must always be even
+         }
       }
       if (ucRepeat == 0 && iWidth > 0) // get a new repeat code or command byte
       {
@@ -3864,9 +3882,11 @@ long l;
             switch (c)
             {
                case 0: // end of line
-                 break; // we already deal with this
+                 if (iStartWidth - iWidth >= 2)
+                    return s; // true end of line
+                 break; // otherwise do nothing because it was from the last line
                case 1: // end of bitmap
-                 break; // we already deal with this
+                 return s;
                case 2: // move
                  c = *s++; // debug - delta X
                  d += c; iWidth -= c;
@@ -3884,12 +3904,12 @@ long l;
             uc1 = ucColor >> 4; uc2 = ucColor & 0xf;
          }     
       }
-      while (ucRepeat && iWidth > 0)
+      while (ucRepeat > 0 && iWidth > 0)
       {
          ucRepeat--;
+         iWidth--;
          *d++ = (ucOdd) ? usPalette[uc2] : usPalette[uc1]; 
          ucOdd = !ucOdd;
-         iWidth--;
       } // while decoding the current line
    } // while pixels on the current line to draw
    return s;
@@ -3962,7 +3982,7 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
     }
     if (ucCompression) // need to do it differently for RLE compressed
     { 
-    uint16_t *d = (uint16_t *)ucRXBuf;
+    uint16_t *d = (uint16_t *)ucTXBuf;
     int y, iStartY, iEndY, iDeltaY;
    
        pCompressed = &pBMP[iOffBits]; // start of compressed data
@@ -3978,6 +3998,8 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
           iEndY = iDestY + cy;
           iDeltaY = 1;
        }
+       DecodeRLE4(NULL, 0,NULL,NULL); // initialize
+       DecodeRLE8(NULL, 0,NULL,NULL);
        for (y=iStartY; y!= iEndY; y += iDeltaY)
        {  
           spilcdSetPosition(pLCD, iDestX, y, cx, 1, iFlags);
