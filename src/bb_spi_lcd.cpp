@@ -93,7 +93,8 @@ static int iHandle; // SPI handle
 #if !defined(HAL_ESP32_HAL_H_) && !defined(__SAMD51__) && !defined(ARDUINO_SAMD_ZERO) && !defined(ARDUINO_ARCH_RP2040)
 #define mySPI SPI
 #elif defined(ARDUINO_ARCH_RP2040)
-MbedSPI *pSPI = new MbedSPI(4,7,6); // use GPIO numbers, not pin #s
+MbedSPI *pSPI = new MbedSPI(12,11,13);
+//MbedSPI *pSPI = new MbedSPI(4,7,6); // use GPIO numbers, not pin #s
 #endif
 
 #include <Arduino.h>
@@ -142,7 +143,13 @@ static unsigned char *ucTXBuf;
 #ifdef __AVR__
 static unsigned char ucRXBuf[512];
 #else
-static unsigned char ucRXBuf[2048]; // ucRXBuf[4096];
+#ifdef ARDUINO_ARCH_RP2040
+// RP2040 somehow allocates this on an odd byte boundary if we don't
+// explicitly align the memory
+static unsigned char ucRXBuf[2048] __attribute__((aligned (16)));
+#else
+static unsigned char ucRXBuf[2048];
+#endif // RP2040
 #endif // __AVR__
 #endif // !ESP32
 #define LCD_DELAY 0xff
