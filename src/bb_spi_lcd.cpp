@@ -2,7 +2,7 @@
 // Copyright (c) 2017 Larry Bank
 // email: bitbank@pobox.com
 // Project started 5/15/2017
-//
+// 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -2005,23 +2005,23 @@ int spilcdDrawTile(SPILCD *pLCD, int x, int y, int iTileWidth, int iTileHeight, 
     int i, j;
     uint32_t ul32;
     unsigned char *s, *d;
-    
-    if (iTileWidth*iTileHeight > 2048)
+    uint16_t *s16, *d16;
+
+    if (iTileWidth*iTileHeight > 2048) {
         return -1; // tile must fit in 4k SPI block size
-    
-        uint16_t *s16, *d16;
-        // First convert to big-endian order
-        d16 = (uint16_t *)ucRXBuf;
-        for (j=0; j<iTileHeight; j++)
+    }
+    // First convert to big-endian order
+    d16 = (uint16_t *)ucRXBuf;
+    for (j=0; j<iTileHeight; j++)
+    {
+        s16 = (uint16_t*)&pTile[j*iPitch];
+        for (i=0; i<iTileWidth; i++)
         {
-            s16 = (uint16_t*)&pTile[j*iPitch];
-            for (i=0; i<iTileWidth; i++)
-            {
-                *d16++ = __builtin_bswap16(*s16++);
-            } // for i;
-        } // for j
-        spilcdSetPosition(pLCD, x, y, iTileWidth, iTileHeight, iFlags);
-        myspiWrite(pLCD, ucRXBuf, iTileWidth*iTileHeight*2, MODE_DATA, iFlags);
+            *d16++ = __builtin_bswap16(*s16++);
+        } // for i;
+    } // for j
+    spilcdSetPosition(pLCD, x, y, iTileWidth, iTileHeight, iFlags);
+    myspiWrite(pLCD, ucRXBuf, iTileWidth*iTileHeight*2, MODE_DATA, iFlags);
     return 0;
 } /* spilcdDrawTile() */
 
@@ -2079,48 +2079,6 @@ int spilcdDrawSmallTile(SPILCD *pLCD, int x, int y, unsigned char *pTile, int iP
     myspiWrite(pLCD, ucTemp, 448, MODE_DATA, iFlags);
     return 0;
 } /* spilcdDrawSmallTile() */
-
-//
-// Draw a 16x16 RGB656 tile with select rows/columns removed
-// the mask contains 1 bit for every column/row that should be drawn
-// For example, to skip the first 2 columns, the mask value would be 0xfffc
-//
-int spilcdDrawMaskedTile(SPILCD *pLCD, int x, int y, unsigned char *pTile, int iPitch, int iColMask, int iRowMask, int iFlags)
-{
-    unsigned char ucTemp[512]; // fix the byte order first to write it more quickly
-    int i, j;
-    unsigned char *s, *d;
-    int iNumCols, iNumRows, iTotalSize;
-    
-    iNumCols = __builtin_popcount(iColMask);
-    iNumRows = __builtin_popcount(iRowMask);
-    iTotalSize = iNumCols * iNumRows * 2;
-    
-        uint16_t *s16 = (uint16_t *)s;
-        uint16_t u16, *d16 = (uint16_t *)d;
-        int iMask;
-        
-        // First convert to big-endian order
-        d16 = (uint16_t *)ucTemp;
-        for (j=0; j<16; j++)
-        {
-            if ((iRowMask & (1<<j)) == 0) continue; // skip row
-            s16 = (uint16_t *)&pTile[j*iPitch];
-            iMask = iColMask;
-            for (i=0; i<16; i++)
-            {
-                u16 = *s16++;
-                if (iMask & 1)
-                {
-                    *d16++ = __builtin_bswap16(u16);
-                }
-                iMask >>= 1;
-            } // for i;
-        } // for j
-        spilcdSetPosition(pLCD, x, y, iNumCols, iNumRows, iFlags);
-        myspiWrite(pLCD, ucTemp, iTotalSize, MODE_DATA, iFlags);
-    return 0;
-} /* spilcdDrawMaskedTile() */
 
 //
 // Draw a 16x16 tile as 16x13 (with priority to non-black pixels)
@@ -2851,7 +2809,7 @@ uint32_t ulPixel, ulPixel2;
 // copy the edge pixels as-is
 // top+bottom lines first
 s = pSrc;
-s2 = &pSrc[(iHeight-1)*iSrcPitch];
+s2 = (unsigned short *)&pSrc[(iHeight-1)*iSrcPitch];
 d = (uint32_t *)pDest;
 d2 = (uint32_t *)&pDest[(iHeight-1)*2*iDestPitch];
 for (x=0; x<iWidth; x++)
@@ -2868,7 +2826,7 @@ for (x=0; x<iWidth; x++)
 }
 for (y=1; y<iHeight-1; y++)
   {
-  s = &pSrc[y * iSrcPitch];
+  s = (unsigned short *)&pSrc[y * iSrcPitch];
   d = (uint32_t *)&pDest[(y * 2 * iDestPitch)];
 // first pixel is just stretched
   ulPixel = *s++;
@@ -3072,9 +3030,7 @@ int miny, maxy;
 
 #ifndef __AVR__
 //
-// Draw a string of small (8x8) text as quickly as possible
-// by writing it to the LCD in a single SPI write
-// The string must be 32 characters or shorter
+// Draw a string of text as quickly as possible
 //
 int spilcdWriteStringFast(SPILCD *pLCD, int x, int y, char *szMsg, unsigned short usFGColor, unsigned short usBGColor, int iFontSize, int iFlags)
 {
@@ -3087,8 +3043,53 @@ uint16_t *usD;
 int cx;
 uint8_t *pFont;
 
-    if (iFontSize != FONT_6x8 && iFontSize != FONT_8x8)
+    if (iFontSize != FONT_6x8 && iFontSize != FONT_8x8 && iFontSize != FONT_12x16)
         return -1; // invalid size
+    if (iFontSize == FONT_12x16) {
+        iLen = strlen(szMsg);
+        if ((12*iLen) + x > pLCD->iCurrentWidth) iLen = (pLCD->iCurrentWidth - x)/12; // can't display it all
+        if (iLen < 0) return -1;
+        iStride = iLen*12;
+        spilcdSetPosition(pLCD, x, y, iStride, 16, iFlags);
+        for (k = 0; k<8; k++) { // create a pair of scanlines from each original
+           uint8_t ucMask = (1 << k);
+           usD = (unsigned short *)&ucRXBuf[0];
+           for (i=0; i<iStride*2; i++)
+              usD[i] = usBG; // set to background color first
+           for (i=0; i<iLen; i++)
+           {
+               uint8_t c0, c1;
+               s = (uint8_t *)&ucSmallFont[((unsigned char)szMsg[i]-32) * 6];
+               for (j=1; j<6; j++)
+               {
+                   uint8_t ucMask1 = ucMask << 1;
+                   uint8_t ucMask2 = ucMask >> 1;
+                   c0 = pgm_read_byte(&s[j]);
+                   if (c0 & ucMask)
+                      usD[0] = usD[1] = usD[iStride] = usD[iStride+1] = usFG;
+                   // test for smoothing diagonals
+                   if (j < 5) {
+                      c1 = pgm_read_byte(&s[j+1]);
+                      if ((c0 & ucMask) && (~c1 & ucMask) && (~c0 & ucMask1) && (c1 & ucMask1)) { // first diagonal condition
+                          usD[iStride+2] = usFG;
+                      } else if ((~c0 & ucMask) && (c1 & ucMask) && (c0 & ucMask1) && (~c1 & ucMask1)) { // second condition
+                          usD[iStride+1] = usFG;
+                      }
+                      if ((c0 & ucMask2) && (~c1 & ucMask2) && (~c0 & ucMask) && (c1 & ucMask)) { // repeat for previous line
+                          usD[1] = usFG;
+                      } else if ((~c0 & ucMask2) && (c1 & ucMask2) && (c0 & ucMask) && (~c1 & ucMask)) {
+                          usD[2] = usFG;
+                      }
+                   }
+                   usD+=2;
+               } // for j
+               usD += 2; // leave "6th" column blank
+            } // for each character
+            myspiWrite(pLCD, ucRXBuf, iStride*4, MODE_DATA, iFlags);
+        } // for each scanline
+        return 0;
+    } // 12x16
+    
     cx = (iFontSize == FONT_8x8) ? 8:6;
     pFont = (iFontSize == FONT_8x8) ? (uint8_t *)ucFont : (uint8_t *)ucSmallFont;
     iLen = strlen(szMsg);
@@ -3627,6 +3628,10 @@ uint16_t *u16Temp = (uint16_t *)ucRXBuf;
     {
        cx = 2; tx = pLCD->iCurrentWidth/2;
     }
+#ifdef __AVR__
+    cx = 16;
+    tx = pLCD->iCurrentWidth/16;
+#endif
     for (y=0; y<pLCD->iCurrentHeight; y++)
     {
        for (x=0; x<cx; x++)
