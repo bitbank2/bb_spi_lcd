@@ -2914,12 +2914,14 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
       cy = pGlyph->height;
       iBitOff = 0; // bitmap offset (in bits)
       if (dy + cy > pLCD->iCurrentHeight)
-         cy = pLCD->iCurrentHeight - dy;
+         cy = pLCD->iCurrentHeight - dy; // clip bottom edge
       else if (dy < 0) {
          cy += dy;
          iBitOff += (pGlyph->width * (-dy));
          dy = 0;
       }
+      if (dx + cx > pLCD->iCurrentWidth)
+         cx = pLCD->iCurrentWidth - dx; // clip right edge
       s = font.bitmap + pGlyph->bitmapOffset; // start of bitmap data
       // Bitmap drawing loop. Image is MSB first and each pixel is packed next
       // to the next (continuing on to the next character line)
@@ -2928,20 +2930,27 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
       if (bBlank) { // erase the areas around the char to not leave old bits
          int miny, maxy;
          c = '0' - font.first;
-         miny = y + (int8_t)pgm_read_byte(&font.glyph[c].yOffset);
+         miny = y + pGlyph->yOffset;
          c = 'y' - font.first;
-         maxy = y + (int8_t)pgm_read_byte(&font.glyph[c].yOffset) + pgm_read_byte(&font.glyph[c].height);
-         spilcdSetPosition(pLCD, x, miny, pGlyph->xAdvance, maxy-miny, iFlags);
+         maxy = miny + pGlyph->height;
+         if (maxy > pLCD->iCurrentHeight)
+            maxy = pLCD->iCurrentHeight;
+         cx = pGlyph->xAdvance;
+         if (cx + x > pLCD->iCurrentWidth) {
+            cx = pLCD->iCurrentWidth - x;
+         }
+         spilcdSetPosition(pLCD, x, miny, cx, maxy-miny, iFlags);
             // blank out area above character
-            for (ty=miny; ty<y+pGlyph->yOffset; ty++) {
-               for (tx=0; tx>pGlyph->xAdvance; tx++)
-                  u16Temp[tx] = usBGColor;
-               myspiWrite(pLCD, (uint8_t *)u16Temp, pGlyph->xAdvance*sizeof(uint16_t), MODE_DATA, iFlags);
-            } // for ty
+//            cy = font.yAdvance - pGlyph->height;
+//            for (ty=miny; ty<miny+cy && ty < maxy; ty++) {
+//               for (tx=0; tx<cx; tx++)
+//                  u16Temp[tx] = usBGColor;
+//               myspiWrite(pLCD, (uint8_t *)u16Temp, cx*sizeof(uint16_t), MODE_DATA, iFlags);
+//            } // for ty
             // character area (with possible padding on L+R)
-            for (ty=0; ty<pGlyph->height; ty++) {
+            for (ty=0; ty<pGlyph->height && ty+miny < maxy; ty++) {
                d = &u16Temp[0];
-               for (tx=0; tx<pGlyph->xOffset; tx++) { // left padding
+               for (tx=0; tx<pGlyph->xOffset && tx < cx; tx++) { // left padding
                   *d++ = usBGColor;
                }
             // character bitmap (center area)
@@ -2951,34 +2960,31 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
                      bits = 8;
                      iBitOff += bits;
                   }
-                  *d++ = (uc & 0x80) ? usFGColor : usBGColor;
+                  if (tx + pGlyph->xOffset < cx) {
+                     *d++ = (uc & 0x80) ? usFGColor : usBGColor;
+                  }
                   bits--;
                   uc <<= 1;
                } // for tx
                // right padding
                k = pGlyph->xAdvance - (int)(d - u16Temp); // remaining amount
-               for (tx=0; tx<k; tx++)
-               *d++ = usBGColor;
-               myspiWrite(pLCD, (uint8_t *)u16Temp, pGlyph->xAdvance*sizeof(uint16_t), MODE_DATA, iFlags);
+               for (tx=0; tx<k && (tx+pGlyph->xOffset+pGlyph->width) < cx; tx++)
+                  *d++ = usBGColor;
+               myspiWrite(pLCD, (uint8_t *)u16Temp, cx*sizeof(uint16_t), MODE_DATA, iFlags);
             } // for ty
             // padding below the current character
             ty = y + pGlyph->yOffset + pGlyph->height;
             for (; ty < maxy; ty++) {
-               for (tx=0; tx<pGlyph->xAdvance; tx++)
+               for (tx=0; tx<cx; tx++)
                   u16Temp[tx] = usBGColor;
-               myspiWrite(pLCD, (uint8_t *)u16Temp, pGlyph->xAdvance*sizeof(uint16_t), MODE_DATA, iFlags);
+               myspiWrite(pLCD, (uint8_t *)u16Temp, cx*sizeof(uint16_t), MODE_DATA, iFlags);
             } // for ty
       } else { // just draw the current character box
          spilcdSetPosition(pLCD, dx, dy, cx, cy, iFlags);
-            iLen = cx * cy; // total pixels to draw
             d = &u16Temp[0]; // point to start of output buffer
-            for (j=0; j<iLen; j++) {
-               if (uc == 0) { // need to read more font data
-                  j += bits;
-                  while (bits > 0) {
-                     *d++ = usBGColor; // draw any remaining 0 bits
-                     bits--;
-                  }
+            for (ty=0; ty<cy; ty++) {
+            for (tx=0; tx<pGlyph->width; tx++) {
+               if (bits == 0) { // need to read more font data
                   uc = pgm_read_byte(&s[iBitOff>>3]); // get more font bitmap data
                   bits = 8 - (iBitOff & 7); // we might not be on a byte boundary
                   iBitOff += bits; // because of a clipped line
@@ -2989,10 +2995,13 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
                      d = &u16Temp[0];
                   }
                } // if we ran out of bits
-               *d++ = (uc & 0x80) ? usFGColor : usBGColor;
+               if (tx < cx) {
+                  *d++ = (uc & 0x80) ? usFGColor : usBGColor;
+               }
                bits--; // next bit
                uc <<= 1;
-            } // for j
+            } // for tx
+            } // for ty
             k = (int)(d-u16Temp);
             if (k) // write any remaining data
                myspiWrite(pLCD, (uint8_t *)u16Temp, k*sizeof(uint16_t), MODE_DATA, iFlags);
