@@ -66,6 +66,7 @@ typedef struct tagSPILCD
    uint8_t *pBackBuffer;
    int iWindowX, iWindowY, iCurrentX, iCurrentY; // for RAM operations
    int iWindowCX, iWindowCY;
+   int iCursorX, iCursorY; // for text operations
    int iOldX, iOldY, iOldCX, iOldCY; // to optimize spilcdSetPosition()
    RESETCALLBACK pfnResetCallback;
    DATACALLBACK pfnDataCallback;
@@ -115,6 +116,10 @@ extern "C" {
 
 // Sets the D/C pin to data or command mode
 void spilcdSetMode(int iMode);
+//
+// Set the text cursor position in pixels
+//
+void spilcdSetCursor(SPILCD *pLCD, int x, int y);
 //
 // Provide a small temporary buffer for use by the graphics functions
 //
@@ -198,6 +203,10 @@ int spilcdWriteStringFast(SPILCD *pLCD, int x, int y, char *szText, unsigned sho
 // Draw a string in a proportional font you supply
 //
 int spilcdWriteStringCustom(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, uint16_t usBGColor, int bBlank, int iFlags);
+//
+// Draw a string in a proportional font with antialiasing
+//
+int spilcdWriteStringAntialias(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, uint16_t usBGColor, int iFlags);
 //
 // Get the width and upper/lower bounds of text in a custom font
 //
