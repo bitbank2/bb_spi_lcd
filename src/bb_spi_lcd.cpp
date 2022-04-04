@@ -118,6 +118,7 @@ volatile int iCurrentCS;
 
 #ifdef ESP32_DMA
 #include "driver/spi_master.h"
+static void spi_pre_transfer_callback(spi_transaction_t *t);
 static spi_device_interface_config_t devcfg;
 static spi_bus_config_t buscfg;
 static int iStarted = 0; // indicates if the master driver has already been initialized
@@ -1521,7 +1522,8 @@ int i, iCount;
     devcfg.mode = pLCD->iSPIMode;                         //SPI mode 0 or 3
     devcfg.spics_io_num = -1;               //CS pin, set to -1 to disable since we handle it outside of the master driver
     devcfg.queue_size = 2;                          //We want to be able to queue 2 transactions at a time
-//    devcfg.pre_cb = spi_pre_transfer_callback;  //Specify pre-transfer callback to handle D/C line
+// These callbacks currently don't do anything
+    devcfg.pre_cb = spi_pre_transfer_callback;  //Specify pre-transfer callback to handle D/C line
     devcfg.post_cb = spi_post_transfer_callback;
     devcfg.flags = SPI_DEVICE_NO_DUMMY; // allow speeds > 26Mhz
 //    devcfg.flags = SPI_DEVICE_HALFDUPLEX; // this disables SD card access
@@ -2752,11 +2754,11 @@ uint8_t * spilcdGetDMABuffer(void)
 #ifdef ESP32_DMA
 //This function is called (in irq context!) just before a transmission starts. It will
 //set the D/C line to the value indicated in the user field.
-//static void spi_pre_transfer_callback(spi_transaction_t *t)
-//{
+static void spi_pre_transfer_callback(spi_transaction_t *t)
+{
 //    int iMode=(int)t->user;
 //    spilcdSetMode(iMode);
-//}
+}
 static void spi_post_transfer_callback(spi_transaction_t *t)
 {
 //    SPILCD *pLCD = (SPILCD*)t;
@@ -3060,6 +3062,7 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
         y = pLCD->iCursorY;
     if (x < 0)
         return -1;
+   if (usFGColor == usBGColor) usBGColor = 0; // DEBUG!! no transparent option for now
    // in case of running on AVR, get copy of data from FLASH
    memcpy_P(&font, pFont, sizeof(font));
    pGlyph = &glyph;
@@ -3338,6 +3341,7 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
 	iLen = strlen(szMsg);
     if (usBGColor == -1)
         iFlags = DRAW_TO_RAM; // transparent text doesn't get written to the display
+    if (usFG == usBG) usBG = 0; // DEBUG!! no transparent option for now
 #ifndef __AVR__
 	if (iFontSize == FONT_16x32) // draw 16x32 font
 	{
@@ -4532,3 +4536,234 @@ uint16_t *uss, *usd;
     } // for y
 } /* spilcdRotateMask() */
 #endif // !__AVR__
+void spilcdScroll1Line(SPILCD *pLCD, int iAmount)
+{
+int i, iCount;
+int iPitch = pLCD->iCurrentWidth * sizeof(uint16_t);
+uint16_t *d;
+    
+    if (pLCD == NULL || pLCD->pBackBuffer == NULL)
+        return;
+    iCount = (pLCD->iCurrentHeight - iAmount) * iPitch;
+    memmove(pLCD->pBackBuffer, &pLCD->pBackBuffer[iPitch*iAmount], iCount);
+    d = (uint16_t *)&pLCD->pBackBuffer[iCount];
+    for (i=0; i<iAmount * pLCD->iCurrentWidth; i++) {
+        *d++ = pLCD->iBG;
+    }
+} /* obdScroll1Line() */
+
+//
+// C++ Class implementation
+//
+int BB_SPI_LCD::begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin)
+{
+  return spilcdInit(&_lcd, iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin);
+} /* begin() */
+
+bool BB_SPI_LCD::allocBuffer(void)
+{
+    int rc = spilcdAllocBackbuffer(&_lcd);
+    return (rc == 0);
+}
+void BB_SPI_LCD::setScroll(bool bScroll)
+{
+    _lcd.bScroll = bScroll;
+}
+void BB_SPI_LCD::setRotation(int iAngle)
+{
+int i;
+  switch (iAngle) {
+    default: return;
+    case 0:
+      i = LCD_ORIENTATION_0;
+      break;
+    case 90:
+    case 1: // allow Adafruit way or angle
+      i = LCD_ORIENTATION_90;
+      break;
+    case 180:
+    case 2:
+      i = LCD_ORIENTATION_180;
+      break;
+    case 270:
+    case 3:
+      i = LCD_ORIENTATION_270;
+      break; 
+  }
+  spilcdSetOrientation(&_lcd, i);
+} /* setRotation() */
+
+void BB_SPI_LCD::fillScreen(int iColor)
+{
+  spilcdFill(&_lcd, iColor, DRAW_TO_LCD);
+} /* fillScreen() */
+
+void BB_SPI_LCD::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
+{
+  spilcdRectangle(&_lcd, x, y, x+w-1, y+h-1, color, color, 0, DRAW_TO_LCD);
+} /* drawRect() */
+
+void BB_SPI_LCD::fillRect(int x, int y, int w, int h, int iColor)
+{
+  spilcdRectangle(&_lcd, x, y, x+w-1, y+h-1, iColor, iColor, 1, DRAW_TO_LCD);
+} /* fillRect() */
+
+void BB_SPI_LCD::setTextColor(int iFG, int iBG)
+{
+  _lcd.iFG = iFG;
+  _lcd.iBG = (iBG == -1) ? iFG : iBG;
+} /* setTextColor() */
+
+void BB_SPI_LCD::setCursor(int x, int y)
+{
+  _lcd.iCursorX = x;
+  _lcd.iCursorY = y;
+} /* setCursor() */
+
+void BB_SPI_LCD::setFont(int iFont)
+{
+  _lcd.iFont = iFont;
+  _lcd.pFont = NULL;
+} /* setFont() */
+
+void BB_SPI_LCD::setFreeFont(const GFXfont *pFont)
+{
+  _lcd.pFont = (GFXfont *)pFont;
+} /* setFreeFont() */
+
+void BB_SPI_LCD::drawLine(int x1, int y1, int x2, int y2, int iColor)
+{
+  spilcdDrawLine(&_lcd, x1, y1, x2, y2, iColor, DRAW_TO_LCD);
+} /* drawLine() */
+inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
+#ifdef __AVR__
+  return &(((GFXglyph *)pgm_read_pointer(&gfxFont->glyph))[c]);
+#else
+  // expression in __AVR__ section may generate "dereferencing type-punned
+  // pointer will break strict-aliasing rules" warning In fact, on other
+  // platforms (such as STM32) there is no need to do this pointer magic as
+  // program memory may be read in a usual way So expression may be simplified
+  return gfxFont->glyph + c;
+#endif //__AVR__
+}
+
+//
+// write (Print friend class)
+//
+size_t BB_SPI_LCD::write(uint8_t c) {
+char szTemp[2]; // used to draw 1 character at a time to the C methods
+int w, h;
+
+  szTemp[0] = c; szTemp[1] = 0;
+  if (_lcd.pFont == NULL) { // use built-in fonts
+      if (_lcd.iFont == FONT_8x8 || _lcd.iFont == FONT_6x8) {
+        h = 8;
+        w = (_lcd.iFont == FONT_8x8) ? 8 : 6;
+      } else if (_lcd.iFont == FONT_12x16 || _lcd.iFont == FONT_16x16) {
+        h = 16;
+        w = (_lcd.iFont == FONT_12x16) ? 12 : 16;
+      } else { w = 16; h = 32; }
+
+    if (c == '\n') {              // Newline?
+      _lcd.iCursorX = 0;          // Reset x to zero,
+      _lcd.iCursorY += h; // advance y one line
+        // should we scroll the screen up 1 line?
+        if (_lcd.iCursorY >= _lcd.iCurrentHeight && _lcd.pBackBuffer && _lcd.bScroll) {
+            spilcdScroll1Line(&_lcd, h);
+            spilcdShowBuffer(&_lcd, 0, 0, _lcd.iCurrentWidth, _lcd.iCurrentHeight, DRAW_TO_LCD);
+            _lcd.iCursorY -= h;
+        }
+    } else if (c != '\r') {       // Ignore carriage returns
+      if (_lcd.iWrap && ((_lcd.iCursorX + w) > _lcd.iCurrentWidth)) { // Off right?
+        _lcd.iCursorX = 0;               // Reset x to zero,
+        _lcd.iCursorY += h; // advance y one line
+          // should we scroll the screen up 1 line?
+          if (_lcd.iCursorY >= _lcd.iCurrentHeight && _lcd.pBackBuffer && _lcd.bScroll) {
+              spilcdScroll1Line(&_lcd, h);
+              spilcdShowBuffer(&_lcd, 0, 0, _lcd.iCurrentWidth, _lcd.iCurrentHeight, DRAW_TO_LCD);
+              _lcd.iCursorY -= h;
+          }
+      }
+      spilcdWriteString(&_lcd, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, _lcd.iFont, DRAW_TO_LCD | DRAW_TO_RAM);
+    }
+  } else { // Custom font
+    if (c == '\n') {
+      _lcd.iCursorX = 0;
+      _lcd.iCursorY += (uint8_t)pgm_read_byte(&_lcd.pFont->yAdvance);
+    } else if (c != '\r') {
+      uint8_t first = pgm_read_byte(&_lcd.pFont->first);
+      if ((c >= first) && (c <= (uint8_t)pgm_read_byte(&_lcd.pFont->last))) {
+        GFXglyph *glyph = pgm_read_glyph_ptr(_lcd.pFont, c - first);
+        w = pgm_read_byte(&glyph->width);
+        h = pgm_read_byte(&glyph->height);
+        if ((w > 0) && (h > 0)) { // Is there an associated bitmap?
+          int16_t xo = (int8_t)pgm_read_byte(&glyph->xOffset);
+          w += xo; // xadvance
+          h = (uint8_t)pgm_read_byte(&_lcd.pFont->yAdvance);
+          if (_lcd.iAntialias) { w /= 2; h /= 2; }
+          if (_lcd.iWrap && ((_lcd.iCursorX + w) > _lcd.iCurrentWidth)) {
+            _lcd.iCursorX = 0;
+            _lcd.iCursorY += h;
+          }
+          if (_lcd.iAntialias)
+            spilcdWriteStringAntialias(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, 0, DRAW_TO_LCD | DRAW_TO_RAM);
+          else 
+            spilcdWriteStringCustom(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, 0, DRAW_TO_LCD | DRAW_TO_RAM);
+        }
+      }
+    }
+  }
+  return 1;
+} /* write() */
+void BB_SPI_LCD::drawPixel(int16_t x, int16_t y, uint16_t color)
+{
+  spilcdSetPosition(&_lcd, x, y, 1, 1, DRAW_TO_LCD);
+  color = __builtin_bswap16(color);
+  spilcdWriteDataBlock(&_lcd, (uint8_t *)&color, 2, DRAW_TO_LCD);
+}
+void BB_SPI_LCD::setAntialias(bool bAntialias)
+{
+  _lcd.iAntialias = (int)bAntialias;
+}
+int16_t BB_SPI_LCD::getCursorX(void)
+{
+  return _lcd.iCursorX;
+}
+int16_t BB_SPI_LCD::getCursorY(void)
+{
+  return _lcd.iCursorY;
+}
+uint8_t BB_SPI_LCD::getRotation(void)
+{
+  return _lcd.iOrientation;
+}
+int16_t BB_SPI_LCD::width(void)
+{
+   return _lcd.iCurrentWidth;
+}
+int16_t BB_SPI_LCD::height(void)
+{
+   return _lcd.iCurrentHeight;
+}
+void BB_SPI_LCD::drawCircle(int32_t x, int32_t y, int32_t r, uint32_t color)
+{
+  spilcdEllipse(&_lcd, x, y, r, r, (uint16_t)color, 0, DRAW_TO_LCD);
+}
+void BB_SPI_LCD::fillCircle(int32_t x, int32_t y, int32_t r, uint32_t color)
+{
+  spilcdEllipse(&_lcd, x, y, r, r, (uint16_t)color, 1, DRAW_TO_LCD);
+}
+void BB_SPI_LCD::drawEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color)
+{
+  spilcdEllipse(&_lcd, x, y, rx, ry, (uint16_t)color, 0, DRAW_TO_LCD);
+}
+void BB_SPI_LCD::fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color)
+{
+  spilcdEllipse(&_lcd, x, y, rx, ry, (uint16_t)color, 1, DRAW_TO_LCD);
+}
+
+void BB_SPI_LCD::pushImage(int x, int y, int w, int h, uint16_t *pixels)
+{
+  spilcdSetPosition(&_lcd, x, y, w, h, DRAW_TO_LCD);
+  spilcdWriteDataBlock(&_lcd, (uint8_t *)pixels, w*h*2, DRAW_TO_LCD);
+}

@@ -20,6 +20,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 // these are defined the same in the OLED library
+#include <Arduino.h>
+#include <Print.h>
+
 #if !defined( __SS_OLED_H__ ) && !defined( __ONEBITDISPLAY__ )
 enum {
    FONT_6x8 = 0,
@@ -51,27 +54,6 @@ typedef void (*DATACALLBACK)(uint8_t *pData, int len, int iMode);
 //
 typedef void (*RESETCALLBACK)(void);
 
-// Structure holding an instance of a display
-typedef struct tagSPILCD
-{
-   int iLCDType, iLCDFlags; // LCD display type and flags
-   int iOrientation; // current orientation
-   int iScrollOffset;
-   int iWidth, iHeight; // native direction size
-   int iCurrentWidth, iCurrentHeight; // rotated size
-   int iCSPin, iCLKPin, iMOSIPin, iDCPin, iResetPin, iLEDPin;
-   int32_t iSPISpeed, iSPIMode; // SPI settings
-   int iScreenPitch, iOffset, iMaxOffset; // display RAM values
-   int iColStart, iRowStart, iMemoryX, iMemoryY; // display oddities
-   uint8_t *pBackBuffer;
-   int iWindowX, iWindowY, iCurrentX, iCurrentY; // for RAM operations
-   int iWindowCX, iWindowCY;
-   int iCursorX, iCursorY; // for text operations
-   int iOldX, iOldY, iOldCX, iOldCY; // to optimize spilcdSetPosition()
-   RESETCALLBACK pfnResetCallback;
-   DATACALLBACK pfnDataCallback;
-} SPILCD;
-
 // Proportional font data taken from Adafruit_GFX library
 /// Font data stored PER GLYPH
 #if !defined( _ADAFRUIT_GFX_H ) && !defined( _GFXFONT_H_ )
@@ -85,6 +67,18 @@ typedef struct {
   int8_t yOffset;        ///< Y dist from cursor pos to UL corner
 } GFXglyph;
 
+#ifndef TFT_BLACK
+#define TFT_BLACK 0x0000
+#define TFT_GREEN 0x07e0
+#define TFT_RED 0xf800
+#define TFT_BLUE 0x001f
+#define TFT_CYAN 0x07ff
+#define TFT_YELLOW 0xffe0
+#define TFT_MAGENTA 0xf81f
+#define TFT_WHITE 0xffff
+#define TFT_GREY 0x5AEB
+#endif
+
 /// Data stored for FONT AS A WHOLE
 typedef struct {
   uint8_t *bitmap;  ///< Glyph bitmaps, concatenated
@@ -94,6 +88,64 @@ typedef struct {
   uint8_t yAdvance; ///< Newline distance (y axis)
 } GFXfont;
 #endif // _ADAFRUIT_GFX_H
+
+// Structure holding an instance of a display
+typedef struct tagSPILCD
+{
+   int iLCDType, iLCDFlags; // LCD display type and flags
+   int iOrientation; // current orientation
+   int iScrollOffset, bScroll;
+   int iWidth, iHeight; // native direction size
+   int iCurrentWidth, iCurrentHeight; // rotated size
+   int iCSPin, iCLKPin, iMOSIPin, iDCPin, iResetPin, iLEDPin;
+   int32_t iSPISpeed, iSPIMode; // SPI settings
+   int iScreenPitch, iOffset, iMaxOffset; // display RAM values
+   int iColStart, iRowStart, iMemoryX, iMemoryY; // display oddities
+   uint8_t *pBackBuffer;
+   int iWindowX, iWindowY, iCurrentX, iCurrentY; // for RAM operations
+   int iWindowCX, iWindowCY;
+   int iCursorX, iCursorY; // for text operations
+   int iFont, iWrap, iFG, iBG, iAntialias;
+   GFXfont *pFont;
+   int iOldX, iOldY, iOldCX, iOldCY; // to optimize spilcdSetPosition()
+   RESETCALLBACK pfnResetCallback;
+   DATACALLBACK pfnDataCallback;
+} SPILCD;
+
+class BB_SPI_LCD : public Print
+{
+  public:
+    int begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
+    void setRotation(int iAngle);
+    uint8_t getRotation(void);
+    void fillScreen(int iColor);
+    void drawPixel(int16_t x, int16_t y, uint16_t color);
+    void fillRect(int x, int y, int w, int h, int iColor);
+    void setTextColor(int iFG, int iBG = -1);
+    void setCursor(int x, int y);
+    int16_t getCursorX(void);
+    int16_t getCursorY(void);
+    bool allocBuffer(void);
+    void setTextSize(int iSize) {}; // empty for now
+    void setFont(int iFont);
+    void setScroll(bool bScroll);
+    void setAntialias(bool bAntialias);
+    void setFreeFont(const GFXfont *pFont);
+    int16_t height(void);
+    int16_t width(void);
+    void pushImage(int x, int y, int w, int h, uint16_t *pixels);
+    void drawLine(int x1, int y1, int x2, int y2, int iColor);
+    void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
+    void drawCircle(int32_t x, int32_t y, int32_t r, uint32_t color);
+    void fillCircle(int32_t x, int32_t y, int32_t r, uint32_t color);
+    void drawEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color);
+    void fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color);
+    using Print::write;
+    virtual size_t write(uint8_t);
+
+  private:
+    SPILCD _lcd;
+}; // class BB_SPI_LCD
 
 #if !defined(BITBANK_LCD_MODES)
 #define BITBANK_LCD_MODES
