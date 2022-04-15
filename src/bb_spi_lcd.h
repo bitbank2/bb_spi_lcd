@@ -22,6 +22,9 @@
 // these are defined the same in the OLED library
 #include <Arduino.h>
 #include <Print.h>
+#if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_Core2)
+#include <Wire.h>
+#endif
 
 #if !defined( __SS_OLED_H__ ) && !defined( __ONEBITDISPLAY__ )
 enum {
@@ -115,6 +118,7 @@ typedef struct tagSPILCD
 class BB_SPI_LCD : public Print
 {
   public:
+    int begin(int iStandardType);
     int begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
     void setRotation(int iAngle);
     uint8_t getRotation(void);
@@ -126,6 +130,8 @@ class BB_SPI_LCD : public Print
     int16_t getCursorX(void);
     int16_t getCursorY(void);
     bool allocBuffer(void);
+    void * getBuffer(void);
+    void freeBuffer(void);
     void setTextSize(int iSize) {}; // empty for now
     void setFont(int iFont);
     void setScroll(bool bScroll);
@@ -133,7 +139,8 @@ class BB_SPI_LCD : public Print
     void setFreeFont(const GFXfont *pFont);
     int16_t height(void);
     int16_t width(void);
-    void pushImage(int x, int y, int w, int h, uint16_t *pixels);
+    void display(void);
+    void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD);
     void drawLine(int x1, int y1, int x2, int y2, int iColor);
     void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
     void drawCircle(int32_t x, int32_t y, int32_t r, uint32_t color);
@@ -147,6 +154,20 @@ class BB_SPI_LCD : public Print
     SPILCD _lcd;
 }; // class BB_SPI_LCD
 
+enum
+{
+    DISPLAY_TINYPICO_IPS_SHIELD=1,
+    DISPLAY_TINYPICO_EXPLORER_SHIELD,
+    DISPLAY_WIO_TERMINAL,
+    DISPLAY_TEENSY_ILI9341,
+    DISPLAY_M5STACK_STICKCPLUS,
+    DISPLAY_M5STACK_CORE2,
+    DISPLAY_RANKIN_COLORCOIN,
+    DISPLAY_RANKIN_SENSOR,
+    DISPLAY_RANKIN_POWER,
+    DISPLAY_TTGO_T_DISPLAY,
+    DISPLAY_COUNT
+};
 #if !defined(BITBANK_LCD_MODES)
 #define BITBANK_LCD_MODES
 typedef enum

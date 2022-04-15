@@ -2803,8 +2803,8 @@ esp_err_t ret;
     
     // Queue the transaction
 //    ret = spi_device_polling_transmit(spi, &t);
-    ret = spi_device_queue_trans(spi, &trans[0], portMAX_DELAY);
     transfer_is_done = false;
+    ret = spi_device_queue_trans(spi, &trans[0], portMAX_DELAY);
     assert (ret==ESP_OK);
 //    iFirst = 0;
     return;
@@ -3752,7 +3752,7 @@ int bX=0, bY=0, bV=0;
             pLCD->iMemoryX = pLCD->iMemoryY = 0;
         }
     }
-   if (pLCD->iLCDType == LCD_ILI9486 || pLCD->iLCDType == LCD_ST7789_NOCS || pLCD->iLCDType == LCD_ST7789_135 || pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ST7735S_B || pLCD->iLCDType == LCD_ILI9341 || pLCD->iLCDType == LCD_ILI9342)
+   if (pLCD->iLCDType == LCD_ILI9486 || pLCD->iLCDType == LCD_ST7789_NOCS || pLCD->iLCDType == LCD_ST7789_135 || pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ILI9341 || pLCD->iLCDType == LCD_ILI9342)
    {
       uint8_t uc = 0;
        if (pLCD->iLCDType == LCD_ILI9342) // x is reversed
@@ -4540,25 +4540,448 @@ void spilcdScroll1Line(SPILCD *pLCD, int iAmount)
 {
 int i, iCount;
 int iPitch = pLCD->iCurrentWidth * sizeof(uint16_t);
-uint16_t *d;
-    
+uint16_t *d, us;
     if (pLCD == NULL || pLCD->pBackBuffer == NULL)
         return;
     iCount = (pLCD->iCurrentHeight - iAmount) * iPitch;
     memmove(pLCD->pBackBuffer, &pLCD->pBackBuffer[iPitch*iAmount], iCount);
     d = (uint16_t *)&pLCD->pBackBuffer[iCount];
+    us = (pLCD->iBG >> 8) | (pLCD->iBG << 8);
     for (i=0; i<iAmount * pLCD->iCurrentWidth; i++) {
-        *d++ = pLCD->iBG;
+        *d++ = us;
     }
 } /* obdScroll1Line() */
+
+#if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_Core2)
+void Write1Byte( uint8_t Addr ,  uint8_t Data )
+{
+    Wire1.beginTransmission(0x34);
+    Wire1.write(Addr);
+    Wire1.write(Data);
+    Wire1.endTransmission();
+}
+uint8_t Read8bit( uint8_t Addr )
+{
+    Wire1.beginTransmission(0x34);
+    Wire1.write(Addr);
+    Wire1.endTransmission();
+    Wire1.requestFrom(0x34, 1);
+    return Wire1.read();
+}
+#endif // both Core2 + StickC+
+
+#if defined (ARDUINO_M5STACK_Core2)
+typedef enum
+{
+    kMBusModeOutput = 0,  // powered by USB or Battery
+    kMBusModeInput = 1  // powered by outside input
+} mbus_mode_t;
+
+enum CHGCurrent{
+    kCHG_100mA = 0,
+    kCHG_190mA,
+    kCHG_280mA,
+    kCHG_360mA,
+    kCHG_450mA,
+    kCHG_550mA,
+    kCHG_630mA,
+    kCHG_700mA,
+    kCHG_780mA,
+    kCHG_880mA,
+    kCHG_960mA,
+    kCHG_1000mA,
+    kCHG_1080mA,
+    kCHG_1160mA,
+    kCHG_1240mA,
+    kCHG_1320mA,
+};
+void SetLed(uint8_t state)
+{
+    uint8_t reg_addr=0x94;
+    uint8_t data;
+    data=Read8bit(reg_addr);
+
+    if(state)
+    {
+      data=data&0XFD;
+    }
+    else
+    {
+      data|=0X02;
+    }
+
+    Write1Byte(reg_addr,data);
+}
+
+void SetDCVoltage(uint8_t number, uint16_t voltage)
+{
+    uint8_t addr;
+    if (number > 2)
+        return;
+    voltage = (voltage < 700) ? 0 : (voltage - 700) / 25;
+    switch (number)
+    {
+    case 0:
+        addr = 0x26;
+        break;
+    case 1:
+        addr = 0x25;
+        break;
+    case 2:
+        addr = 0x27;
+        break;
+    }
+    Write1Byte(addr, (Read8bit(addr) & 0X80) | (voltage & 0X7F));
+}
+void SetESPVoltage(uint16_t voltage)
+{
+    if (voltage >= 3000 && voltage <= 3400)
+    {
+        SetDCVoltage(0, voltage);
+    }
+}
+void SetLDOVoltage(uint8_t number, uint16_t voltage)
+{
+    voltage = (voltage > 3300) ? 15 : (voltage / 100) - 18;
+    switch (number)
+    {
+    //uint8_t reg, data;
+    case 2:
+        Write1Byte(0x28, (Read8bit(0x28) & 0X0F) | (voltage << 4));
+        break;
+    case 3:
+        Write1Byte(0x28, (Read8bit(0x28) & 0XF0) | voltage);
+        break;
+    }
+}
+
+void SetLcdVoltage(uint16_t voltage)
+{
+    if (voltage >= 2500 && voltage <= 3300)
+    {
+        SetDCVoltage(2, voltage);
+    }
+}
+void SetLCDRSet(bool state)
+{
+    uint8_t reg_addr = 0x96;
+    uint8_t gpio_bit = 0x02;
+    uint8_t data;
+    data = Read8bit(reg_addr);
+
+    if (state)
+    {
+        data |= gpio_bit;
+    }
+    else
+    {
+        data &= ~gpio_bit;
+    }
+
+    Write1Byte(reg_addr, data);
+}
+
+void SetLDOEnable(uint8_t number, bool state)
+{
+    uint8_t mark = 0x01;
+    if ((number < 2) || (number > 3))
+        return;
+
+    mark <<= number;
+    if (state)
+    {
+        Write1Byte(0x12, (Read8bit(0x12) | mark));
+    }
+    else
+    {
+        Write1Byte(0x12, (Read8bit(0x12) & (~mark)));
+    }
+}
+void SetBusPowerMode(uint8_t state)
+{
+    uint8_t data;
+    if (state == 0)
+    {
+        data = Read8bit(0x91);
+        Write1Byte(0x91, (data & 0X0F) | 0XF0);
+
+        data = Read8bit(0x90);
+        Write1Byte(0x90, (data & 0XF8) | 0X02); //set GPIO0 to LDO OUTPUT , pullup N_VBUSEN to disable supply from BUS_5V
+
+        data = Read8bit(0x91);
+
+        data = Read8bit(0x12);         //read reg 0x12
+        Write1Byte(0x12, data | 0x40); //set EXTEN to enable 5v boost
+    }
+    else
+    {
+        data = Read8bit(0x12);         //read reg 0x10
+        Write1Byte(0x12, data & 0XBF); //set EXTEN to disable 5v boost
+        //delay(2000);
+
+        data = Read8bit(0x90);
+        Write1Byte(0x90, (data & 0xF8) | 0X01); //set GPIO0 to float , using enternal pulldown resistor to enable supply from BUS_5VS
+    }
+}
+void SetCHGCurrent(uint8_t state)
+{
+    uint8_t data = Read8bit(0x33);
+    data &= 0xf0;
+    data = data | ( state & 0x0f );
+    Write1Byte(0x33,data);
+}
+
+// Backlight control
+void SetDCDC3(bool bPower)
+{
+    uint8_t buf = Read8bit(0x12);
+    if (bPower == true)
+        buf = (1 << 1) | buf;
+    else
+        buf = ~(1 << 1) & buf;
+    Write1Byte(0x12, buf);
+}
+void Core2AxpPowerUp()
+{
+    Wire1.begin(21, 22);
+    Wire1.setClock(400000);
+
+    //AXP192 30H
+    Write1Byte(0x30, (Read8bit(0x30) & 0x04) | 0X02);
+    Serial.printf("axp: vbus limit off\n");
+
+    //AXP192 GPIO1:OD OUTPUT
+    Write1Byte(0x92, Read8bit(0x92) & 0xf8);
+    Serial.printf("axp: gpio1 init\n");
+
+    //AXP192 GPIO2:OD OUTPUT
+    Write1Byte(0x93, Read8bit(0x93) & 0xf8);
+    Serial.printf("axp: gpio2 init\n");
+
+    //AXP192 RTC CHG
+    Write1Byte(0x35, (Read8bit(0x35) & 0x1c) | 0xa2);
+    Serial.printf("axp: rtc battery charging enabled\n");
+    
+    SetESPVoltage(3350);
+    Serial.printf("axp: esp32 power voltage was set to 3.35v\n");
+
+    SetLcdVoltage(2800);
+    Serial.printf("axp: lcd backlight voltage was set to 2.80v\n");
+
+    SetLDOVoltage(2, 3300); //Periph power voltage preset (LCD_logic, SD card)
+    Serial.printf("axp: lcd logic and sdcard voltage preset to 3.3v\n");
+
+    SetLDOVoltage(3, 2000); //Vibrator power voltage preset
+    Serial.printf("axp: vibrator voltage preset to 2v\n");
+
+    SetLDOEnable(2, true);
+    SetDCDC3(true); // LCD backlight
+    SetLed(true);
+
+    SetCHGCurrent(kCHG_100mA);
+    //SetAxpPriphPower(1);
+    //Serial.printf("axp: lcd_logic and sdcard power enabled\n\n");
+
+    //pinMode(39, INPUT_PULLUP);
+    
+    //AXP192 GPIO4
+    Write1Byte(0X95, (Read8bit(0x95) & 0x72) | 0X84);
+
+    Write1Byte(0X36, 0X4C);
+
+    Write1Byte(0x82,0xff);
+
+    SetLCDRSet(0);
+    delay(100);
+    SetLCDRSet(1);
+    delay(100);
+    // I2C_WriteByteDataAt(0X15,0XFE,0XFF);
+
+    // axp: check v-bus status
+    if(Read8bit(0x00) & 0x08) {
+        Write1Byte(0x30, Read8bit(0x30) | 0x80);
+        // if v-bus can use, disable M-Bus 5V output to input
+        SetBusPowerMode(kMBusModeInput);
+    }else{
+        // if not, enable M-Bus 5V output
+        SetBusPowerMode(kMBusModeOutput);
+    }
+
+} /* Core2AxpPowerUp() */
+#endif // Core2
+
+#if defined( ARDUINO_M5Stick_C )
+void AxpBrightness(uint8_t brightness)
+{
+    if (brightness > 12)
+    {
+        brightness = 12;
+    }
+    uint8_t buf = Read8bit( 0x28 );
+    Write1Byte( 0x28 , ((buf & 0x0f) | (brightness << 4)) );
+}
+void AxpPowerUp()
+{
+    Wire1.begin(21, 22);
+    Wire1.setClock(400000);
+    // Set LDO2 & LDO3(TFT_LED & TFT) 3.0V
+    Write1Byte(0x28, 0xcc);
+
+    // Set ADC sample rate to 200hz
+    Write1Byte(0x84, 0b11110010);
+   
+    // Set ADC to All Enable
+    Write1Byte(0x82, 0xff);
+
+    // Bat charge voltage to 4.2, Current 100MA
+    Write1Byte(0x33, 0xc0);
+
+    // Depending on configuration enable LDO2, LDO3, DCDC1, DCDC3.
+    byte buf = (Read8bit(0x12) & 0xef) | 0x4D;
+//    if(disableLDO3) buf &= ~(1<<3);
+//    if(disableLDO2) buf &= ~(1<<2);
+//    if(disableDCDC3) buf &= ~(1<<1);
+//    if(disableDCDC1) buf &= ~(1<<0);
+    Write1Byte(0x12, buf);
+     // 128ms power on, 4s power off
+    Write1Byte(0x36, 0x0C);
+
+    if (1) //if(!disableRTC)
+    {
+        // Set RTC voltage to 3.3V
+        Write1Byte(0x91, 0xF0);
+
+        // Set GPIO0 to LDO
+        Write1Byte(0x90, 0x02);
+    }
+
+    // Disable vbus hold limit
+    Write1Byte(0x30, 0x80);
+
+    // Set temperature protection
+    Write1Byte(0x39, 0xfc);
+
+    // Enable RTC BAT charge
+//    Write1Byte(0x35, 0xa2 & (disableRTC ? 0x7F : 0xFF));
+    Write1Byte(0x35, 0xa2);
+     // Enable bat detection
+    Write1Byte(0x32, 0x46);
+
+    // Set Power off voltage 3.0v
+    Write1Byte(0x31 , (Read8bit(0x31) & 0xf8) | (1 << 2));
+
+} /* AxpPowerUp() */
+#endif // ARDUINO_M5Stick_C
 
 //
 // C++ Class implementation
 //
+int BB_SPI_LCD::begin(int iDisplayType)
+{
+    int iCS=0, iDC=0, iMOSI=0, iSCK=0; // swap pins around for the different TinyPico boards
+    int iLED=0, iRST = -1;
+#ifdef ARDUINO_TINYPICO
+    iMOSI = 23;
+    iSCK = 18;
+    if (iDisplayType == DISPLAY_TINYPICO_IPS_SHIELD) {
+        iCS = 5;
+        iDC = 15;
+        iLED = 14;
+    } else { // Explorer Shield
+        iCS = 14;
+        iDC = 4;
+        iLED = -1;
+    }
+#elif defined (ARDUINO_TINYS2)
+    iMOSI = 35;
+    iSCK = 37;
+    if (iDisplayType == DISPLAY_TINYPICO_IPS_SHIELD) {
+        iCS = 14;
+        iDC = 6;
+        iLED = 5;
+    } else { // Explorer Shield
+        iCS = 5;
+        iDC = 4;
+        iLED = -1;
+    }
+#elif defined (ARDUINO_TINYS3)
+    iMOSI = 35;
+    iSCK = 36;
+    if (iDisplayType == DISPLAY_TINYPICO_IPS_SHIELD) {
+        iCS = 34;
+        iDC = 3;
+        iLED = 2;
+    } else { // Explorer Shield
+        iCS = 2;
+        iDC = 1;
+        iLED = -1;
+    }
+#endif
+    switch (iDisplayType)
+    {
+        case DISPLAY_TINYPICO_IPS_SHIELD:
+            spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 40000000, iCS, iDC, iRST, iLED, -1, iMOSI, iSCK);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
+            break;
+        case DISPLAY_TINYPICO_EXPLORER_SHIELD:
+            spilcdInit(&_lcd, LCD_ST7789_240, FLAGS_NONE, 40000000, iCS, iDC, iRST, iLED, -1, iMOSI, iSCK);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_180);
+            break;
+        case DISPLAY_WIO_TERMINAL:
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 30000000, 69, 70, 71, 72, -1, -1, -1);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            break;
+        case DISPLAY_TEENSY_ILI9341:
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 60000000, 10, 9, -1, -1, -1, -1, 13);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
+            break;
+        case DISPLAY_RANKIN_SENSOR:
+            spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 4, 21, 22, 26, -1, 23, 18); // Mike's coin cell pin numbering
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            break;
+#ifdef ARDUINO_M5Stick_C
+        case DISPLAY_M5STACK_STICKCPLUS:
+            AxpPowerUp();
+            AxpBrightness(9); // turn on backlight (0-12)
+            spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 5, 23, 18, -1, -1, 15, 13);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
+            break;
+#endif // ARDUINO_M5Stick_C
+#ifdef ARDUINO_M5STACK_Core2
+        case DISPLAY_M5STACK_CORE2:
+            Core2AxpPowerUp();
+            spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 5, 15, -1, -1, -1, 23, 18);
+            break;
+#endif // ARDUINO_M5STACK_Core2
+        case DISPLAY_RANKIN_COLORCOIN:
+            spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 24000000, 4, 21, 22, 26, -1, 23, 18); // Mike's coin cell pin numbering
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
+            break;
+        case DISPLAY_RANKIN_POWER:
+            spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 24000000, 4, 22, 5, 19, -1, 23, 18); // Mike's coin cell pin numbering
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
+            break;
+        case DISPLAY_TTGO_T_DISPLAY:
+            spilcdInit(&_lcd, LCD_ST7789_135, 0, 40000000, 5, 16, -1, 4, -1, 19, 18);
+            break;
+        default:
+            return -1;
+    }
+    return 0;
+}
 int BB_SPI_LCD::begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin)
 {
   return spilcdInit(&_lcd, iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin);
 } /* begin() */
+
+void BB_SPI_LCD::freeBuffer(void)
+{
+    spilcdFreeBackbuffer(&_lcd);
+}
+void * BB_SPI_LCD::getBuffer(void)
+{
+    return (void *)_lcd.pBackBuffer;
+}
 
 bool BB_SPI_LCD::allocBuffer(void)
 {
@@ -4668,7 +5091,7 @@ int w, h;
       _lcd.iCursorX = 0;          // Reset x to zero,
       _lcd.iCursorY += h; // advance y one line
         // should we scroll the screen up 1 line?
-        if (_lcd.iCursorY >= _lcd.iCurrentHeight && _lcd.pBackBuffer && _lcd.bScroll) {
+        if ((_lcd.iCursorY + (h-1)) >= _lcd.iCurrentHeight && _lcd.pBackBuffer && _lcd.bScroll) {
             spilcdScroll1Line(&_lcd, h);
             spilcdShowBuffer(&_lcd, 0, 0, _lcd.iCurrentWidth, _lcd.iCurrentHeight, DRAW_TO_LCD);
             _lcd.iCursorY -= h;
@@ -4678,7 +5101,7 @@ int w, h;
         _lcd.iCursorX = 0;               // Reset x to zero,
         _lcd.iCursorY += h; // advance y one line
           // should we scroll the screen up 1 line?
-          if (_lcd.iCursorY >= _lcd.iCurrentHeight && _lcd.pBackBuffer && _lcd.bScroll) {
+          if ((_lcd.iCursorY + (h-1)) >= _lcd.iCurrentHeight && _lcd.pBackBuffer && _lcd.bScroll) {
               spilcdScroll1Line(&_lcd, h);
               spilcdShowBuffer(&_lcd, 0, 0, _lcd.iCurrentWidth, _lcd.iCurrentHeight, DRAW_TO_LCD);
               _lcd.iCursorY -= h;
@@ -4715,6 +5138,11 @@ int w, h;
   }
   return 1;
 } /* write() */
+
+void BB_SPI_LCD::display(void)
+{
+    spilcdShowBuffer(&_lcd, 0, 0, _lcd.iCurrentWidth, _lcd.iCurrentHeight, DRAW_TO_LCD);
+}
 void BB_SPI_LCD::drawPixel(int16_t x, int16_t y, uint16_t color)
 {
   spilcdSetPosition(&_lcd, x, y, 1, 1, DRAW_TO_LCD);
@@ -4762,8 +5190,8 @@ void BB_SPI_LCD::fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint1
   spilcdEllipse(&_lcd, x, y, rx, ry, (uint16_t)color, 1, DRAW_TO_LCD);
 }
 
-void BB_SPI_LCD::pushImage(int x, int y, int w, int h, uint16_t *pixels)
+void BB_SPI_LCD::pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags)
 {
   spilcdSetPosition(&_lcd, x, y, w, h, DRAW_TO_LCD);
-  spilcdWriteDataBlock(&_lcd, (uint8_t *)pixels, w*h*2, DRAW_TO_LCD);
+  spilcdWriteDataBlock(&_lcd, (uint8_t *)pixels, w*h*2, iFlags);
 }
