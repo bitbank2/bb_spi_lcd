@@ -800,6 +800,62 @@ void spilcdSetMode(SPILCD *pLCD, int iMode)
 #endif
 } /* spilcdSetMode() */
 
+const unsigned char ucGC9A01InitList[]PROGMEM = {
+    1, 0xEF,
+    2, 0xEB, 0x14,
+    1, 0xFE,
+    1, 0xEF,
+    2, 0xEB, 0x14,
+    2, 0x84, 0x40,
+    2, 0x85, 0xff,
+    2, 0x86, 0xff,
+    2, 0x87, 0xff,
+    2, 0x88, 0x0a,
+    2, 0x89, 0x21,
+    2, 0x8a, 0x00,
+    2, 0x8b, 0x80,
+    2, 0x8c, 0x01,
+    2, 0x8d, 0x01,
+    2, 0x8e, 0xff,
+    2, 0x8f, 0xff,
+    3, 0xb6, 0x00, 0x00,
+    2, 0x3a, 0x55,
+    5, 0x90, 0x08,0x08,0x08,0x08,
+    2, 0xbd, 0x06,
+    2, 0xbc, 0x00,
+    4, 0xff, 0x60,0x01,0x04,
+    2, 0xc3, 0x13,
+    2, 0xc4, 0x13,
+    2, 0xc9, 0x22,
+    2, 0xbe, 0x11,
+    3, 0xe1, 0x10,0x0e,
+    4, 0xdf, 0x21,0x0c,0x02,
+    7, 0xf0, 0x45,0x09,0x08,0x08,0x26,0x2a,
+    7, 0xf1, 0x43,0x70,0x72,0x36,0x37,0x6f,
+    7, 0xf2, 0x45,0x09,0x08,0x08,0x26,0x2a,
+    7, 0xf3, 0x43,0x70,0x72,0x36,0x37,0x6f,
+    3, 0xed, 0x1b,0x0b,
+    2, 0xae, 0x77,
+    2, 0xcd, 0x63,
+    10,0x70, 0x07,0x07,0x04,0x0e,0x0f,0x09,0x07,0x08,0x03,
+    2, 0xe8, 0x34,
+    13,0x62, 0x18,0x0d,0x71,0xed,0x70,0x70,0x18,0x0f,0x71,0xef,0x70,0x70,
+    13,0x63, 0x18,0x11,0x71,0xf1,0x70,0x70,0x18,0x13,0x71,0xf3,0x70,0x70,
+    8, 0x64, 0x28,0x29,0xf1,0x01,0xf1,0x00,0x07,
+    11,0x66, 0x3c,0x00,0xcd,0x67,0x45,0x45,0x10,0x00,0x00,0x00,
+    11,0x67, 0x00,0x3c,0x00,0x00,0x00,0x01,0x54,0x10,0x32,0x98,
+    8, 0x74, 0x10,0x85,0x80,0x00,0x00,0x4e,0x00,
+    3, 0x98, 0x3e,0x07,
+    2, 0x36, 0x48,
+    1, 0x35,
+    1, 0x21,
+    1, 0x11,
+    LCD_DELAY, 120,
+    1, 0x29,
+    LCD_DELAY, 120,
+    0
+}; // GC9A01
+
 // List of command/parameters to initialize the ST7789 LCD
 const unsigned char uc240x240InitList[]PROGMEM = {
     1, 0x13, // partial mode off
@@ -1636,6 +1692,15 @@ start_of_init:
 	}
         pLCD->iLCDType = LCD_ST7789; // treat them the same from here on
     } // ST7789
+    else if (pLCD->iLCDType == LCD_GC9A01) {
+        pLCD->iCurrentWidth = pLCD->iWidth = 240;
+        pLCD->iCurrentHeight = pLCD->iHeight = 240;
+        pLCD->iColStart = pLCD->iMemoryX = 0;
+        pLCD->iRowStart = pLCD->iMemoryY = 0;
+        s = (unsigned char *)&ucGC9A01InitList[0];
+        memcpy_P(d, s, sizeof(ucGC9A01InitList));
+        s = d;
+    } // GC9A01
     else if (pLCD->iLCDType == LCD_SSD1331)
     {
         s = (unsigned char *)ucSSD1331InitList;
@@ -2668,7 +2733,7 @@ unsigned char ucBuf[8];
     {
         pLCD->iOldX = x; pLCD->iOldCX = w;
 	spilcdWriteCommand(pLCD, 0x2a); // set column address
-	if (pLCD->iLCDType == LCD_ILI9341 || pLCD->iLCDType == LCD_ILI9342 || pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ILI9486)
+	if (pLCD->iLCDType == LCD_ILI9341 || pLCD->iLCDType == LCD_ILI9342 || pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ILI9486 || pLCD->iLCDType == LCD_GC9A01)
 	{
 		x += pLCD->iMemoryX;
 		ucBuf[0] = (unsigned char)(x >> 8);
@@ -2699,7 +2764,7 @@ unsigned char ucBuf[8];
     {
         pLCD->iOldY = y; pLCD->iOldCY = h;
 	spilcdWriteCommand(pLCD, 0x2b); // set row address
-	if (pLCD->iLCDType == LCD_ILI9341 || pLCD->iLCDType == LCD_ILI9342 || pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ILI9486)
+	if (pLCD->iLCDType == LCD_ILI9341 || pLCD->iLCDType == LCD_ILI9342 || pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ILI9486 || pLCD->iLCDType == LCD_GC9A01)
 	{
                 if (pLCD->iCurrentHeight == 135 && pLCD->iOrientation == LCD_ORIENTATION_90)
                    pLCD->iMemoryY+= 1; // ST7789 240x135 rotated 90 is off by 1
@@ -4962,7 +5027,8 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
         case DISPLAY_TTGO_T_DISPLAY:
-            spilcdInit(&_lcd, LCD_ST7789_135, 0, 40000000, 5, 16, -1, 4, -1, 19, 18);
+            spilcdInit(&_lcd, LCD_ST7789_135, 0, 40000000, 5, 16, 23, 4, -1, 19, 18);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
         default:
             return -1;

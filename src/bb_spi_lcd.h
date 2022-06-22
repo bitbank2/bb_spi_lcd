@@ -400,6 +400,7 @@ enum {
    LCD_ST7789_280, // 240x280
    LCD_SSD1283A, // 132x132
    LCD_ILI9486, // 320x480
+   LCD_GC9A01, // 240x240 round
    LCD_VALID_MAX
 };
 
