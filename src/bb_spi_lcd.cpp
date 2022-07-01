@@ -5005,6 +5005,12 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
 #ifdef ARDUINO_M5Stick_C
+        case DISPLAY_M5STACK_STICKC:
+            AxpPowerUp();
+            AxpBrightness(9);
+            spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 24000000, 5, 23, 18, -1, -1, 15, 13);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
+            break;
         case DISPLAY_M5STACK_STICKCPLUS:
             AxpPowerUp();
             AxpBrightness(9); // turn on backlight (0-12)
