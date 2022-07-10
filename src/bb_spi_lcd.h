@@ -127,6 +127,8 @@ class BB_SPI_LCD : public Print
     void fillRect(int x, int y, int w, int h, int iColor);
     void setTextColor(int iFG, int iBG = -1);
     void setCursor(int x, int y);
+    void setAddrWindow(int x, int y, int w, int h);
+
     int16_t getCursorX(void);
     int16_t getCursorY(void);
     bool allocBuffer(void);
@@ -141,12 +143,14 @@ class BB_SPI_LCD : public Print
     int16_t width(void);
     void display(void);
     void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD);
+    void pushPixels(uint16_t *pixels, int count);
     void drawLine(int x1, int y1, int x2, int y2, int iColor);
     void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
     void drawCircle(int32_t x, int32_t y, int32_t r, uint32_t color);
     void fillCircle(int32_t x, int32_t y, int32_t r, uint32_t color);
     void drawEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color);
     void fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color);
+    void drawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY, int iCX, int iCY, uint16_t usColor, int iTranslucency);
     using Print::write;
     virtual size_t write(uint8_t);
 
@@ -167,6 +171,8 @@ enum
     DISPLAY_RANKIN_SENSOR,
     DISPLAY_RANKIN_POWER,
     DISPLAY_TTGO_T_DISPLAY,
+    DISPLAY_T_QT,
+    DISPLAY_TUFTY2040,
     DISPLAY_COUNT
 };
 #if !defined(BITBANK_LCD_MODES)
@@ -402,6 +408,7 @@ enum {
    LCD_SSD1283A, // 132x132
    LCD_ILI9486, // 320x480
    LCD_GC9A01, // 240x240 round
+   LCD_GC9107, // 128x128 tiny
    LCD_VALID_MAX
 };
 

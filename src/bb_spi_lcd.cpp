@@ -103,6 +103,44 @@ MbedSPI *pSPI = new MbedSPI(12,11,13);
 
 #include <bb_spi_lcd.h>
 
+// Specific support for the parallel LCD of the Pimoroni Tufty
+#ifdef ARDUINO_ARCH_RP2040
+#include "hardware/dma.h"
+#include "hardware/gpio.h"
+#include "hardware/pio.h"
+// This PIO code is Copyright (c) 2021 Pimoroni Ltd
+// --------------- //
+// st7789_parallel //
+// --------------- //
+
+#define st7789_parallel_wrap_target 0
+#define st7789_parallel_wrap 1
+
+static const uint16_t st7789_parallel_program_instructions[] = {
+            //     .wrap_target
+    0x6008, //  0: out    pins, 8         side 0
+    0xb042, //  1: nop                    side 1
+            //     .wrap
+};
+static const struct pio_program st7789_parallel_program = {
+    .instructions = st7789_parallel_program_instructions,
+    .length = 2,
+    .origin = -1,
+};
+
+static inline pio_sm_config st7789_parallel_program_get_default_config(uint offset) {
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_wrap(&c, offset + st7789_parallel_wrap_target, offset + st7789_parallel_wrap);
+    sm_config_set_sideset(&c, 1, false, false);
+    return c;
+}
+uint32_t parallel_sm;
+PIO parallel_pio;
+uint32_t parallel_offset;
+uint32_t parallel_dma;
+
+#endif // ARDUINO_ARCH_RP2040
+
 #if defined( HAL_ESP32_HAL_H_ ) // && !defined( ARDUINO_ESP32C3_DEV )
 #ifdef VSPI_HOST
 #define ESP32_SPI_HOST VSPI_HOST
@@ -856,6 +894,62 @@ const unsigned char ucGC9A01InitList[]PROGMEM = {
     0
 }; // GC9A01
 
+const unsigned char ucGC9107InitList[]PROGMEM = {
+    1, 0xEF,
+    2, 0xEB, 0x14,
+    1, 0xFE,
+    1, 0xEF,
+    2, 0xEB, 0x14,
+    2, 0x84, 0x40,
+    2, 0x85, 0xff,
+    2, 0x86, 0xff,
+    2, 0x87, 0xff,
+    2, 0x88, 0x0a,
+    2, 0x89, 0x21,
+    2, 0x8a, 0x00,
+    2, 0x8b, 0x80,
+    2, 0x8c, 0x01,
+    2, 0x8d, 0x01,
+    2, 0x8e, 0xff,
+    2, 0x8f, 0xff,
+    3, 0xb6, 0x00, 0x00,
+    2, 0x3a, 0x55,
+    5, 0x90, 0x08,0x08,0x08,0x08,
+    2, 0xbd, 0x06,
+    2, 0xbc, 0x00,
+    4, 0xff, 0x60,0x01,0x04,
+    2, 0xc3, 0x13,
+    2, 0xc4, 0x13,
+    2, 0xc9, 0x22,
+    2, 0xbe, 0x11,
+    3, 0xe1, 0x10,0x0e,
+    4, 0xdf, 0x21,0x0c,0x02,
+    7, 0xf0, 0x45,0x09,0x08,0x08,0x26,0x2a,
+    7, 0xf1, 0x43,0x70,0x72,0x36,0x37,0x6f,
+    7, 0xf2, 0x45,0x09,0x08,0x08,0x26,0x2a,
+    7, 0xf3, 0x43,0x70,0x72,0x36,0x37,0x6f,
+    3, 0xed, 0x1b,0x0b,
+    2, 0xae, 0x77,
+    2, 0xcd, 0x63,
+    10,0x70, 0x07,0x07,0x04,0x0e,0x0f,0x09,0x07,0x08,0x03,
+    2, 0xe8, 0x34,
+    13,0x62, 0x18,0x0d,0x71,0xed,0x70,0x70,0x18,0x0f,0x71,0xef,0x70,0x70,
+    13,0x63, 0x18,0x11,0x71,0xf1,0x70,0x70,0x18,0x13,0x71,0xf3,0x70,0x70,
+    8, 0x64, 0x28,0x29,0xf1,0x01,0xf1,0x00,0x07,
+    11,0x66, 0x3c,0x00,0xcd,0x67,0x45,0x45,0x10,0x00,0x00,0x00,
+    11,0x67, 0x00,0x3c,0x00,0x00,0x00,0x01,0x54,0x10,0x32,0x98,
+    8, 0x74, 0x10,0x85,0x80,0x00,0x00,0x4e,0x00,
+    3, 0x98, 0x3e,0x07,
+    2, 0x36, 0xC8,
+    1, 0x35,
+    1, 0x21,
+    1, 0x11,
+    LCD_DELAY, 120,
+    1, 0x29,
+    LCD_DELAY, 120,
+    0
+}; // GC9107
+
 // List of command/parameters to initialize the ST7789 LCD
 const unsigned char uc240x240InitList[]PROGMEM = {
     1, 0x13, // partial mode off
@@ -1463,6 +1557,86 @@ unsigned char *sE0, *sE1;
 
 	return 0;
 } /* spilcdSetGamma() */
+// *****************
+// Support for the Pimoroni TUFTY2040 ST7789 8-bit parallel LCD
+#ifdef ARDUINO_ARCH_RP2040
+void TuftyData(uint8_t *pData, int len, int iMode)
+{
+uint32_t old = pData[0] - 1;
+const uint32_t u32Mask = 0x3fc000; // 8 bits shifted left 14
+
+// Do everything with DMA since it's the simplest way to push the data
+    while (dma_channel_is_busy(parallel_dma))
+      ;
+    gpio_put(11, (iMode == MODE_DATA)); // DC pin (change after last DMA action completes)
+    dma_channel_set_trans_count(parallel_dma, len, false);
+    dma_channel_set_read_addr(parallel_dma, pData, true);
+
+// If we didn't use the PIO state machine, this is how we would do it
+// (I used this first before enabling the state machine code)
+//  for (int i=0; i<len; i++) {
+//     uint32_t c = pData[i];
+//     if (c != old) {
+//        gpio_clr_mask(u32Mask); // clear bits 14-21
+//        gpio_set_mask(c << 14);
+//        old = c;
+//     }
+//     digitalWrite(12, LOW); // toggle WR low to high to latch the data
+//     digitalWrite(12, HIGH);
+//  } // for i
+//  gpio_put(10, 1); // deactivate CS
+} /* TuftyData() */
+
+void TuftyReset(void)
+{
+// Set up GPIO for output mode
+  pinMode(2, OUTPUT); // backlight
+  digitalWrite(2, HIGH);
+//  for (int i=10; i<=21; i++) { // I/O lins
+//     pinMode(i, OUTPUT);
+//  }
+  pinMode(13, OUTPUT); // RD
+  digitalWrite(13, HIGH); // RD deactivated
+//  digitalWrite(12, HIGH); // WR deactivated
+//  pinMode(10, OUTPUT); // CS
+//  digitalWrite(10, HIGH); // CS deactivated
+    gpio_set_function(11/*dc*/, GPIO_FUNC_SIO);
+    gpio_set_dir(11/*dc*/, GPIO_OUT);
+
+    gpio_set_function(10/*cs*/, GPIO_FUNC_SIO);
+    gpio_set_dir(10/*cs*/, GPIO_OUT);
+    gpio_put(10, 0); // CS always active
+      parallel_pio = pio1;
+      parallel_sm = pio_claim_unused_sm(parallel_pio, true);
+      parallel_offset = pio_add_program(parallel_pio, &st7789_parallel_program);
+      pio_gpio_init(parallel_pio, 12/*wr_sck*/);
+      for(int i = 0; i < 8; i++) {
+        pio_gpio_init(parallel_pio, 14/*d0*/ + i);
+      }
+      pio_sm_set_consecutive_pindirs(parallel_pio, parallel_sm, 14/*d0*/, 8, true);
+      pio_sm_set_consecutive_pindirs(parallel_pio, parallel_sm, 12/*wr_sck*/, 1, true);
+
+      pio_sm_config c = st7789_parallel_program_get_default_config(parallel_offset);
+
+      sm_config_set_out_pins(&c, 14/*d0*/, 8);
+      sm_config_set_sideset_pins(&c, 12/*wr_sck*/);
+      sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+      sm_config_set_out_shift(&c, false, true, 8);
+      sm_config_set_clkdiv(&c, 4);
+      
+      pio_sm_init(parallel_pio, parallel_sm, parallel_offset, &c);
+      pio_sm_set_enabled(parallel_pio, parallel_sm, true);
+
+      parallel_dma = dma_claim_unused_channel(true);
+      dma_channel_config config = dma_channel_get_default_config(parallel_dma);
+      channel_config_set_transfer_data_size(&config, DMA_SIZE_8);
+      channel_config_set_bswap(&config, false);
+      channel_config_set_dreq(&config, pio_get_dreq(parallel_pio, parallel_sm, true));
+      dma_channel_configure(parallel_dma, &config, &parallel_pio->txf[parallel_sm], NULL, 0, false);
+
+} /* TuftyReset() */
+#endif // RP2040
+// *****************
 //
 // Configure a GPIO pin for input
 // Returns 0 if successful, -1 if unavailable
@@ -1701,6 +1875,16 @@ start_of_init:
         memcpy_P(d, s, sizeof(ucGC9A01InitList));
         s = d;
     } // GC9A01
+    else if (pLCD->iLCDType == LCD_GC9107) {
+        pLCD->iCurrentWidth = pLCD->iWidth = 128;
+        pLCD->iCurrentHeight = pLCD->iHeight = 128;
+        pLCD->iColStart = pLCD->iMemoryX = 2;
+        pLCD->iRowStart = pLCD->iMemoryY = 1;
+        s = (unsigned char *)&ucGC9107InitList[0];
+        memcpy_P(d, s, sizeof(ucGC9107InitList));
+        s = d;
+        pLCD->iLCDType = LCD_GC9A01; // treat it like this one
+    } // GC9107
     else if (pLCD->iLCDType == LCD_SSD1331)
     {
         s = (unsigned char *)ucSSD1331InitList;
@@ -2385,21 +2569,7 @@ uint16_t usColor;
         iDR = (iDR << 16) / th;
         iDG = (iDG << 16) / th;
         spilcdSetPosition(pLCD, x, y, w, h, iFlags);
-//	        if (((ty + iScrollOffset) % iHeight) > iHeight-th) // need to write in 2 parts since it won't wrap
-//		{
-//          	iStart = (iHeight - ((ty+iScrollOffset) % iHeight));
-//			for (i=0; i<iStart; i++)
-//           		myspiWrite((unsigned char *)usTemp, iStart*iPerLine, MODE_DATA, bRender); // first N lines
-//			if (iCurrentWidth == iWidth)
-//				spilcdSetPosition(x, y+iStart, w, h-iStart, bRender);
-//			else
-//				spilcdSetPosition(x+iStart, y, w-iStart, h, bRender);
-//			for (i=0; i<th-iStart; i++)
- //         		myspiWrite((unsigned char *)usTemp, iPerLine, MODE_DATA, bRender);
-//       		 }
-//        	else // can write in one shot
-//        	{
-			for (i=0; i<h; i++)
+	for (i=0; i<h; i++)
             {
                 usColor = (usColor1 >> 8) | (usColor1 << 8); // swap byte order
                 memset16((uint16_t*)usTemp, usColor, w);
@@ -2424,7 +2594,6 @@ uint16_t usColor;
                     iBAcc -= 0x10000;
                 }
             }
-//        	}
 	}
 	else // outline
 	{
@@ -2437,9 +2606,9 @@ uint16_t usColor;
         memset16((uint16_t*)usTemp, usColor, w);
 		myspiWrite(pLCD, (unsigned char *)usTemp, w*2, MODE_DATA, iFlags);
 		// draw left/right
-		if (((ty + pLCD->iScrollOffset) % pLCD->iHeight) > pLCD->iHeight-th)
+		if (((ty + pLCD->iScrollOffset) % pLCD->iCurrentHeight) > pLCD->iCurrentHeight-th)
 		{
-			iStart = (pLCD->iHeight - ((ty+pLCD->iScrollOffset) % pLCD->iHeight));
+			iStart = (pLCD->iCurrentHeight - ((ty+pLCD->iScrollOffset) % pLCD->iCurrentHeight));
 			spilcdSetPosition(pLCD, x, y, 1, iStart, iFlags);
             memset16((uint16_t*)usTemp, usColor, iStart);
 			myspiWrite(pLCD, (unsigned char *)usTemp, iStart*2, MODE_DATA, iFlags);
@@ -5036,6 +5205,17 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ST7789_135, 0, 40000000, 5, 16, 23, 4, -1, 19, 18);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
+        case DISPLAY_T_QT:
+            spilcdInit(&_lcd, LCD_GC9107, 0, 50000000, 5, 6, 1, -1, -1, 2, 3);
+            pinMode(10, OUTPUT);
+            digitalWrite(10, LOW); // inverted backlight signal
+            break;
+#ifdef ARDUINO_ARCH_RP2040
+        case DISPLAY_TUFTY2040: // ST7789 240x320 8-bit parallel
+            spilcdSetCallbacks(&_lcd, TuftyReset, TuftyData);
+            spilcdInit(&_lcd, LCD_ST7789, 0,0,0,0,0,0,0,0,0);
+            break;
+#endif
         default:
             return -1;
     }
@@ -5064,6 +5244,22 @@ void BB_SPI_LCD::setScroll(bool bScroll)
 {
     _lcd.bScroll = bScroll;
 }
+
+void BB_SPI_LCD::drawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY, int iCX, int iCY, uint16_t usColor, int iTranslucency)
+{
+  spilcdDrawPattern(&_lcd, pPattern, iSrcPitch, iDestX, iDestY, iCX, iCY, usColor, iTranslucency);
+} /* drawPattern() */
+
+void BB_SPI_LCD::pushPixels(uint16_t *pixels, int count)
+{
+   spilcdWriteDataBlock(&_lcd, (uint8_t *)pixels, count * 2, DRAW_TO_LCD | DRAW_TO_RAM);
+} /* pushPixels() */
+
+void BB_SPI_LCD::setAddrWindow(int x, int y, int w, int h)
+{
+   spilcdSetPosition(&_lcd, x, y, w, h, DRAW_TO_LCD);
+} /* setAddrWindow() */
+
 void BB_SPI_LCD::setRotation(int iAngle)
 {
 int i;
@@ -5095,12 +5291,12 @@ void BB_SPI_LCD::fillScreen(int iColor)
 
 void BB_SPI_LCD::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
 {
-  spilcdRectangle(&_lcd, x, y, x+w-1, y+h-1, color, color, 0, DRAW_TO_LCD);
+  spilcdRectangle(&_lcd, x, y, w, h, color, color, 0, DRAW_TO_LCD | DRAW_TO_RAM);
 } /* drawRect() */
 
 void BB_SPI_LCD::fillRect(int x, int y, int w, int h, int iColor)
 {
-  spilcdRectangle(&_lcd, x, y, x+w-1, y+h-1, iColor, iColor, 1, DRAW_TO_LCD);
+  spilcdRectangle(&_lcd, x, y, w, h, iColor, iColor, 1, DRAW_TO_LCD | DRAW_TO_RAM);
 } /* fillRect() */
 
 void BB_SPI_LCD::setTextColor(int iFG, int iBG)
@@ -5203,7 +5399,7 @@ int w, h;
           if (_lcd.iAntialias)
             spilcdWriteStringAntialias(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, 0, DRAW_TO_LCD | DRAW_TO_RAM);
           else 
-            spilcdWriteStringCustom(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, 0, DRAW_TO_LCD | DRAW_TO_RAM);
+            spilcdWriteStringCustom(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, 1, DRAW_TO_LCD | DRAW_TO_RAM);
         }
       }
     }
