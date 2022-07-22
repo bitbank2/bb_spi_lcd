@@ -90,7 +90,7 @@ SPIClass mySPI(
 static int iHandle; // SPI handle
 #else // Arduino
 // Use the default (non DMA) SPI library for boards we don't currently support
-#if !defined(HAL_ESP32_HAL_H_) && !defined(__SAMD51__) && !defined(ARDUINO_SAMD_ZERO) && !defined(ARDUINO_ARCH_RP2040)
+#if !defined(__SAMD51__) && !defined(ARDUINO_SAMD_ZERO) && !defined(ARDUINO_ARCH_RP2040)
 #define mySPI SPI
 #elif defined(ARDUINO_ARCH_RP2040)
 MbedSPI *pSPI = new MbedSPI(12,11,13);
@@ -103,45 +103,7 @@ MbedSPI *pSPI = new MbedSPI(12,11,13);
 
 #include <bb_spi_lcd.h>
 
-// Specific support for the parallel LCD of the Pimoroni Tufty
-#ifdef ARDUINO_ARCH_RP2040
-#include "hardware/dma.h"
-#include "hardware/gpio.h"
-#include "hardware/pio.h"
-// This PIO code is Copyright (c) 2021 Pimoroni Ltd
-// --------------- //
-// st7789_parallel //
-// --------------- //
-
-#define st7789_parallel_wrap_target 0
-#define st7789_parallel_wrap 1
-
-static const uint16_t st7789_parallel_program_instructions[] = {
-            //     .wrap_target
-    0x6008, //  0: out    pins, 8         side 0
-    0xb042, //  1: nop                    side 1
-            //     .wrap
-};
-static const struct pio_program st7789_parallel_program = {
-    .instructions = st7789_parallel_program_instructions,
-    .length = 2,
-    .origin = -1,
-};
-
-static inline pio_sm_config st7789_parallel_program_get_default_config(uint offset) {
-    pio_sm_config c = pio_get_default_sm_config();
-    sm_config_set_wrap(&c, offset + st7789_parallel_wrap_target, offset + st7789_parallel_wrap);
-    sm_config_set_sideset(&c, 1, false, false);
-    return c;
-}
-uint32_t parallel_sm;
-PIO parallel_pio;
-uint32_t parallel_offset;
-uint32_t parallel_dma;
-
-#endif // ARDUINO_ARCH_RP2040
-
-#if defined( HAL_ESP32_HAL_H_ ) // && !defined( ARDUINO_ESP32C3_DEV )
+#if defined( ARDUINO_ARCH_ESP32 ) // && !defined( ARDUINO_ESP32C3_DEV )
 #ifdef VSPI_HOST
 #define ESP32_SPI_HOST VSPI_HOST
 #else
@@ -833,7 +795,7 @@ void spilcdSetMode(SPILCD *pLCD, int iMode)
 #else
 	myPinWrite(pLCD->iDCPin, iMode == MODE_DATA);
 #endif
-#ifdef HAL_ESP32_HAL_H_
+#ifdef ARDUINO_ARCH_ESP32
 	delayMicroseconds(1); // some systems are so fast that it needs to be delayed
 #endif
 } /* spilcdSetMode() */
@@ -1416,8 +1378,8 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
 #else
     mySPI.beginTransaction(SPISettings(pLCD->iSPISpeed, MSBFIRST, pLCD->iSPIMode));
 #endif
-#ifdef HAL_ESP32_HAL_H_
-    SPI.transferBytes(pBuf, ucRXBuf, iLen);
+#ifdef ARDUINO_ARCH_ESP32
+    mySPI.transferBytes(pBuf, ucRXBuf, iLen);
 #else
 #ifdef ARDUINO_ARCH_RP2040
     pSPI->transfer(pBuf, iLen);
@@ -1557,85 +1519,128 @@ unsigned char *sE0, *sE1;
 
 	return 0;
 } /* spilcdSetGamma() */
-// *****************
-// Support for the Pimoroni TUFTY2040 ST7789 8-bit parallel LCD
-#ifdef ARDUINO_ARCH_RP2040
-void TuftyData(uint8_t *pData, int len, int iMode)
+// *******************
+// Support for the FeatherS3 connected to a Kuman parallel LCD
+// *******************
+#ifdef ARDUINO_FEATHERS3
+#if __has_include (<esp_lcd_panel_io.h>)
+#include <esp_lcd_panel_io.h>
+#include <esp_private/gdma.h>
+#include <hal/dma_types.h>
+#include <driver/dedic_gpio.h>
+#include <esp32-hal-gpio.h>
+#include <hal/gpio_ll.h>
+#include <hal/lcd_hal.h>
+#include <soc/lcd_cam_reg.h>
+#include <soc/lcd_cam_struct.h>
+#endif // has lcd panel include
+// for parallel
+/// from esp-idf/components/esp_lcd/src/esp_lcd_panel_io_i80.c
+struct esp_lcd_i80_bus_t {
+    int bus_id;            // Bus ID, index from 0
+    portMUX_TYPE spinlock; // spinlock used to protect i80 bus members(hal, device_list, cur_trans)
+    lcd_hal_context_t hal; // Hal object
+    size_t bus_width;      // Number of data lines
+    intr_handle_t intr;    // LCD peripheral interrupt handle
+    void* pm_lock; // Power management lock
+    size_t num_dma_nodes;  // Number of DMA descriptors
+    uint8_t *format_buffer;  // The driver allocates an internal buffer for DMA to do data format transformer
+    size_t resolution_hz;    // LCD_CLK resolution, determined by selected clock source
+    gdma_channel_handle_t dma_chan; // DMA channel handle
+};
+
+static void _gpio_pin_init(int pin)
 {
-uint32_t old = pData[0] - 1;
-const uint32_t u32Mask = 0x3fc000; // 8 bits shifted left 14
+  if (pin >= 0)
+  {
+    gpio_pad_select_gpio(pin);
+    gpio_hi(pin);
+    gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
+  }
+}
 
-// Do everything with DMA since it's the simplest way to push the data
-    while (dma_channel_is_busy(parallel_dma))
-      ;
-    gpio_put(11, (iMode == MODE_DATA)); // DC pin (change after last DMA action completes)
-    dma_channel_set_trans_count(parallel_dma, len, false);
-    dma_channel_set_read_addr(parallel_dma, pData, true);
+int8_t pin_data[8];
+// translate the 8-bit positions to a 32-bit GPIO word
+static uint32_t u32TransBits[256];
+static const uint32_t u32BitMask = (1<<10) | (1<<11) | (1<<12) | (1<<14) | (1<<17) | (1<<18) | (1<<5) | (1<<6) | (1<<7);
+const int bundleA_gpios[] = {10, 11, 12, 14, 17, 18, 5, 6};
+gpio_config_t io_conf = {
+    .mode = GPIO_MODE_OUTPUT,
+};
+dedic_gpio_bundle_handle_t bundleA = NULL;
+dedic_gpio_bundle_config_t bundleA_config = {
+    .gpio_array = bundleA_gpios,
+    .array_size = sizeof(bundleA_gpios) / sizeof(bundleA_gpios[0]),
+    .flags = {
+        .out_en = 1,
+    },
+};
 
-// If we didn't use the PIO state machine, this is how we would do it
-// (I used this first before enabling the state machine code)
-//  for (int i=0; i<len; i++) {
-//     uint32_t c = pData[i];
-//     if (c != old) {
-//        gpio_clr_mask(u32Mask); // clear bits 14-21
-//        gpio_set_mask(c << 14);
-//        old = c;
-//     }
-//     digitalWrite(12, LOW); // toggle WR low to high to latch the data
-//     digitalWrite(12, HIGH);
-//  } // for i
-//  gpio_put(10, 1); // deactivate CS
-} /* TuftyData() */
-
-void TuftyReset(void)
+void FeatherS3Data(uint8_t *pData, int len, int iMode)
 {
-// Set up GPIO for output mode
-  pinMode(2, OUTPUT); // backlight
-  digitalWrite(2, HIGH);
-//  for (int i=10; i<=21; i++) { // I/O lins
-//     pinMode(i, OUTPUT);
-//  }
-  pinMode(13, OUTPUT); // RD
-  digitalWrite(13, HIGH); // RD deactivated
-//  digitalWrite(12, HIGH); // WR deactivated
-//  pinMode(10, OUTPUT); // CS
-//  digitalWrite(10, HIGH); // CS deactivated
-    gpio_set_function(11/*dc*/, GPIO_FUNC_SIO);
-    gpio_set_dir(11/*dc*/, GPIO_OUT);
+uint8_t c, old = pData[0] -1;
+    
+    GPIO.out1_w1tc.val = (1<<1); // activate CS (IO33)
+    if (iMode == MODE_COMMAND)
+        GPIO.out_w1tc = (1<<3); // clear DC
+    else
+        GPIO.out_w1ts = (1<<3); // set DC for data mode
+    for (int i=0; i<len; i++) {
+        c = pData[i];
+//        GPIO.out_w1tc = (1<<7); // WR low
+//        if (c != old) {
+        GPIO.out_w1tc = u32BitMask; // clear our 8+1 bits
+        GPIO.out_w1ts = u32TransBits[c]; // set the current byte
+//            dedic_gpio_bundle_write(bundleA, 0xff, c);
+//            old = c;
+//         }
+        GPIO.out_w1ts = (1<<7); // toggle WR high to latch data
+    } // for i
+    GPIO.out1_w1ts.val = (1<<1); // (IO33) deactivate CS
+} /* FeatherS3Data() */
+void FeatherS3Reset(void)
+{
+    pinMode(7, OUTPUT); // WR
+    pinMode(3, OUTPUT); // DC
+    pinMode(33, OUTPUT); // CS
+    pinMode(38, OUTPUT); // RST
+    // create translated bit table
+    for (int i=0; i<256; i++) {
+        uint32_t u32Bits = 0;
+        if (i & 1) u32Bits |= (1<<10);
+        if (i & 2) u32Bits |= (1<<11);
+        if (i & 4) u32Bits |= (1<<12);
+        if (i & 8) u32Bits |= (1<<14);
+        if (i & 16) u32Bits |= (1<<17);
+        if (i & 32) u32Bits |= (1<<18);
+        if (i & 64) u32Bits |= (1<<5);
+        if (i & 128) u32Bits |= (1<<6);
+        u32TransBits[i] = u32Bits;
+    }
+//    pinMode(10, OUTPUT); // D0
+//    pinMode(11, OUTPUT); // D1
+//    pinMode(12, OUTPUT); // D2
+//    pinMode(14, OUTPUT); // D3
+//    pinMode(17, OUTPUT); // D4
+//    pinMode(18, OUTPUT); // D5
+//    pinMode(5, OUTPUT); // D6
+//    pinMode(6, OUTPUT); // D7
+    
+    // toggle reset
+    digitalWrite(38, LOW);
+    delay(100);
+    digitalWrite(38, HIGH);
+    delay(100);
+    // Create 8-bit dedicated GPIO bundle to toggle all 8 at once
+    for (int i = 0; i < sizeof(bundleA_gpios) / sizeof(bundleA_gpios[0]); i++) {
+        io_conf.pin_bit_mask = 1ULL << bundleA_gpios[i];
+        gpio_config(&io_conf);
+    }
+    // Create bundleA, output only
+  //  ESP_ERROR_CHECK(dedic_gpio_new_bundle(&bundleA_config, &bundleA));
+} /* FeatherS3Reset() */
+#endif // FEATHERS3
 
-    gpio_set_function(10/*cs*/, GPIO_FUNC_SIO);
-    gpio_set_dir(10/*cs*/, GPIO_OUT);
-    gpio_put(10, 0); // CS always active
-      parallel_pio = pio1;
-      parallel_sm = pio_claim_unused_sm(parallel_pio, true);
-      parallel_offset = pio_add_program(parallel_pio, &st7789_parallel_program);
-      pio_gpio_init(parallel_pio, 12/*wr_sck*/);
-      for(int i = 0; i < 8; i++) {
-        pio_gpio_init(parallel_pio, 14/*d0*/ + i);
-      }
-      pio_sm_set_consecutive_pindirs(parallel_pio, parallel_sm, 14/*d0*/, 8, true);
-      pio_sm_set_consecutive_pindirs(parallel_pio, parallel_sm, 12/*wr_sck*/, 1, true);
-
-      pio_sm_config c = st7789_parallel_program_get_default_config(parallel_offset);
-
-      sm_config_set_out_pins(&c, 14/*d0*/, 8);
-      sm_config_set_sideset_pins(&c, 12/*wr_sck*/);
-      sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
-      sm_config_set_out_shift(&c, false, true, 8);
-      sm_config_set_clkdiv(&c, 4);
-      
-      pio_sm_init(parallel_pio, parallel_sm, parallel_offset, &c);
-      pio_sm_set_enabled(parallel_pio, parallel_sm, true);
-
-      parallel_dma = dma_claim_unused_channel(true);
-      dma_channel_config config = dma_channel_get_default_config(parallel_dma);
-      channel_config_set_transfer_data_size(&config, DMA_SIZE_8);
-      channel_config_set_bswap(&config, false);
-      channel_config_set_dreq(&config, pio_get_dreq(parallel_pio, parallel_sm, true));
-      dma_channel_configure(parallel_dma, &config, &parallel_pio->txf[parallel_sm], NULL, 0, false);
-
-} /* TuftyReset() */
-#endif // RP2040
 // *****************
 //
 // Configure a GPIO pin for input
@@ -1684,7 +1689,7 @@ int i, iCount;
      (*pLCD->pfnResetCallback)();
      goto start_of_init;
   }
-#ifndef HAL_ESP32_HAL_H_
+#ifndef ARDUINO_ARCH_ESP32
     (void)iMISOPin;
 #endif
 #ifdef __AVR__
@@ -1735,7 +1740,13 @@ int i, iCount;
 #ifdef ESP32_DMA
     if (!iStarted) {
     esp_err_t ret;
-    
+
+        if (iMOSIPin == -1 || iMOSIPin == 0xff) {
+            // use the Arduino defaults
+            iMISOPin = MISO;
+            iMOSIPin = MOSI;
+            iCLKPin = SCK;
+        }
     memset(&buscfg, 0, sizeof(buscfg));
     buscfg.miso_io_num = iMISOPin;
     buscfg.mosi_io_num = iMOSIPin;
@@ -1764,11 +1775,11 @@ int i, iCount;
         iStarted = 1; // don't re-initialize this code
     }
 #else
-#if defined( HAL_ESP32_HAL_H_ ) || defined( RISCV )
+#if defined( ARDUINO_ARCH_ESP32 ) || defined( RISCV )
 if (iMISOPin != iMOSIPin)
-    SPI.begin(iCLKPin, iMISOPin, iMOSIPin, iCS);
+    mySPI.begin(iCLKPin, iMISOPin, iMOSIPin, iCS);
 else
-    SPI.begin();
+    mySPI.begin();
 #else
 #ifdef _LINUX_
     iHandle = AIOOpenSPI(0, iSPIFreq); // DEBUG - open SPI channel 0 
@@ -1954,6 +1965,10 @@ start_of_init:
             memcpy_P(d, s, sizeof(ucILI9486InitList));
             s = d;
             ucBGRFlags = 0xa; // normal direction, RGB color order
+            if (pLCD->iLCDFlags & FLAGS_FLIPX) {
+                ucBGRFlags ^= 0x40;
+                d[66] = ucBGRFlags;
+            }
             if (pLCD->iLCDFlags & FLAGS_INVERT)
                d[63] = 0x21; // invert display command
             if (pLCD->iLCDFlags & FLAGS_SWAP_RB)
@@ -2080,17 +2095,18 @@ start_of_init:
 //
 void spilcdScrollReset(SPILCD *pLCD)
 {
+    if (pLCD->iLCDType == LCD_VIRTUAL) {
+        return;
+    }
 	pLCD->iScrollOffset = 0;
-	if (pLCD->iLCDType == LCD_SSD1351)
-	{
+	if (pLCD->iLCDType == LCD_SSD1351) {
 		spilcdWriteCommand(pLCD, 0xa1); // set scroll start line
 		spilcdWriteData8(pLCD, 0x00);
 		spilcdWriteCommand(pLCD, 0xa2); // display offset
 		spilcdWriteData8(pLCD, 0x00);
 		return;
 	}
-    else if (pLCD->iLCDType == LCD_SSD1331)
-    {
+    else if (pLCD->iLCDType == LCD_SSD1331) {
         spilcdWriteCommand(pLCD, 0xa1);
         spilcdWriteCommand(pLCD, 0x00);
         spilcdWriteCommand(pLCD, 0xa2);
@@ -2099,8 +2115,7 @@ void spilcdScrollReset(SPILCD *pLCD)
     }
 	spilcdWriteCommand(pLCD, 0x37); // scroll start address
 	spilcdWriteData16(pLCD, 0, DRAW_TO_LCD);
-	if (pLCD->iLCDType == LCD_HX8357)
-	{
+	if (pLCD->iLCDType == LCD_HX8357) {
 		spilcdWriteData16(pLCD, 0, DRAW_TO_LCD);
 	}
 } /* spilcdScrollReset() */
@@ -2279,8 +2294,8 @@ int spilcdDraw53Tile(SPILCD *pLCD, int x, int y, int cx, int cy, unsigned char *
 int spilcdDrawTile(SPILCD *pLCD, int x, int y, int iTileWidth, int iTileHeight, unsigned char *pTile, int iPitch, int iFlags)
 {
     int i, j;
-    uint32_t ul32;
-    unsigned char *s, *d;
+    //uint32_t ul32;
+    //unsigned char *s, *d;
     uint16_t *s16, *d16;
 
     if (iTileWidth*iTileHeight > 2048) {
@@ -2650,10 +2665,19 @@ void spilcdShowBuffer(SPILCD *pLCD, int iStartX, int iStartY, int cx, int cy, in
         return; // invalid area
     spilcdSetPosition(pLCD, iStartX, iStartY, cx, cy, iFlags);
     bSetPosition = 1;
-    for (y=iStartY; y<iStartY+cy; y++)
+#ifdef ARDUINO_ARCH_RP2040
+    if (pLCD->pfnDataCallback == ParallelDataWrite) {
+        // write the entire Tufty screen in a single transaction
+        s = &pLCD->pBackBuffer[(iStartY * pLCD->iCurrentWidth * 2) + iStartX*2];
+        myspiWrite(pLCD, s, cx * cy * 2, MODE_DATA, iFlags);
+    } else
+#endif
     {
-        s = &pLCD->pBackBuffer[(y * pLCD->iCurrentWidth * 2) + iStartX*2];
-        myspiWrite(pLCD, s, cx * 2, MODE_DATA, iFlags);
+        for (y=iStartY; y<iStartY+cy; y++)
+        {
+            s = &pLCD->pBackBuffer[(y * pLCD->iCurrentWidth * 2) + iStartX*2];
+            myspiWrite(pLCD, s, cx * 2, MODE_DATA, iFlags);
+        }
     }
     bSetPosition = 0;
 } /* spilcdShowBuffer() */
@@ -3180,7 +3204,7 @@ static void Scale2Gray(uint8_t *source, int width, int iPitch)
 int spilcdWriteStringAntialias(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, uint16_t usBGColor, int iFlags)
 {
 int i, end_y, cx, dx, dy, tx, ty, c, iBitOff;
-uint8_t *s, *d, bits, ucMask, ucClr, uc;
+uint8_t *s, *d, bits, /*ucMask,*/ ucClr, uc;
 GFXfont font;
 GFXglyph glyph, *pGlyph;
 const uint32_t ulClrMask = 0x07E0F81F;
@@ -3247,7 +3271,7 @@ uint16_t usTemp[128];
                uint8_t *pg; // pointer to gray source pixels
                uint16_t *pus = usTemp;
                uint32_t ulAlpha, ulPixel;
-               int j;
+               //int j;
                const uint8_t ucClrConvert[4] = {0,5,11,16};
                // Convert this pair of lines to grayscale output
                Scale2Gray(ucTemp, pGlyph->width, sizeof(ucTemp)/2);
@@ -3279,7 +3303,7 @@ uint16_t usTemp[128];
 //
 int spilcdWriteStringCustom(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, uint16_t usBGColor, int bBlank, int iFlags)
 {
-int i, j, k, iLen, dx, dy, cx, cy, c, iBitOff;
+int i, /*j, iLen, */ k, dx, dy, cx, cy, c, iBitOff;
 int tx, ty;
 uint8_t *s, bits, uc;
 GFXfont font;
@@ -3296,7 +3320,6 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
         y = pLCD->iCursorY;
     if (x < 0)
         return -1;
-   if (usFGColor == usBGColor) usBGColor = 0; // DEBUG!! no transparent option for now
    // in case of running on AVR, get copy of data from FLASH
    memcpy_P(&font, pFont, sizeof(font));
    pGlyph = &glyph;
@@ -3383,7 +3406,38 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
                   u16Temp[tx] = usBGColor;
                myspiWrite(pLCD, (uint8_t *)u16Temp, cx*sizeof(uint16_t), MODE_DATA, iFlags);
             } // for ty
-      } else { // just draw the current character box
+      } else if (usFGColor == usBGColor) { // transparent
+          int iCount; // opaque pixel count
+          d = u16Temp;
+          for (iCount=0; iCount < cx; iCount++)
+              d[iCount] = usFGColor; // set up a line of solid color
+          iCount = 0; // number of sequential opaque pixels
+             for (ty=0; ty<cy; ty++) {
+             for (tx=0; tx<pGlyph->width; tx++) {
+                if (bits == 0) { // need to read more font data
+                   uc = pgm_read_byte(&s[iBitOff>>3]); // get more font bitmap data
+                   bits = 8 - (iBitOff & 7); // we might not be on a byte boundary
+                   iBitOff += bits; // because of a clipped line
+                   uc <<= (8-bits);
+                } // if we ran out of bits
+                if (tx < cx) {
+                    if (uc & 0x80) {
+                        iCount++; // one more opaque pixel
+                    } else { // any opaque pixels to write?
+                        if (iCount) {
+                            spilcdSetPosition(pLCD, dx+tx-iCount, dy+ty, iCount, 1, iFlags);
+                       d = &u16Temp[0]; // point to start of output buffer
+                            myspiWrite(pLCD, (uint8_t *)u16Temp, iCount*sizeof(uint16_t), MODE_DATA, iFlags);
+                            iCount = 0;
+                        } // if opaque pixels to write
+                    } // if transparent pixel hit
+                }
+                bits--; // next bit
+                uc <<= 1;
+             } // for tx
+             } // for ty
+       // quicker drawing
+      } else { // just draw the current character box fast
          spilcdSetPosition(pLCD, dx, dy, cx, cy, iFlags);
             d = &u16Temp[0]; // point to start of output buffer
             for (ty=0; ty<cy; ty++) {
@@ -3433,7 +3487,7 @@ int miny, maxy;
    memcpy_P(&font, pFont, sizeof(font));
    pGlyph = &glyph;
    if (width == NULL || top == NULL || bottom == NULL || pFont == NULL || szMsg == NULL) return; // bad pointers
-   miny = 100; maxy = 0;
+   miny = 1000; maxy = 0;
    while (szMsg[i]) {
       c = szMsg[i++];
       if (c < font.first || c > font.last) // undefined character
@@ -3998,6 +4052,8 @@ int bX=0, bY=0, bV=0;
           uc |= 8; // R/B inverted from other LCDs
            uc ^= 0x40; // x is inverted too
        }
+       if (pLCD->iLCDFlags & FLAGS_FLIPX)
+           uc ^= 0x40;
       if (pLCD->iLCDFlags & FLAGS_SWAP_RB)
           uc ^= 0x8;
       spilcdWriteCommand(pLCD, 0x36); // MADCTL
@@ -5210,10 +5266,37 @@ int BB_SPI_LCD::begin(int iDisplayType)
             pinMode(10, OUTPUT);
             digitalWrite(10, LOW); // inverted backlight signal
             break;
+#ifdef ARDUINO_FEATHERS3
+        case DISPLAY_KUMAN_35: // ILI9486 320x480 8-bit parallel
+            spilcdSetCallbacks(&_lcd, FeatherS3Reset, FeatherS3Data);
+            spilcdInit(&_lcd, LCD_ILI9486, FLAGS_SWAP_RB, 0,0,0,0,0,0,0,0);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            break;
+#endif // FEATHERS3
+            
 #ifdef ARDUINO_ARCH_RP2040
+        case DISPLAY_KUMAN_35: // ILI9486 320x480 8-bit parallel
+            // toggle reset
+            pinMode(9, OUTPUT);
+            digitalWrite(9, LOW);
+            delay(100);
+            digitalWrite(9, HIGH);
+            delay(100);
+            //ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins)
+            ucRXBuf[0] = 14; // D0
+            ParallelDataInit(13, 12, 10, 11, 8, ucRXBuf);
+            spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
+            spilcdInit(&_lcd, LCD_ILI9486, FLAGS_SWAP_RB, 0,0,0,0,0,0,0,0);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            break;
         case DISPLAY_TUFTY2040: // ST7789 240x320 8-bit parallel
-            spilcdSetCallbacks(&_lcd, TuftyReset, TuftyData);
+            pinMode(2, OUTPUT); // backlight
+            digitalWrite(2, HIGH);
+            ucRXBuf[0] = 14; // D0
+            ParallelDataInit(13, 12, 10, 11, 8, ucRXBuf);
+            spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
             spilcdInit(&_lcd, LCD_ST7789, 0,0,0,0,0,0,0,0,0);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
 #endif
         default:
@@ -5221,6 +5304,103 @@ int BB_SPI_LCD::begin(int iDisplayType)
     }
     return 0;
 }
+//
+// Merge 2 class instances with transparence (must be the same size)
+//
+int BB_SPI_LCD::merge(uint16_t *s, uint16_t usTrans, int bSwap565)
+{
+    uint16_t *d = (uint16_t *)_lcd.pBackBuffer;
+    int i;
+    if (bSwap565) {
+        for (i = 0; i<_lcd.iCurrentWidth * _lcd.iCurrentHeight; i++) {
+            if (d[i] == usTrans) { // replace transparent pixels in current surface
+                d[i] = __builtin_bswap16(s[i]);
+            }
+        }
+    } else {
+        for (i = 0; i<_lcd.iCurrentWidth * _lcd.iCurrentHeight; i++) {
+            if (d[i] == usTrans) {
+                d[i] = s[i];
+            }
+        }
+    }
+    return 1;
+} /* merge() */
+//
+// Capture pixels being drawn into the current drawing surface
+// onto a virtual surface at a specific position
+// e.g. to capture the lower right corner of an image
+// set dst_x = current_width/2, dst_y = current_height/2
+//
+int BB_SPI_LCD::captureArea(int dst_x, int dst_y, int src_x, int src_y, int src_w, int src_h, uint16_t *pPixels, int bSwap565)
+{
+uint16_t *s, *d;
+int x, y, sx, sy, dx, dy, cx, cy;
+    
+    if (_lcd.pBackBuffer == 0) return 0; // no buffer
+    // see if any overlap
+    if (dst_x >= (src_x+src_w) || src_x >= (dst_x + _lcd.iCurrentWidth) || dst_y >= (src_y+src_h) || src_y >= (dst_y + _lcd.iCurrentHeight))
+        return 0; // no intersection
+    
+    s = pPixels; d = (uint16_t *)_lcd.pBackBuffer;
+    dx = dy = 0;
+    cx = _lcd.iCurrentWidth; cy = _lcd.iCurrentHeight;
+    sx = dst_x - src_x; // source starting point
+    sy = dst_y - src_y;
+    if (sx < 0) {
+        dx -= sx;
+        cx += sx;
+        sx = 0;
+    }
+    if (sy < 0) {
+        dy -= sy;
+        cy += sy;
+        sy = 0;
+    }
+    if (cx > src_w) cx = src_w;
+    if (cy > src_h) cy = src_h;
+    
+    s += sx + (sy * src_w);
+    d += dx + (dy * _lcd.iCurrentWidth);
+    if (bSwap565) {
+        for (y=0; y<cy; y++) {
+            for (x=0; x<cx; x++) {
+                d[x] = __builtin_bswap16(s[x]);
+            } // for x
+            s += src_w;
+            d += _lcd.iCurrentWidth;
+        } // for y
+    } else { // no swap
+        for (y=0; y<cy; y++) {
+            memcpy(d, s, cx*2);
+            s += src_w;
+            d += _lcd.iCurrentWidth;
+        }
+    }
+    return 1;
+} /* captureArea() */
+
+int BB_SPI_LCD::createVirtual(int iWidth, int iHeight)
+{
+    void *p;
+    memset(&_lcd, 0, sizeof(_lcd));
+    _lcd.iLCDType = LCD_VIRTUAL;
+    p = malloc(iWidth * iHeight * 2);
+    if (!p) return 0;
+    _lcd.iCurrentWidth = _lcd.iWidth = iWidth;
+    _lcd.iCurrentHeight = _lcd.iHeight = iHeight;
+    spilcdSetBuffer(&_lcd, p);
+    return 1;
+} /* createVirtual() */
+
+int BB_SPI_LCD::freeVirtual(void)
+{
+    if (_lcd.pBackBuffer == 0) return 0;
+    free(_lcd.pBackBuffer);
+    _lcd.pBackBuffer = 0;
+    return 1;
+} /* freeVirtual() */
+
 int BB_SPI_LCD::begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin)
 {
   return spilcdInit(&_lcd, iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin);
@@ -5234,6 +5414,31 @@ void * BB_SPI_LCD::getBuffer(void)
 {
     return (void *)_lcd.pBackBuffer;
 }
+
+void BB_SPI_LCD::getTextBounds(const char *string, int16_t x, int16_t y, int16_t *x1, int16_t *y1, uint16_t *w1, uint16_t *h1)
+{
+    if (_lcd.pFont == NULL) { // use built-in fonts
+        int iLen = strlen(string);
+        int h, w;
+        if (_lcd.iFont == FONT_8x8 || _lcd.iFont == FONT_6x8) {
+          h = 8;
+          w = (_lcd.iFont == FONT_8x8) ? 8 : 6;
+        } else if (_lcd.iFont == FONT_12x16 || _lcd.iFont == FONT_16x16) {
+          h = 16;
+          w = (_lcd.iFont == FONT_12x16) ? 12 : 16;
+        } else { w = 16; h = 32; }
+        *x1 = x; *y1 = y; // starts drawing downward
+        *w1 = w * iLen;
+        *h1 = h;
+    } else { // custom fonts
+        int w, top, bottom;
+        spilcdGetStringBox(_lcd.pFont, (char *)string, &w, &top, &bottom);
+        *w1 = w;
+        *h1 = bottom - top;
+        *y1 = y + top;
+        *x1 = x;
+    }
+} /* getTextBounds() */
 
 bool BB_SPI_LCD::allocBuffer(void)
 {
@@ -5286,7 +5491,7 @@ int i;
 
 void BB_SPI_LCD::fillScreen(int iColor)
 {
-  spilcdFill(&_lcd, iColor, DRAW_TO_LCD);
+  spilcdFill(&_lcd, iColor, (_lcd.iLCDType == LCD_VIRTUAL) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
 } /* fillScreen() */
 
 void BB_SPI_LCD::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
@@ -5324,7 +5529,7 @@ void BB_SPI_LCD::setFreeFont(const GFXfont *pFont)
 
 void BB_SPI_LCD::drawLine(int x1, int y1, int x2, int y2, int iColor)
 {
-  spilcdDrawLine(&_lcd, x1, y1, x2, y2, iColor, DRAW_TO_LCD);
+  spilcdDrawLine(&_lcd, x1, y1, x2, y2, iColor, DRAW_TO_LCD | DRAW_TO_RAM);
 } /* drawLine() */
 inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
 #ifdef __AVR__
@@ -5375,7 +5580,7 @@ int w, h;
               _lcd.iCursorY -= h;
           }
       }
-      spilcdWriteString(&_lcd, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, _lcd.iFont, DRAW_TO_LCD | DRAW_TO_RAM);
+      spilcdWriteString(&_lcd, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, _lcd.iFont, (_lcd.iLCDType == LCD_VIRTUAL) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
     }
   } else { // Custom font
     if (c == '\n') {
@@ -5397,9 +5602,9 @@ int w, h;
             _lcd.iCursorY += h;
           }
           if (_lcd.iAntialias)
-            spilcdWriteStringAntialias(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, 0, DRAW_TO_LCD | DRAW_TO_RAM);
+            spilcdWriteStringAntialias(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, 0, (_lcd.iLCDType == LCD_VIRTUAL) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
           else 
-            spilcdWriteStringCustom(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, 1, DRAW_TO_LCD | DRAW_TO_RAM);
+            spilcdWriteStringCustom(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, 0, (_lcd.iLCDType == LCD_VIRTUAL) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
         }
       }
     }
@@ -5415,7 +5620,7 @@ void BB_SPI_LCD::drawPixel(int16_t x, int16_t y, uint16_t color)
 {
   spilcdSetPosition(&_lcd, x, y, 1, 1, DRAW_TO_LCD);
   color = __builtin_bswap16(color);
-  spilcdWriteDataBlock(&_lcd, (uint8_t *)&color, 2, DRAW_TO_LCD);
+  spilcdWriteDataBlock(&_lcd, (uint8_t *)&color, 2, DRAW_TO_LCD | DRAW_TO_RAM);
 }
 void BB_SPI_LCD::setAntialias(bool bAntialias)
 {
@@ -5443,19 +5648,19 @@ int16_t BB_SPI_LCD::height(void)
 }
 void BB_SPI_LCD::drawCircle(int32_t x, int32_t y, int32_t r, uint32_t color)
 {
-  spilcdEllipse(&_lcd, x, y, r, r, (uint16_t)color, 0, DRAW_TO_LCD);
+  spilcdEllipse(&_lcd, x, y, r, r, (uint16_t)color, 0, DRAW_TO_LCD | DRAW_TO_RAM);
 }
 void BB_SPI_LCD::fillCircle(int32_t x, int32_t y, int32_t r, uint32_t color)
 {
-  spilcdEllipse(&_lcd, x, y, r, r, (uint16_t)color, 1, DRAW_TO_LCD);
+  spilcdEllipse(&_lcd, x, y, r, r, (uint16_t)color, 1, DRAW_TO_LCD | DRAW_TO_RAM);
 }
 void BB_SPI_LCD::drawEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color)
 {
-  spilcdEllipse(&_lcd, x, y, rx, ry, (uint16_t)color, 0, DRAW_TO_LCD);
+  spilcdEllipse(&_lcd, x, y, rx, ry, (uint16_t)color, 0, DRAW_TO_LCD | DRAW_TO_RAM);
 }
 void BB_SPI_LCD::fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color)
 {
-  spilcdEllipse(&_lcd, x, y, rx, ry, (uint16_t)color, 1, DRAW_TO_LCD);
+  spilcdEllipse(&_lcd, x, y, rx, ry, (uint16_t)color, 1, DRAW_TO_LCD | DRAW_TO_RAM);
 }
 
 void BB_SPI_LCD::pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags)

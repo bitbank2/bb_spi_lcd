@@ -118,6 +118,10 @@ typedef struct tagSPILCD
 class BB_SPI_LCD : public Print
 {
   public:
+    int createVirtual(int iWidth, int iHeight);
+    int freeVirtual(void);
+    int captureArea(int dst_x, int dst_y, int src_x, int src_y, int src_w, int src_h, uint16_t *pPixels, int bSwap565 = 1);
+    int merge(uint16_t *pSrc, uint16_t usTrans, int bSwap565);
     int begin(int iStandardType);
     int begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
     void setRotation(int iAngle);
@@ -128,7 +132,7 @@ class BB_SPI_LCD : public Print
     void setTextColor(int iFG, int iBG = -1);
     void setCursor(int x, int y);
     void setAddrWindow(int x, int y, int w, int h);
-
+    void getTextBounds(const char *string, int16_t x, int16_t y, int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
     int16_t getCursorX(void);
     int16_t getCursorY(void);
     bool allocBuffer(void);
@@ -158,6 +162,11 @@ class BB_SPI_LCD : public Print
     SPILCD _lcd;
 }; // class BB_SPI_LCD
 
+// Parallel LCD support functions
+void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins);
+void ParallelReset(void);
+void ParallelDataWrite(uint8_t *pData, int len, int iMode);
+
 enum
 {
     DISPLAY_TINYPICO_IPS_SHIELD=1,
@@ -173,6 +182,7 @@ enum
     DISPLAY_TTGO_T_DISPLAY,
     DISPLAY_T_QT,
     DISPLAY_TUFTY2040,
+    DISPLAY_KUMAN_35,
     DISPLAY_COUNT
 };
 #if !defined(BITBANK_LCD_MODES)
@@ -189,6 +199,7 @@ typedef enum
 #define FLAGS_SWAP_RB 1
 #define FLAGS_INVERT  2
 #define FLAGS_BITBANG 4
+#define FLAGS_FLIPX   8
 
 #if defined(_LINUX_) && defined(__cplusplus)
 extern "C" {
@@ -408,7 +419,8 @@ enum {
    LCD_SSD1283A, // 132x132
    LCD_ILI9486, // 320x480
    LCD_GC9A01, // 240x240 round
-   LCD_GC9107, // 128x128 tiny
+   LCD_GC9107, // 128x128 tiny (0.85")
+   LCD_VIRTUAL, // memory-only display
    LCD_VALID_MAX
 };
 
