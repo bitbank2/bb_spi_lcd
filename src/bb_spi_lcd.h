@@ -80,6 +80,7 @@ typedef struct {
 #define TFT_MAGENTA 0xf81f
 #define TFT_WHITE 0xffff
 #define TFT_GREY 0x5AEB
+#define TFT_ORANGE 0xbbc0
 #endif
 
 /// Data stored for FONT AS A WHOLE
@@ -118,12 +119,14 @@ typedef struct tagSPILCD
 class BB_SPI_LCD : public Print
 {
   public:
+    BB_SPI_LCD() {memset(&_lcd, 0, sizeof(_lcd));}
     int createVirtual(int iWidth, int iHeight);
     int freeVirtual(void);
     int captureArea(int dst_x, int dst_y, int src_x, int src_y, int src_w, int src_h, uint16_t *pPixels, int bSwap565 = 1);
     int merge(uint16_t *pSrc, uint16_t usTrans, int bSwap565);
     int begin(int iStandardType);
     int begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
+    int beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins);
     void setRotation(int iAngle);
     uint8_t getRotation(void);
     void fillScreen(int iColor);
@@ -163,7 +166,7 @@ class BB_SPI_LCD : public Print
 }; // class BB_SPI_LCD
 
 // Parallel LCD support functions
-void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins);
+void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, int iSwapColor);
 void ParallelReset(void);
 void ParallelDataWrite(uint8_t *pData, int len, int iMode);
 
@@ -179,10 +182,13 @@ enum
     DISPLAY_RANKIN_COLORCOIN,
     DISPLAY_RANKIN_SENSOR,
     DISPLAY_RANKIN_POWER,
-    DISPLAY_TTGO_T_DISPLAY,
+    DISPLAY_T_DISPLAY_S3,
+    DISPLAY_T_DISPLAY,
     DISPLAY_T_QT,
     DISPLAY_TUFTY2040,
     DISPLAY_KUMAN_35,
+    DISPLAY_KUMAN_24,
+    DISPLAY_MAKERFABS_S3,
     DISPLAY_COUNT
 };
 #if !defined(BITBANK_LCD_MODES)
@@ -200,6 +206,8 @@ typedef enum
 #define FLAGS_INVERT  2
 #define FLAGS_BITBANG 4
 #define FLAGS_FLIPX   8
+#define FLAGS_SWAP_COLOR 16
+#define FLAGS_MEM_RESTART 32
 
 #if defined(_LINUX_) && defined(__cplusplus)
 extern "C" {
@@ -418,6 +426,7 @@ enum {
    LCD_ST7789_280, // 240x280
    LCD_SSD1283A, // 132x132
    LCD_ILI9486, // 320x480
+   LCD_ILI9488, // 320x480
    LCD_GC9A01, // 240x240 round
    LCD_GC9107, // 128x128 tiny (0.85")
    LCD_VIRTUAL, // memory-only display

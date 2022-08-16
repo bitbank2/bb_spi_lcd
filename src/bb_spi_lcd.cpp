@@ -111,7 +111,7 @@ MbedSPI *pSPI = new MbedSPI(12,11,13);
 #endif // VSPI_HOST
 #define ESP32_DMA
 #define HAS_DMA
-#define SPI_DMA_CHAN SPI_DMA_CH_AUTO 
+#define SPI_DMA_CHAN SPI_DMA_CH_AUTO
 #endif
 
 volatile int iCurrentCS;
@@ -137,7 +137,9 @@ static spi_device_handle_t spi;
 // ESP32 has enough memory to spare 4K
 DMA_ATTR uint8_t ucTXBuf[4096]="";
 static unsigned char ucRXBuf[4096];
+#ifndef ESP32_DMA
 static int iTXBufSize = 4096; // max reasonable size
+#endif // ESP32_DMA
 #else
 static int iTXBufSize;
 static unsigned char *ucTXBuf;
@@ -183,7 +185,10 @@ static void myPinWrite(int iPin, int iValue);
 //static int iWindowX, iWindowY, iCurrentX, iCurrentY;
 //static int iWindowCX, iWindowCY;
 static int bSetPosition = 0; // flag telling myspiWrite() to ignore data writes to memory
+void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen);
+void spilcdParallelData(uint8_t *pData, int iLen);
 void spilcdWriteCommand(SPILCD *pLCD, unsigned char);
+void spilcdWriteCmdParams(SPILCD *pLCD, uint8_t ucCMD, uint8_t *pParams, int iLen);
 void spilcdWriteCommand16(SPILCD *pLCD, uint16_t us);
 static void spilcdWriteData8(SPILCD *pLCD, unsigned char c);
 static void spilcdWriteData16(SPILCD *pLCD, unsigned short us, int iFlags);
@@ -1166,6 +1171,25 @@ const unsigned char uc128InitList[]PROGMEM = {
 		0x06,0x06,0x02,0x0f,
 	0
 };
+// List of command/parameters to initialize the ILI9488 display
+const unsigned char ucILI9488InitList[] PROGMEM = {
+   3, 0xc0, 0x17, 0x15, // CMD_PWCTR1 - VRH1, VRH2
+   2, 0xc1, 0x41, // CMD_PWCTR2 - VGH, VGL
+//   4, 0xc5, 0x00, 0x12, 0x80, // CMD_VMCTR
+   3, 0xb1, 0xa0, 0x11, // frame rate 60hz
+//   2, 0xb4, 0x02, // frame inversion control = 2dot
+   4, 0xb6, 0x02, 0x22, 0x3b, // normal scan, 5 frames
+//   2, 0xb7, 0xc6, // ETMOD
+   2, 0x36,0x0a, // MEM_CTL
+   1, 0x20, // not inverted
+   2, 0x3a, 0x55, // pixel format RGB565
+   5, 0xf7, 0xa9, 0x51, 0x2c, 0x82, // ADJCTL3
+   1, 0x11, // sleep mode out
+   LCD_DELAY, 120,
+   1, 0x29, // display on
+   LCD_DELAY, 100,
+   0
+};
 // List of command/parameters to initialize the ILI9486 display
 const unsigned char ucILI9486InitList[] PROGMEM = {
    2, 0x01, 0x00,
@@ -1269,6 +1293,8 @@ void SPI_BitBang(SPILCD *pLCD, uint8_t *pData, int iLen, int iMode)
 //
 static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, int iFlags)
 {
+    if (iLen == 0) return;
+    
     if (iMode == MODE_DATA && pLCD->pBackBuffer != NULL && !bSetPosition && iFlags & DRAW_TO_RAM) // write it to the back buffer
     {
         uint16_t *s, *d;
@@ -1307,6 +1333,12 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
     }
     if (!(iFlags & DRAW_TO_LCD))
         return; // don't write it to the display
+#ifdef ARDUINO_ARCH_ESP32
+    if (pLCD->pfnDataCallback) {
+        spilcdParallelData(pBuf, iLen);
+        return;
+    }
+#endif
     if (pLCD->pfnDataCallback != NULL)
     {
        (*pLCD->pfnDataCallback)(pBuf, iLen, iMode);
@@ -1519,127 +1551,6 @@ unsigned char *sE0, *sE1;
 
 	return 0;
 } /* spilcdSetGamma() */
-// *******************
-// Support for the FeatherS3 connected to a Kuman parallel LCD
-// *******************
-#ifdef ARDUINO_FEATHERS3
-#if __has_include (<esp_lcd_panel_io.h>)
-#include <esp_lcd_panel_io.h>
-#include <esp_private/gdma.h>
-#include <hal/dma_types.h>
-#include <driver/dedic_gpio.h>
-#include <esp32-hal-gpio.h>
-#include <hal/gpio_ll.h>
-#include <hal/lcd_hal.h>
-#include <soc/lcd_cam_reg.h>
-#include <soc/lcd_cam_struct.h>
-#endif // has lcd panel include
-// for parallel
-/// from esp-idf/components/esp_lcd/src/esp_lcd_panel_io_i80.c
-struct esp_lcd_i80_bus_t {
-    int bus_id;            // Bus ID, index from 0
-    portMUX_TYPE spinlock; // spinlock used to protect i80 bus members(hal, device_list, cur_trans)
-    lcd_hal_context_t hal; // Hal object
-    size_t bus_width;      // Number of data lines
-    intr_handle_t intr;    // LCD peripheral interrupt handle
-    void* pm_lock; // Power management lock
-    size_t num_dma_nodes;  // Number of DMA descriptors
-    uint8_t *format_buffer;  // The driver allocates an internal buffer for DMA to do data format transformer
-    size_t resolution_hz;    // LCD_CLK resolution, determined by selected clock source
-    gdma_channel_handle_t dma_chan; // DMA channel handle
-};
-
-static void _gpio_pin_init(int pin)
-{
-  if (pin >= 0)
-  {
-    gpio_pad_select_gpio(pin);
-    gpio_hi(pin);
-    gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
-  }
-}
-
-int8_t pin_data[8];
-// translate the 8-bit positions to a 32-bit GPIO word
-static uint32_t u32TransBits[256];
-static const uint32_t u32BitMask = (1<<10) | (1<<11) | (1<<12) | (1<<14) | (1<<17) | (1<<18) | (1<<5) | (1<<6) | (1<<7);
-const int bundleA_gpios[] = {10, 11, 12, 14, 17, 18, 5, 6};
-gpio_config_t io_conf = {
-    .mode = GPIO_MODE_OUTPUT,
-};
-dedic_gpio_bundle_handle_t bundleA = NULL;
-dedic_gpio_bundle_config_t bundleA_config = {
-    .gpio_array = bundleA_gpios,
-    .array_size = sizeof(bundleA_gpios) / sizeof(bundleA_gpios[0]),
-    .flags = {
-        .out_en = 1,
-    },
-};
-
-void FeatherS3Data(uint8_t *pData, int len, int iMode)
-{
-uint8_t c, old = pData[0] -1;
-    
-    GPIO.out1_w1tc.val = (1<<1); // activate CS (IO33)
-    if (iMode == MODE_COMMAND)
-        GPIO.out_w1tc = (1<<3); // clear DC
-    else
-        GPIO.out_w1ts = (1<<3); // set DC for data mode
-    for (int i=0; i<len; i++) {
-        c = pData[i];
-//        GPIO.out_w1tc = (1<<7); // WR low
-//        if (c != old) {
-        GPIO.out_w1tc = u32BitMask; // clear our 8+1 bits
-        GPIO.out_w1ts = u32TransBits[c]; // set the current byte
-//            dedic_gpio_bundle_write(bundleA, 0xff, c);
-//            old = c;
-//         }
-        GPIO.out_w1ts = (1<<7); // toggle WR high to latch data
-    } // for i
-    GPIO.out1_w1ts.val = (1<<1); // (IO33) deactivate CS
-} /* FeatherS3Data() */
-void FeatherS3Reset(void)
-{
-    pinMode(7, OUTPUT); // WR
-    pinMode(3, OUTPUT); // DC
-    pinMode(33, OUTPUT); // CS
-    pinMode(38, OUTPUT); // RST
-    // create translated bit table
-    for (int i=0; i<256; i++) {
-        uint32_t u32Bits = 0;
-        if (i & 1) u32Bits |= (1<<10);
-        if (i & 2) u32Bits |= (1<<11);
-        if (i & 4) u32Bits |= (1<<12);
-        if (i & 8) u32Bits |= (1<<14);
-        if (i & 16) u32Bits |= (1<<17);
-        if (i & 32) u32Bits |= (1<<18);
-        if (i & 64) u32Bits |= (1<<5);
-        if (i & 128) u32Bits |= (1<<6);
-        u32TransBits[i] = u32Bits;
-    }
-//    pinMode(10, OUTPUT); // D0
-//    pinMode(11, OUTPUT); // D1
-//    pinMode(12, OUTPUT); // D2
-//    pinMode(14, OUTPUT); // D3
-//    pinMode(17, OUTPUT); // D4
-//    pinMode(18, OUTPUT); // D5
-//    pinMode(5, OUTPUT); // D6
-//    pinMode(6, OUTPUT); // D7
-    
-    // toggle reset
-    digitalWrite(38, LOW);
-    delay(100);
-    digitalWrite(38, HIGH);
-    delay(100);
-    // Create 8-bit dedicated GPIO bundle to toggle all 8 at once
-    for (int i = 0; i < sizeof(bundleA_gpios) / sizeof(bundleA_gpios[0]); i++) {
-        io_conf.pin_bit_mask = 1ULL << bundleA_gpios[i];
-        gpio_config(&io_conf);
-    }
-    // Create bundleA, output only
-  //  ESP_ERROR_CHECK(dedic_gpio_new_bundle(&bundleA_config, &bundleA));
-} /* FeatherS3Reset() */
-#endif // FEATHERS3
 
 // *****************
 //
@@ -1958,23 +1869,33 @@ start_of_init:
         pLCD->iCurrentWidth = pLCD->iWidth = 320;
         pLCD->iCurrentHeight = pLCD->iHeight = 480;
 	}
-        else if (pLCD->iLCDType == LCD_ILI9486)
+    else if (pLCD->iLCDType == LCD_ILI9486 || pLCD->iLCDType == LCD_ILI9488)
         {
-            uint8_t ucBGRFlags;
-            s = (unsigned char *)ucILI9486InitList;
-            memcpy_P(d, s, sizeof(ucILI9486InitList));
+            uint8_t ucBGRFlags, iBGROffset, iInvertOffset;
+            if (pLCD->iLCDType == LCD_ILI9488) { // slightly different init sequence
+                s = (unsigned char *)ucILI9488InitList;
+                memcpy_P(d, s, sizeof(ucILI9488InitList));
+                pLCD->iLCDType = LCD_ILI9486; // from here on out, they're the same
+                iBGROffset = 18;
+                iInvertOffset = 20;
+            } else {
+                s = (unsigned char *)ucILI9486InitList;
+                memcpy_P(d, s, sizeof(ucILI9486InitList));
+                iBGROffset = 66;
+                iInvertOffset = 63;
+            }
             s = d;
             ucBGRFlags = 0xa; // normal direction, RGB color order
             if (pLCD->iLCDFlags & FLAGS_FLIPX) {
                 ucBGRFlags ^= 0x40;
-                d[66] = ucBGRFlags;
+                d[iBGROffset] = ucBGRFlags;
             }
             if (pLCD->iLCDFlags & FLAGS_INVERT)
-               d[63] = 0x21; // invert display command
+               d[iInvertOffset] = 0x21; // invert display command
             if (pLCD->iLCDFlags & FLAGS_SWAP_RB)
             {
                 ucBGRFlags |= 8;
-               d[66] = ucBGRFlags;
+               d[iBGROffset] = ucBGRFlags;
             }
             pLCD->iCurrentWidth = pLCD->iWidth = 320;
             pLCD->iCurrentHeight = pLCD->iHeight = 480;
@@ -2046,31 +1967,28 @@ start_of_init:
                }
                else
                {
-                   uc = *s++;
                  if (pLCD->iLCDType == LCD_ILI9225) // 16-bit commands and data
                  {
                      uint8_t uc2;
-                     uc2 = *s++;
-                     spilcdWriteCommand16(pLCD, (uc << 8) | uc2);
-                     for (i=0; i<iCount-1; i++)
+                     for (i=0; i<iCount; i++)
                      {
                         uc = *s++;
                          uc2 = *s++;
                         spilcdWriteData16(pLCD, (uc << 8) | uc2, DRAW_TO_LCD);
                      } // for i
                  } else {
-                     spilcdWriteCommand(pLCD, uc);
-                     for (i=0; i<iCount-1; i++)
-                     {
-                        uc = *s++;
-                     // hackhackhack
-                     // the ssd1331 is kind of like the ssd1306 in that it expects the parameters
-                     // to each command to have the DC pin LOW while being sent
-                        if (pLCD->iLCDType != LCD_SSD1331)
-                            spilcdWriteData8(pLCD, uc);
-                        else
+                     if (pLCD->iLCDType == LCD_SSD1331) {
+                         // SSD1331 expects the parameters to
+                         // be written in command mode
+                         for (i=0; i<iCount; i++)
+                         {
+                            uc = *s++;
                             spilcdWriteCommand(pLCD, uc);
-                     } // for i
+                         } // for i
+                     } else { // normal 1 byte CMD + data params
+                         spilcdWriteCmdParams(pLCD, s[0], &s[1], iCount-1);
+                         s += iCount;
+                     }
                  }
               }
           }
@@ -2095,6 +2013,9 @@ start_of_init:
 //
 void spilcdScrollReset(SPILCD *pLCD)
 {
+uint32_t u32Temp;
+int iLen;
+    
     if (pLCD->iLCDType == LCD_VIRTUAL) {
         return;
     }
@@ -2113,11 +2034,9 @@ void spilcdScrollReset(SPILCD *pLCD)
         spilcdWriteCommand(pLCD, 0x00);
         return;
     }
-	spilcdWriteCommand(pLCD, 0x37); // scroll start address
-	spilcdWriteData16(pLCD, 0, DRAW_TO_LCD);
-	if (pLCD->iLCDType == LCD_HX8357) {
-		spilcdWriteData16(pLCD, 0, DRAW_TO_LCD);
-	}
+    u32Temp = 0;
+    iLen = (pLCD->iLCDType == LCD_HX8357) ? 4:2;
+	spilcdWriteCmdParams(pLCD, 0x37, (uint8_t *)&u32Temp, iLen); // scroll start address
 } /* spilcdScrollReset() */
 
 //
@@ -2702,7 +2621,22 @@ void spilcdShutdown(SPILCD *pLCD)
 	AIORemoveGPIO(pLCD->iLEDPin);
 #endif // _LINUX_
 } /* spilcdShutdown() */
-
+//
+// Write a command byte followed by parameters
+//
+void spilcdWriteCmdParams(SPILCD *pLCD, uint8_t ucCMD, uint8_t *pParams, int iLen)
+{
+#ifdef ARDUINO_ARCH_ESP32
+    if (pLCD->pfnDataCallback) {
+        spilcdParallelCMDParams(ucCMD, pParams, iLen);
+        return;
+    }
+#endif
+    myspiWrite(pLCD, &ucCMD, 1, MODE_COMMAND, DRAW_TO_LCD);
+    if (iLen) {
+        myspiWrite(pLCD, pParams, iLen, MODE_DATA, DRAW_TO_LCD);
+    }
+} /* spilcdWriteCmdParams() */
 //
 // Send a command byte to the LCD controller
 // In SPI 8-bit mode, the D/C line must be set
@@ -2711,7 +2645,12 @@ void spilcdShutdown(SPILCD *pLCD)
 void spilcdWriteCommand(SPILCD *pLCD, unsigned char c)
 {
 unsigned char buf[2];
-
+#ifdef ARDUINO_ARCH_ESP32
+    if (pLCD->pfnDataCallback) {
+        spilcdParallelCMDParams(c, NULL, 0);
+        return;
+    }
+#endif
 	buf[0] = c;
 	myspiWrite(pLCD, buf, 1, MODE_COMMAND, DRAW_TO_LCD);
 } /* spilcdWriteCommand() */
@@ -2772,7 +2711,8 @@ void spilcdSetCursor(SPILCD *pLCD, int x, int y)
 void spilcdSetPosition(SPILCD *pLCD, int x, int y, int w, int h, int iFlags)
 {
 unsigned char ucBuf[8];
-
+int iLen;
+    
     pLCD->iWindowX = pLCD->iCurrentX = x; pLCD->iWindowY = pLCD->iCurrentY = y;
     pLCD->iWindowCX = w; pLCD->iWindowCY = h;
     pLCD->iOffset = (pLCD->iCurrentWidth * 2 * y) + (x * 2);
@@ -2925,7 +2865,6 @@ unsigned char ucBuf[8];
     if (x != pLCD->iOldX || w != pLCD->iOldCX)
     {
         pLCD->iOldX = x; pLCD->iOldCX = w;
-	spilcdWriteCommand(pLCD, 0x2a); // set column address
 	if (pLCD->iLCDType == LCD_ILI9341 || pLCD->iLCDType == LCD_ILI9342 || pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ILI9486 || pLCD->iLCDType == LCD_GC9A01)
 	{
 		x += pLCD->iMemoryX;
@@ -2934,8 +2873,8 @@ unsigned char ucBuf[8];
 		x = x + w - 1;
 //		if ((x-iMemoryX) > iWidth-1) x = iMemoryX + iWidth-1;
 		ucBuf[2] = (unsigned char)(x >> 8);
-		ucBuf[3] = (unsigned char)x; 
-		myspiWrite(pLCD, ucBuf, 4, MODE_DATA, iFlags);
+		ucBuf[3] = (unsigned char)x;
+        iLen = 4;
 	}
 	else
 	{
@@ -2950,13 +2889,13 @@ unsigned char ucBuf[8];
 		ucBuf[5] = (unsigned char)(x >> 8);
 		ucBuf[6] = 0;
 		ucBuf[7] = (unsigned char)x;
-		myspiWrite(pLCD, ucBuf, 8, MODE_DATA, iFlags);
+        iLen = 8;
 	}
+        spilcdWriteCmdParams(pLCD, 0x2a, ucBuf, iLen); // set column address
     } // if X changed
     if (y != pLCD->iOldY || h != pLCD->iOldCY)
     {
         pLCD->iOldY = y; pLCD->iOldCY = h;
-	spilcdWriteCommand(pLCD, 0x2b); // set row address
 	if (pLCD->iLCDType == LCD_ILI9341 || pLCD->iLCDType == LCD_ILI9342 || pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ILI9486 || pLCD->iLCDType == LCD_GC9A01)
 	{
                 if (pLCD->iCurrentHeight == 135 && pLCD->iOrientation == LCD_ORIENTATION_90)
@@ -2968,10 +2907,9 @@ unsigned char ucBuf[8];
 		if ((y-pLCD->iMemoryY) > pLCD->iCurrentHeight-1) y = pLCD->iMemoryY + pLCD->iCurrentHeight;
 		ucBuf[2] = (unsigned char)(y >> 8);
 		ucBuf[3] = (unsigned char)y;
-		myspiWrite(pLCD, ucBuf, 4, MODE_DATA, iFlags);
+        iLen = 4;
                 if (pLCD->iCurrentHeight == 135 && pLCD->iOrientation == LCD_ORIENTATION_90)
                    pLCD->iMemoryY -=1; // ST7789 240x135 rotated 90 is off by 1
-
 	}
 	else
 	{
@@ -2986,10 +2924,12 @@ unsigned char ucBuf[8];
 		ucBuf[5] = (unsigned char)(y >> 8);
 		ucBuf[6] = 0;
 		ucBuf[7] = (unsigned char)y;
-		myspiWrite(pLCD, ucBuf, 8, MODE_DATA, iFlags);
+        iLen = 8;
 	}
+        spilcdWriteCmdParams(pLCD, 0x2b, ucBuf, iLen); // set row address
     } // if Y changed
-	spilcdWriteCommand(pLCD, 0x2c); // write memory begin
+    if (!(pLCD->iLCDFlags & FLAGS_MEM_RESTART))
+        spilcdWriteCommand(pLCD, 0x2c); // write memory begin
 //	spilcdWriteCommand(0x3c); // write memory continue
     bSetPosition = 0;
 } /* spilcdSetPosition() */
@@ -4056,8 +3996,7 @@ int bX=0, bY=0, bV=0;
            uc ^= 0x40;
       if (pLCD->iLCDFlags & FLAGS_SWAP_RB)
           uc ^= 0x8;
-      spilcdWriteCommand(pLCD, 0x36); // MADCTL
-      spilcdWriteData8(pLCD, uc);
+      spilcdWriteCmdParams(pLCD, 0x36, &uc, 1); // MADCTL
    }
     if (pLCD->iLCDType == LCD_SSD1283A) {
         uint16_t u1=0, u3=0;
@@ -4116,8 +4055,19 @@ uint16_t *u16Temp = (uint16_t *)ucRXBuf;
 
     // make sure we're in landscape mode to use the correct coordinates
     spilcdScrollReset(pLCD);
-    spilcdSetPosition(pLCD, 0,0,pLCD->iCurrentWidth,pLCD->iCurrentHeight, iFlags);
     usData = (usData >> 8) | (usData << 8); // swap hi/lo byte for LCD
+    if (pLCD->iLCDFlags & FLAGS_MEM_RESTART) {
+        // special case for parllel LCD using ESP32 LCD API
+        for (i=0; i<pLCD->iCurrentWidth; i++)
+            u16Temp[i] = usData;
+        for (y=0; y<pLCD->iCurrentHeight; y++)
+        {
+            spilcdSetPosition(pLCD, 0,y,pLCD->iCurrentWidth,1, iFlags);
+            myspiWrite(pLCD, (uint8_t *)u16Temp, pLCD->iCurrentWidth*2, MODE_DATA, iFlags);
+        } // for y
+        return 0;
+    }
+    spilcdSetPosition(pLCD, 0,0,pLCD->iCurrentWidth,pLCD->iCurrentHeight, iFlags);
     // fit within our temp buffer
     cx = 1; tx = pLCD->iCurrentWidth;
     if (pLCD->iCurrentWidth > 160)
@@ -5166,6 +5116,20 @@ void AxpPowerUp()
 //
 // C++ Class implementation
 //
+int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins)
+{
+    if (RST_PIN != 0xff) {
+        pinMode(RST_PIN, OUTPUT);
+        digitalWrite(RST_PIN, LOW);
+        delay(100);
+        digitalWrite(RST_PIN, HIGH);
+        delay(100);
+    }
+    ParallelDataInit(RD_PIN, WR_PIN, CS_PIN, DC_PIN, iBusWidth, data_pins, iFlags);
+    spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
+    return spilcdInit(&_lcd, iType, iFlags, 0,0,0,0,0,0,0,0);
+} /* beginParallel() */
+
 int BB_SPI_LCD::begin(int iDisplayType)
 {
     int iCS=0, iDC=0, iMOSI=0, iSCK=0; // swap pins around for the different TinyPico boards
@@ -5257,7 +5221,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 24000000, 4, 22, 5, 19, -1, 23, 18); // Mike's coin cell pin numbering
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
-        case DISPLAY_TTGO_T_DISPLAY:
+        case DISPLAY_T_DISPLAY:
             spilcdInit(&_lcd, LCD_ST7789_135, 0, 40000000, 5, 16, 23, 4, -1, 19, 18);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
@@ -5266,14 +5230,6 @@ int BB_SPI_LCD::begin(int iDisplayType)
             pinMode(10, OUTPUT);
             digitalWrite(10, LOW); // inverted backlight signal
             break;
-#ifdef ARDUINO_FEATHERS3
-        case DISPLAY_KUMAN_35: // ILI9486 320x480 8-bit parallel
-            spilcdSetCallbacks(&_lcd, FeatherS3Reset, FeatherS3Data);
-            spilcdInit(&_lcd, LCD_ILI9486, FLAGS_SWAP_RB, 0,0,0,0,0,0,0,0);
-            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
-            break;
-#endif // FEATHERS3
-            
 #ifdef ARDUINO_ARCH_RP2040
         case DISPLAY_KUMAN_35: // ILI9486 320x480 8-bit parallel
             // toggle reset
@@ -5284,21 +5240,62 @@ int BB_SPI_LCD::begin(int iDisplayType)
             delay(100);
             //ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins)
             ucRXBuf[0] = 14; // D0
-            ParallelDataInit(13, 12, 10, 11, 8, ucRXBuf);
+            ParallelDataInit(13, 12, 10, 11, 8, ucRXBuf, 0);
             spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
             spilcdInit(&_lcd, LCD_ILI9486, FLAGS_SWAP_RB, 0,0,0,0,0,0,0,0);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            break;
+        case DISPLAY_KUMAN_24: // ILI9341 240x320 8-bit parallel
+            // toggle reset
+            pinMode(9, OUTPUT);
+            digitalWrite(9, LOW);
+            delay(100);
+            digitalWrite(9, HIGH);
+            delay(100);
+            //ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins)
+            ucRXBuf[0] = 14; // D0
+            ParallelDataInit(13, 12, 10, 11, 8, ucRXBuf, 0);
+            spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 0,0,0,0,0,0,0,0);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_TUFTY2040: // ST7789 240x320 8-bit parallel
             pinMode(2, OUTPUT); // backlight
             digitalWrite(2, HIGH);
             ucRXBuf[0] = 14; // D0
-            ParallelDataInit(13, 12, 10, 11, 8, ucRXBuf);
+            ParallelDataInit(13, 12, 10, 11, 8, ucRXBuf, 0);
             spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
             spilcdInit(&_lcd, LCD_ST7789, 0,0,0,0,0,0,0,0,0);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
 #endif
+#ifdef ARDUINO_ARCH_ESP32
+        case DISPLAY_T_DISPLAY_S3:
+            pinMode(38, OUTPUT); // backlight
+            digitalWrite(38, HIGH);
+            pinMode(15, OUTPUT); // power enable
+            digitalWrite(15, HIGH); // turn on LCD
+            _lcd.iLEDPin = 38;
+            {
+            static const uint8_t u8Pins[8] = {39,40,41,42,45,46,47,48};
+            beginParallel(LCD_ST7789_172, FLAGS_MEM_RESTART, 5, 9, 8, 6, 7, 8, (uint8_t *)u8Pins);
+                // Adjust the parameters for the 170x320 LCD
+            _lcd.iCurrentWidth = _lcd.iWidth = 170;
+            _lcd.iColStart = _lcd.iMemoryX = 35;
+            setRotation(270);
+            }
+            break;
+        case DISPLAY_MAKERFABS_S3:
+            pinMode(45, OUTPUT); // backlight
+            digitalWrite(45, HIGH);
+            _lcd.iLEDPin = 45;
+            {
+            static const uint8_t u8Pins[16] = {47,21,14,13,12,11,10,9,3,8,16,15,7,6,5,4};
+            beginParallel(LCD_ILI9488, (FLAGS_SWAP_RB | FLAGS_SWAP_COLOR), -1, 48, 35, 37, 36, 16, (uint8_t *)u8Pins);
+            setRotation(90);
+            }
+            break;
+#endif // ARDUINO_ARCH_ESP32
         default:
             return -1;
     }
