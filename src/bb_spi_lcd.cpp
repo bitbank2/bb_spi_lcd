@@ -22,7 +22,9 @@
 // control lines. 
 //#if defined(ADAFRUIT_PYBADGE_M4_EXPRESS)
 //#define SPI SPI1
+#ifndef _LINUX_
 #include <SPI.h>
+#endif
 //#define SPI mySPI
 // MISO, SCK, MOSI
 //#endif
@@ -764,6 +766,11 @@ static void pinMode(int iPin, int iMode)
    AIOAddGPIO(iPin, iMode);
 } /* pinMode() */
 
+static void delay(int iMS)
+{
+  usleep(iMS * 1000);
+} /* delay() */
+
 static void delayMicroseconds(int iMS)
 {
   usleep(iMS);
@@ -773,10 +780,12 @@ static uint8_t pgm_read_byte(uint8_t *ptr)
 {
   return *ptr;
 }
+#ifdef FUTURE
 static int16_t pgm_read_word(uint8_t *ptr)
 {
   return ptr[0] + (ptr[1]<<8);
 }
+#endif // FUTURE
 #endif // _LINUX_
 //
 // Provide a small temporary buffer for use by the graphics functions
@@ -5113,6 +5122,7 @@ void AxpPowerUp()
 } /* AxpPowerUp() */
 #endif // ARDUINO_M5Stick_C
 
+#ifdef __cplusplus
 //
 // C++ Class implementation
 //
@@ -5665,3 +5675,4 @@ void BB_SPI_LCD::pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFl
   spilcdSetPosition(&_lcd, x, y, w, h, DRAW_TO_LCD);
   spilcdWriteDataBlock(&_lcd, (uint8_t *)pixels, w*h*2, iFlags);
 }
+#endif // __cplusplus

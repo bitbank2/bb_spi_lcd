@@ -20,11 +20,13 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 // these are defined the same in the OLED library
+#ifndef _LINUX_
 #include <Arduino.h>
 #include <Print.h>
 #if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_Core2)
 #include <Wire.h>
 #endif
+#endif // _LINUX_
 
 #if !defined( __SS_OLED_H__ ) && !defined( __ONEBITDISPLAY__ )
 enum {
@@ -116,6 +118,7 @@ typedef struct tagSPILCD
    DATACALLBACK pfnDataCallback;
 } SPILCD;
 
+#ifdef __cplusplus
 class BB_SPI_LCD : public Print
 {
   public:
@@ -164,6 +167,7 @@ class BB_SPI_LCD : public Print
   private:
     SPILCD _lcd;
 }; // class BB_SPI_LCD
+#endif // __cplusplus
 
 // Parallel LCD support functions
 void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, int iSwapColor);
@@ -214,7 +218,7 @@ extern "C" {
 #endif
 
 // Sets the D/C pin to data or command mode
-void spilcdSetMode(int iMode);
+void spilcdSetMode(SPILCD *pLCD, int iMode);
 //
 // Set the text cursor position in pixels
 //
