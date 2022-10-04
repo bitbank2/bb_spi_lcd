@@ -5534,6 +5534,20 @@ void BB_SPI_LCD::setFreeFont(const GFXfont *pFont)
   _lcd.pFont = (GFXfont *)pFont;
 } /* setFreeFont() */
 
+void BB_SPI_LCD::drawString(const char *pText, int x, int y, int size)
+{
+   if (size == 1) setFont(FONT_6x8);
+   else if (size == 2) setFont(FONT_12x16);
+   setCursor(x,y);
+   for (int i=0; i<strlen(pText); i++) {
+      write(pText[i]);
+   } 
+} /* drawString() */
+void BB_SPI_LCD::drawString(String text, int x, int y, int size)
+{
+    drawString(text.c_str(), x, y, size);
+} /* drawString() */
+
 void BB_SPI_LCD::drawLine(int x1, int y1, int x2, int y2, int iColor)
 {
   spilcdDrawLine(&_lcd, x1, y1, x2, y2, iColor, DRAW_TO_LCD | DRAW_TO_RAM);

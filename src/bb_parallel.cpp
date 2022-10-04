@@ -55,8 +55,8 @@ esp_lcd_i80_bus_config_t s3_bus_config = {
     .data_gpio_nums = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
     .bus_width = 0,
     .max_transfer_bytes = MAX_TX_SIZE, // debug
-    .psram_trans_align = 0, // 0 = use default values
-    .sram_trans_align = 0,
+//    .psram_trans_align = 0, // 0 = use default values
+//    .sram_trans_align = 0,
 };
 
 esp_lcd_panel_io_i80_config_t s3_io_config = {
