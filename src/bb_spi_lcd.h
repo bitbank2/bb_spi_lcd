@@ -143,6 +143,7 @@ class BB_SPI_LCD : public Print
     int16_t getCursorY(void);
     bool allocBuffer(void);
     void * getBuffer(void);
+    SPILCD * getLCDStruct(void);
     void freeBuffer(void);
     void setTextSize(int iSize) {}; // empty for now
     void setFont(int iFont);
@@ -156,6 +157,8 @@ class BB_SPI_LCD : public Print
     void pushPixels(uint16_t *pixels, int count);
     void drawString(const char *pText, int x, int y, int size=-1);
     void drawString(String text, int x, int y, int size=-1);
+    void drawStringFast(const char *szText, int x, int y, int size = -1);
+    int drawBMP(const uint8_t *pBMP, int iDestX, int iDestY, int bStretch = 0, int iTransparent = -1, int iFlags = DRAW_TO_LCD);
     void drawLine(int x1, int y1, int x2, int y2, int iColor);
     void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
     void drawCircle(int32_t x, int32_t y, int32_t r, uint32_t color);

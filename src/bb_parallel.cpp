@@ -22,8 +22,8 @@ static uint8_t u8WR, u8RD, u8DC, u8CS, u8CMD;
 //#include <soc/lcd_cam_reg.h>
 //#include <soc/lcd_cam_struct.h>
 #include <hal/lcd_types.h>
-extern DMA_ATTR uint8_t *ucTXBuf;
-volatile bool s3_dma_busy = false;
+//extern DMA_ATTR uint8_t *ucTXBuf;
+volatile bool s3_dma_busy;
 void spilcdParallelData(uint8_t *pData, int iLen);
 static bool s3_notify_dma_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
@@ -61,7 +61,7 @@ esp_lcd_i80_bus_config_t s3_bus_config = {
 
 esp_lcd_panel_io_i80_config_t s3_io_config = {
         .cs_gpio_num = 0,
-        .pclk_hz = 6000000, // >12Mhz doesn't work on my setup
+        .pclk_hz = 20000000, // >12Mhz doesn't work on my setup
         .trans_queue_depth = 4,
         .on_color_trans_done = s3_notify_dma_ready,
         .user_ctx = nullptr, // debug
@@ -320,6 +320,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
     }
     // Create bundleA, output only
     ESP_ERROR_CHECK(dedic_gpio_new_bundle(&bundleA_config, &bundleA));
+    s3_dma_busy = false;
 #else // USE_ESP32_GPIO
     s3_bus_config.dc_gpio_num = u8DC;
     s3_bus_config.wr_gpio_num = u8WR;
@@ -348,9 +349,9 @@ void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
         spilcdParallelData(pParams, iLen);
     }
 #else
-//    while (s3_dma_busy) {
+    while (s3_dma_busy) {
 //        delayMicroseconds(1);
-//    }
+    }
 //    s3_dma_busy = true;
     esp_lcd_panel_io_tx_param(io_handle, ucCMD, pParams, iLen);
 //    while (s3_dma_busy) {
@@ -386,16 +387,16 @@ void spilcdParallelData(uint8_t *pData, int iLen)
 #else
     int iSize;
     while (iLen) {
-//        while (s3_dma_busy) {
-//            delayMicroseconds(1);
-//        }
+        while (s3_dma_busy) {
+           // delayMicroseconds(1);
+        }
         s3_dma_busy = true; // since we're not using a ping-pong buffer scheme
         iSize = iLen;
         if (iSize > MAX_TX_SIZE) iSize = MAX_TX_SIZE;
         esp_lcd_panel_io_tx_color(io_handle, u8CMD, pData, iSize);
-//        while (s3_dma_busy) {
-//            delayMicroseconds(1);
-//        }
+        while (s3_dma_busy) {
+           // delayMicroseconds(1);
+        }
         iLen -= iSize;
         pData += iSize;
     }

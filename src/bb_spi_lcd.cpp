@@ -16,6 +16,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
+//#define LOG_OUTPUT
 
 // The ILITEK LCD display controllers communicate through the SPI interface
 // and two GPIO pins to control the RESET, and D/C (data/command)
@@ -1303,7 +1304,7 @@ void SPI_BitBang(SPILCD *pLCD, uint8_t *pData, int iLen, int iMode)
 static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, int iFlags)
 {
     if (iLen == 0) return;
-    
+
     if (iMode == MODE_DATA && pLCD->pBackBuffer != NULL && !bSetPosition && iFlags & DRAW_TO_RAM) // write it to the back buffer
     {
         uint16_t *s, *d;
@@ -1451,6 +1452,9 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
 //
 void spilcdWriteDataBlock(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags)
 {
+#ifdef LOG_OUTPUT
+    Serial.printf("writeDataBlock: %d\n", iLen);
+#endif
   myspiWrite(pLCD, pData, iLen, MODE_DATA, iFlags);
 } /* spilcdWriteDataBlock() */
 //
@@ -2721,7 +2725,9 @@ void spilcdSetPosition(SPILCD *pLCD, int x, int y, int w, int h, int iFlags)
 {
 unsigned char ucBuf[8];
 int iLen;
-    
+#ifdef LOG_OUTPUT
+    Serial.printf("setPosition: %d, %d, %d, %d\n", x, y, w, h);
+#endif
     pLCD->iWindowX = pLCD->iCurrentX = x; pLCD->iWindowY = pLCD->iCurrentY = y;
     pLCD->iWindowCX = w; pLCD->iWindowCY = h;
     pLCD->iOffset = (pLCD->iCurrentWidth * 2 * y) + (x * 2);
@@ -3624,7 +3630,8 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
         if (usBGColor != -1) // don't write anything if we're doing transparent text
             myspiWrite(pLCD, (unsigned char *)usTemp, 1024, MODE_DATA, iFlags);
 		} // for each character
-	}
+        x += (i*16);
+    }
 #endif // !__AVR__
     if (iFontSize == FONT_8x8 || iFontSize == FONT_6x8) // draw the 6x8 or 8x8 font
 	{
@@ -4086,7 +4093,6 @@ uint16_t *u16Temp = (uint16_t *)ucRXBuf;
 #ifdef __AVR__
     cx = 16;
     tx = pLCD->iCurrentWidth/16;
-#endif
     for (y=0; y<pLCD->iCurrentHeight; y++)
     {
        for (x=0; x<cx; x++)
@@ -4097,6 +4103,17 @@ uint16_t *u16Temp = (uint16_t *)ucRXBuf;
             myspiWrite(pLCD, (uint8_t *)u16Temp, tx*2, MODE_DATA, iFlags); // fill with data byte
        } // for x
     } // for y
+#else
+    // MCUs with more RAM can do it faster
+    for (i=0; i<pLCD->iCurrentWidth*2; i++) {
+        u16Temp[i] = usData;
+    }
+    for (y=0; y<pLCD->iCurrentHeight; y+=2)
+    {
+        myspiWrite(pLCD, (uint8_t *)u16Temp, pLCD->iCurrentWidth*4, MODE_DATA, iFlags);
+    } // for y
+
+#endif
     return 0;
 } /* spilcdFill() */
 
@@ -4237,6 +4254,7 @@ unsigned char * DecodeRLE8(unsigned char *s, int iWidth, uint16_t *d, uint16_t *
 {
 unsigned char c;
 static unsigned char ucColor, ucRepeat, ucCount;
+int iStartWidth = iWidth;
 long l;
 
    if (s == NULL) { // initialize
@@ -4268,7 +4286,10 @@ long l;
             switch (c)
             {
                case 0: // end of line
-                 return s;
+                    if (iStartWidth != iWidth) {
+                        return s; // true end of line
+                    }
+                break; // otherwise do nothing because it was from the last line
                case 1: // end of bitmap
                  return s;
                case 2: // move
@@ -4442,9 +4463,9 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
     }
     if (ucCompression) // need to do it differently for RLE compressed
     { 
-    uint16_t *d = (uint16_t *)ucTXBuf;
+    uint16_t *d = (uint16_t *)ucRXBuf;
     int y, iStartY, iEndY, iDeltaY;
-   
+        
        pCompressed = &pBMP[iOffBits]; // start of compressed data
        if (bFlipped)
        {  
@@ -4466,9 +4487,9 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
           if (bpp == 4)
              pCompressed = DecodeRLE4(pCompressed, cx, d, usPalette);
           else
-             pCompressed = DecodeRLE8(pCompressed, cx, d, usPalette);
-          spilcdWriteDataBlock(pLCD, (uint8_t *)d, cx*2, iFlags);
-       } 
+             pCompressed = DecodeRLE8(pCompressed, iPitch, d, usPalette);
+           myspiWrite(pLCD, (uint8_t *)d, cx*2, MODE_DATA, iFlags);
+       }
        return 0;
     } // RLE compressed
 
@@ -5421,7 +5442,10 @@ void * BB_SPI_LCD::getBuffer(void)
 {
     return (void *)_lcd.pBackBuffer;
 }
-
+SPILCD * BB_SPI_LCD::getLCDStruct(void)
+{
+    return &_lcd;
+}
 void BB_SPI_LCD::getTextBounds(const char *string, int16_t x, int16_t y, int16_t *x1, int16_t *y1, uint16_t *w1, uint16_t *h1)
 {
     if (_lcd.pFont == NULL) { // use built-in fonts
@@ -5533,6 +5557,17 @@ void BB_SPI_LCD::setFreeFont(const GFXfont *pFont)
 {
   _lcd.pFont = (GFXfont *)pFont;
 } /* setFreeFont() */
+
+int BB_SPI_LCD::drawBMP(const uint8_t *pBMP, int iDestX, int iDestY, int bStretch, int iTransparent, int iFlags)
+{
+    return spilcdDrawBMP(&_lcd, (uint8_t *)pBMP, iDestX, iDestY, bStretch, iTransparent, iFlags);
+} /* drawBMP() */
+
+void BB_SPI_LCD::drawStringFast(const char *szText, int x, int y, int size)
+{
+    if (size == -1) size = _lcd.iFont;
+    spilcdWriteStringFast(&_lcd, x, y, (char *)szText, _lcd.iFG, _lcd.iBG, size, DRAW_TO_LCD | DRAW_TO_RAM);
+} /* drawStringFast() */
 
 void BB_SPI_LCD::drawString(const char *pText, int x, int y, int size)
 {
