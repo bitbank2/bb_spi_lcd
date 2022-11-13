@@ -5301,6 +5301,11 @@ int BB_SPI_LCD::begin(int iDisplayType)
             break;
 #endif
 #ifdef ARDUINO_ARCH_ESP32
+	case DISPLAY_T_DONGLE_S3:
+            pinMode(38, OUTPUT); // power enable
+            digitalWrite(38, LOW); // turn on LCD
+            begin(LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 40000000, 4, 2, 1, -1, -1, 3, 5);
+            break;
         case DISPLAY_T_DISPLAY_S3:
             pinMode(38, OUTPUT); // backlight
             digitalWrite(38, HIGH);
