@@ -5224,6 +5224,9 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 4, 21, 22, 26, -1, 23, 18); // Mike's coin cell pin numbering
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
+        case DISPLAY_M5STACK_ATOMS3:
+            spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 15, 33, 34, 16, -1, 21, 17);
+            break;
 #ifdef ARDUINO_M5Stick_C
         case DISPLAY_M5STACK_STICKC:
             AxpPowerUp();
