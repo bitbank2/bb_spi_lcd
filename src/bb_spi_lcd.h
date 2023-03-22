@@ -440,6 +440,7 @@ enum {
    LCD_ILI9488, // 320x480
    LCD_GC9A01, // 240x240 round
    LCD_GC9107, // 128x128 tiny (0.85")
+   LCD_GDOD0139, // 454x454 1.39" AMOLED
    LCD_VIRTUAL, // memory-only display
    LCD_VALID_MAX
 };

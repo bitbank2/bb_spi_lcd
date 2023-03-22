@@ -1776,6 +1776,8 @@ start_of_init:
         memcpy_P(d, s, sizeof(uc240x240InitList));
         s = d;
         s[6] = 0x00 + iBGR;
+        if (pLCD->iLCDFlags & FLAGS_INVERT)
+           s[1] = 0x20; // change inversion on (default) to off
         pLCD->iCurrentWidth = pLCD->iWidth = 240;
         pLCD->iCurrentHeight = pLCD->iHeight = 320;
 	if (pLCD->iLCDType == LCD_ST7789_240 || pLCD->iLCDType == LCD_ST7789_NOCS)
