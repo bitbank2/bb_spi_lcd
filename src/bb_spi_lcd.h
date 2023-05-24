@@ -153,8 +153,9 @@ class BB_SPI_LCD : public Print
     int16_t height(void);
     int16_t width(void);
     void display(void);
+    void backlight(bool bOn);
     void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD);
-    void pushPixels(uint16_t *pixels, int count);
+    void pushPixels(uint16_t *pixels, int count, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawString(const char *pText, int x, int y, int size=-1);
     void drawString(String text, int x, int y, int size=-1);
     void drawStringFast(const char *szText, int x, int y, int size = -1);
@@ -426,6 +427,7 @@ enum {
    LCD_ST7735R, // 128x160
    LCD_ST7735S, // 80x160 with offset of 24,0
    LCD_ST7735S_B, // 80x160 with offset of 26,2
+   LCD_ST7735_128, // 128x128 blue PCBs
    LCD_SSD1331,
    LCD_SSD1351,
    LCD_ILI9342, // 320x240 IPS
@@ -435,7 +437,8 @@ enum {
    LCD_ST7789_NOCS, // 240x240 without CS, vertical offset of 80, MODE3
    LCD_ST7789_172, // 172x320
    LCD_ST7789_280, // 240x280
-   LCD_SSD1283A, // 132x132
+   LCD_SSD1283A, // 132x132 transflective
+   LCD_SSD1286, // 132x176 transflective
    LCD_ILI9486, // 320x480
    LCD_ILI9488, // 320x480
    LCD_GC9A01, // 240x240 round

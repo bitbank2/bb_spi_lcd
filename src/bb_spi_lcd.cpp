@@ -1024,6 +1024,31 @@ const unsigned char ucOLEDInitList[] PROGMEM = {
 	2, 0xb6, 0x01,	// precharge 2
 	1, 0xaf,	// display ON
 	0};
+// List of command/parameters for the SSD1286 LCD
+const unsigned char uc132x176InitList[] PROGMEM = {
+   3, 0x00, 0x00, 0x01, // osc start
+   3, 0x10, 0x1f, 0x92, // pwr ctrl1
+   3, 0x11, 0x00, 0x14, // pwr ctrl2
+   3, 0x28, 0x00, 0x06, // test enable
+   3, 0x00, 0x00, 0x01, // osc start
+   3, 0x10, 0x1f, 0x92, // pwr ctrl1
+   3, 0x11, 0x00, 0x14, // pwr ctrl2
+   3, 0x02, 0x00, 0x00, // LCD drive AC
+   3, 0x12, 0x04, 0x0b, // pwr ctrl3
+   3, 0x03, 0x68, 0x30, // entry mode + RGB565 pixels
+   3, 0x01, 0x31, 0xaf, // driver output ctrl
+   3, 0x07, 0x00, 0x33, // display ctrl
+   3, 0x42, 0xaf, 0x00, // 1st screen driving
+   3, 0x21, 0x00, 0x00, // RAM Address set
+   3, 0x44, 0x83, 0x00, // horizontal RAM addr (132-1)
+   3, 0x45, 0xaf, 0x00, // vertical RAM addr (176-1)
+   3, 0x2c, 0x30, 0x00, // osc freq
+   3, 0x29, 0x00, 0x00, // analog enable
+//   3, 0x2d, 0x31, 0x0f, // analog tune
+   3, 0x13, 0x30, 0x00, // pwr ctrl 4
+   1, 0x22 // RAM Data write
+};
+
 // List of command/parameters for the SSD1283A display
 const unsigned char uc132InitList[]PROGMEM = {
     3, 0x10, 0x2F,0x8E,
@@ -1777,7 +1802,7 @@ start_of_init:
         s = d;
         s[6] = 0x00 + iBGR;
         if (pLCD->iLCDFlags & FLAGS_INVERT)
-           s[1] = 0x20; // change inversion on (default) to off
+           s[3] = 0x20; // change inversion on (default) to off
         pLCD->iCurrentWidth = pLCD->iWidth = 240;
         pLCD->iCurrentHeight = pLCD->iHeight = 320;
 	if (pLCD->iLCDType == LCD_ST7789_240 || pLCD->iLCDType == LCD_ST7789_NOCS)
@@ -1863,9 +1888,17 @@ start_of_init:
         pLCD->iCurrentWidth = pLCD->iWidth = 132;
         pLCD->iCurrentHeight = pLCD->iHeight = 132;
     }
+    else if (pLCD->iLCDType == LCD_SSD1286)
+    {
+        s = (unsigned char *)uc132x176InitList;
+        memcpy_P(d, s, sizeof(uc132x176InitList));
+        pLCD->iCurrentWidth = pLCD->iWidth = 132;
+        pLCD->iCurrentHeight = pLCD->iHeight = 176;
+        pLCD->iLCDType = LCD_SSD1283A; // The rest behaves like the SSD1283A
+    }
 	else if (pLCD->iLCDType == LCD_ILI9342)
 	{
-		s = (unsigned char *)uc320InitList;
+	s = (unsigned char *)uc320InitList;
         memcpy_P(d, s, sizeof(uc320InitList));
         s = d;
         pLCD->iCurrentWidth = pLCD->iWidth = 320;
@@ -1957,13 +1990,24 @@ start_of_init:
             pLCD->iColStart = pLCD->iMemoryX = 24;
         }
     }
-	else // ST7735R
+	else if (pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7735_128)
 	{
 		s = (unsigned char *)uc128InitList;
                 memcpy_P(d, s, sizeof(uc128InitList));
                 s = d;
-        pLCD->iCurrentWidth = pLCD->iWidth = 128;
-        pLCD->iCurrentHeight = pLCD->iHeight = 160;
+        	pLCD->iCurrentWidth = pLCD->iWidth = 128;
+                if (pLCD->iLCDType == LCD_ST7735R) {
+        	   pLCD->iCurrentHeight = pLCD->iHeight = 160;
+                } else {
+                   pLCD->iColStart = pLCD->iMemoryX = 2;
+                   pLCD->iRowStart = pLCD->iMemoryY = 3;
+                   pLCD->iCurrentHeight = pLCD->iHeight = 128;
+                   if (pLCD->iLCDFlags & FLAGS_SWAP_RB)
+                      s[5] = 0xc0;
+                   else
+                      s[5] = 0xc8;
+                }
+                pLCD->iLCDType = LCD_ST7735R; // set to this type for the rest of the code to work
 	}
 
 	iCount = 1;
@@ -2805,16 +2849,16 @@ int iLen;
             switch (pLCD->iOrientation) {
                 case LCD_ORIENTATION_0:
                     spilcdWriteCommand(pLCD, 0x44); // set col
-                    ucBuf[0] = x + w + 1;
-                    ucBuf[1] = x + 2;
+                    ucBuf[0] = x + w - 1;
+                    ucBuf[1] = x;
                     myspiWrite(pLCD, ucBuf, 2, MODE_DATA, iFlags);
                     spilcdWriteCommand(pLCD, 0x45); // set row
-                    ucBuf[0] = y + h + 1;
-                    ucBuf[1] = y + 2;
+                    ucBuf[0] = y + h - 1;
+                    ucBuf[1] = y;
                     myspiWrite(pLCD, ucBuf, 2, MODE_DATA, iFlags);
                     spilcdWriteCommand(pLCD, 0x21); // set col+row
-                    ucBuf[0] = y+2;
-                    ucBuf[1] = x+2;
+                    ucBuf[0] = y;
+                    ucBuf[1] = x;
                     myspiWrite(pLCD, ucBuf, 2, MODE_DATA, iFlags);
                     break;
                 case LCD_ORIENTATION_90:
@@ -4021,19 +4065,19 @@ int bX=0, bY=0, bV=0;
         switch (pLCD->iOrientation)
         {
             case LCD_ORIENTATION_0:
-                u1 = 0x2183;
+                u1 = (pLCD->iHeight == 132) ? 0x2183 : 0x31AF;
                 u3 = 0x6830;
                 break;
             case LCD_ORIENTATION_90:
-                u1 = 0x2283;
-                u3 = 0x6838;
+                u1 = (pLCD->iHeight == 132) ? 0x2283 : 0x31AF;
+                u3 = 0x6828;
                 break;
             case LCD_ORIENTATION_180:
-                u1 = 0x2183;
+                u1 = (pLCD->iHeight == 132) ? 0x2183 : 0x31AF;
                 u3 = 0x6800;
                 break;
             case LCD_ORIENTATION_270:
-                u1 = 0x2183;
+                u1 = (pLCD->iHeight == 132) ? 0x2283 : 0x32AF;
                 u3 = 0x6828;
                 break;
         }
@@ -5496,9 +5540,9 @@ void BB_SPI_LCD::drawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int i
   spilcdDrawPattern(&_lcd, pPattern, iSrcPitch, iDestX, iDestY, iCX, iCY, usColor, iTranslucency);
 } /* drawPattern() */
 
-void BB_SPI_LCD::pushPixels(uint16_t *pixels, int count)
+void BB_SPI_LCD::pushPixels(uint16_t *pixels, int count, int flags)
 {
-   spilcdWriteDataBlock(&_lcd, (uint8_t *)pixels, count * 2, DRAW_TO_LCD | DRAW_TO_RAM);
+   spilcdWriteDataBlock(&_lcd, (uint8_t *)pixels, count * 2, flags);
 } /* pushPixels() */
 
 void BB_SPI_LCD::setAddrWindow(int x, int y, int w, int h)
@@ -5562,6 +5606,12 @@ void BB_SPI_LCD::setFont(int iFont)
   _lcd.iFont = iFont;
   _lcd.pFont = NULL;
 } /* setFont() */
+
+void BB_SPI_LCD::backlight(bool bOn)
+{
+   if (_lcd.iLEDPin != -1)
+      myPinWrite(_lcd.iLEDPin, (int)bOn); 
+} /* backlight() */
 
 void BB_SPI_LCD::setFreeFont(const GFXfont *pFont)
 {
