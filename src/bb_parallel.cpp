@@ -6,7 +6,7 @@
 #include <SPI.h>
 #include <bb_spi_lcd.h>
 
-static uint8_t u8WR, u8RD, u8DC, u8CS, u8CMD;
+static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 //#define USE_ESP32_GPIO
 #ifdef ARDUINO_ARCH_ESP32
 #if __has_include (<esp_lcd_panel_io.h>)
@@ -248,6 +248,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
     u8RD = RD_PIN;
     u8DC = DC_PIN;
     u8CS = CS_PIN;
+    u8BW = (uint8_t)iBusWidth;
     u8CMD = (iFlags & FLAGS_MEM_RESTART) ? 0x2c : 0x3c;
     if (RD_PIN != 0xff) {
         pinMode(RD_PIN, OUTPUT); // RD

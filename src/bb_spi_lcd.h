@@ -196,6 +196,7 @@ enum
     DISPLAY_T_DISPLAY_S3,
     DISPLAY_T_DISPLAY,
     DISPLAY_T_QT,
+    DISPLAY_T_TRACK,
     DISPLAY_TUFTY2040,
     DISPLAY_KUMAN_35,
     DISPLAY_KUMAN_24,
@@ -220,6 +221,7 @@ typedef enum
 #define FLAGS_FLIPX   8
 #define FLAGS_SWAP_COLOR 16
 #define FLAGS_MEM_RESTART 32
+#define FLAGS_CS_EACHBYTE 64
 
 #if defined(_LINUX_) && defined(__cplusplus)
 extern "C" {
@@ -397,6 +399,8 @@ int spilcdAllocBackbuffer(SPILCD *pLCD);
 void spilcdFreeBackbuffer(SPILCD *pLCD);
 //
 // Draw a 1-bpp pattern into the backbuffer with the given color and translucency
+// Or draw as opaque directly onto the LCD with no backbuffer
+//
 // 1 bits are drawn as color, 0 are transparent
 // The translucency value can range from 1 (barely visible) to 32 (fully opaque)
 //
@@ -443,6 +447,7 @@ enum {
    LCD_ILI9488, // 320x480
    LCD_GC9A01, // 240x240 round
    LCD_GC9107, // 128x128 tiny (0.85")
+   LCD_JD9613, // 294x126 AMOLED
    LCD_GDOD0139, // 454x454 1.39" AMOLED
    LCD_VIRTUAL, // memory-only display
    LCD_VALID_MAX
