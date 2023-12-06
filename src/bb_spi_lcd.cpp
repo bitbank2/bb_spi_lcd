@@ -107,6 +107,8 @@ MbedSPI *pSPI = new MbedSPI(12,11,13);
 #include <bb_spi_lcd.h>
 
 #if defined( ARDUINO_ARCH_ESP32 ) // && !defined( ARDUINO_ESP32C3_DEV )
+#include <rom/cache.h>
+//#define ESP32_SPI_HOST VSPI_HOST
 #ifdef VSPI_HOST
 #define ESP32_SPI_HOST VSPI_HOST
 #else
@@ -137,7 +139,7 @@ static void spi_post_transfer_callback(spi_transaction_t *t);
 static spi_transaction_t trans[2];
 static spi_device_handle_t spi;
 //static TaskHandle_t xTaskToNotify = NULL;
-// ESP32 has enough memory to spare 4K
+// ESP32 has enough memory to spare 8K
 DMA_ATTR uint8_t ucTXBuf[4096]="";
 static unsigned char ucRXBuf[4096];
 #ifndef ESP32_DMA
@@ -1019,6 +1021,64 @@ const unsigned char ucGC9107InitList[]PROGMEM = {
     0
 }; // GC9107
 
+const uint16_t u16ST7793_Init[]PROGMEM = {
+            0x0000, 0x0000,
+            0x0000, 0x0000,
+            0x0000, 0x0000,
+            0x0000, 0x0000,
+            LCD_DELAY, 15,
+            0x0400, 0x6200,     //NL=0x31 (49) i.e. 400 rows
+            0x0008, 0x0808,
+            //gamma
+            0x0300, 0x0C00,
+            0x0301, 0x5A0B,
+            0x0302, 0x0906,
+            0x0303, 0x1017,
+            0x0304, 0x2300,
+            0x0305, 0x1700,
+            0x0306, 0x6309,
+            0x0307, 0x0C09,
+            0x0308, 0x100C,
+            0x0309, 0x2232,
+
+            0x0010, 0x0016,     //69.5Hz         0016
+            0x0011, 0x0101,
+            0x0012, 0x0000,
+            0x0013, 0x0001,
+            0x0100, 0x0330,     //BT,AP
+            0x0101, 0x0237,     //DC0,DC1,VC
+            0x0103, 0x0D00,     //VDV
+            0x0280, 0x6100,     //VCM
+            0x0102, 0xC1B0,     //VRH,VCMR,PSON,PON
+            LCD_DELAY, 50,
+
+            0x0001, 0x0100,
+            0x0002, 0x0100,
+            0x0003, 0x1030,     //1030
+            0x0009, 0x0001,
+            0x000C, 0x0000,
+            0x0090, 0x8000,
+            0x000F, 0x0000,
+
+            0x0210, 0x0000,
+            0x0211, 0x00EF,
+            0x0212, 0x0000,
+            0x0213, 0x018F,     //432=01AF,400=018F
+            0x0500, 0x0000,
+            0x0501, 0x0000,
+            0x0502, 0x005F,     //???
+            0x0401, 0x0001,     //REV=1
+            0x0404, 0x0000,
+            LCD_DELAY, 50,
+
+            0x0007, 0x0100,     //BASEE
+            LCD_DELAY, 50,
+
+            0x0200, 0x0000,
+            0x0201, 0x0000,
+            0 // end
+}; // ST7793 240x400
+
 // List of command/parameters to initialize the ST7789 LCD
 const unsigned char uc240x240InitList[]PROGMEM = {
     1, 0x13, // partial mode off
@@ -1425,6 +1485,7 @@ void SPI_BitBang(SPILCD *pLCD, uint8_t *pData, int iLen, int iMode)
 static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, int iFlags)
 {
     if (iLen == 0) return;
+    if (pLCD->iLCDType == LCD_VIRTUAL) iFlags = DRAW_TO_RAM;
 
     if (iMode == MODE_DATA && pLCD->pBackBuffer != NULL && !bSetPosition && iFlags & DRAW_TO_RAM) // write it to the back buffer
     {
@@ -1449,6 +1510,9 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
             {
                 *d++ = *s++;
             }
+#ifdef ESP_PLATFORM
+            //Cache_WriteBack_Addr((uint32_t)&pLCD->pBackBuffer[pLCD->iOffset], iStrip*2);
+#endif
             pLCD->iOffset += iStrip*2; iOff += iStrip*2;
             i -= iStrip;
             pLCD->iCurrentX += iStrip;
@@ -1462,8 +1526,8 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
             }
         }
     }
-    if (!(iFlags & DRAW_TO_LCD))
-        return; // don't write it to the display
+    if (!(iFlags & DRAW_TO_LCD) || pLCD->iLCDType == LCD_VIRTUAL)
+        return; // don't write it to spi
 #ifdef ARDUINO_ARCH_ESP32
     if (pLCD->pfnDataCallback) {
         spilcdParallelData(pBuf, iLen);
@@ -1890,6 +1954,27 @@ else
 	}
 start_of_init:
     d = &ucRXBuf[128]; // point to middle otherwise full duplex SPI will overwrite our data
+        if (pLCD->iLCDType == LCD_ST7793)
+        {
+            uint16_t u16CMD, *s;
+            int iSize;
+            pLCD->iCurrentWidth = pLCD->iWidth = 240;
+            pLCD->iCurrentHeight = pLCD->iHeight = 400;
+            // 16-bit commands
+            s = (uint16_t *)u16ST7793_Init;
+            iSize = sizeof(u16ST7793_Init)/4;
+            for (int i=0; i<iSize; i++) {
+               u16CMD = *s++;
+               if (u16CMD == LCD_DELAY) {
+                  delay(s[0]);
+                  s++;
+               } else {
+                  spilcdWriteCommand16(pLCD, u16CMD);
+                  spilcdWriteData16(pLCD, *s++, DRAW_TO_LCD);
+               } // if u16CMD
+            } // for
+        } // LCD_ST7793
+
 	if (pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7789_172 || pLCD->iLCDType == LCD_ST7789_280 || pLCD->iLCDType == LCD_ST7789_240 || pLCD->iLCDType == LCD_ST7789_135 || pLCD->iLCDType == LCD_ST7789_NOCS)
 	{
         uint8_t iBGR = (pLCD->iLCDFlags & FLAGS_SWAP_RB) ? 8:0;
@@ -2827,7 +2912,10 @@ unsigned char buf[2];
 
     buf[0] = (uint8_t)(us >> 8);
     buf[1] = (uint8_t)us;
-    myspiWrite(pLCD, buf, 2, MODE_COMMAND, DRAW_TO_LCD);
+//    myspiWrite(pLCD, buf, 2, MODE_COMMAND, DRAW_TO_LCD);
+    spilcdSetMode(pLCD, MODE_COMMAND);
+    spilcdParallelData(buf, 2);
+    spilcdSetMode(pLCD, MODE_DATA);
 } /* spilcdWriteCommand() */
 
 //
@@ -2853,7 +2941,8 @@ unsigned char buf[2];
 
     buf[0] = (unsigned char)(us >> 8);
     buf[1] = (unsigned char)us;
-    myspiWrite(pLCD, buf, 2, MODE_DATA, iFlags);
+    spilcdParallelData(buf, 2);
+//    myspiWrite(pLCD, buf, 2, MODE_DATA, iFlags);
 
 } /* spilcdWriteData16() */
 //
@@ -2885,7 +2974,7 @@ int iLen;
     pLCD->iWindowCX = w; pLCD->iWindowCY = h;
     pLCD->iOffset = (pLCD->iCurrentWidth * 2 * y) + (x * 2);
 
-    if (!(iFlags & DRAW_TO_LCD)) return; // nothing to do
+    if (!(iFlags & DRAW_TO_LCD) || pLCD->iLCDType == LCD_VIRTUAL) return; // nothing to do
     bSetPosition = 1; // flag to let myspiWrite know to ignore data writes
     y = (y + pLCD->iScrollOffset) % pLCD->iHeight; // scroll offset affects writing position
 
@@ -5377,6 +5466,11 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 4, 21, 22, 26, -1, 23, 18); // Mike's coin cell pin numbering
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
+        case DISPLAY_CYD:
+            memset(&_lcd, 0, sizeof(_lcd));
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14); // Cheap Yellow Display (common versions)
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            break;
         case DISPLAY_M5STACK_ATOMS3:
             spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 15, 33, 34, 16, -1, 21, 17);
             break;
@@ -5574,13 +5668,15 @@ int x, y, sx, sy, dx, dy, cx, cy;
     return 1;
 } /* captureArea() */
 
-int BB_SPI_LCD::createVirtual(int iWidth, int iHeight)
+int BB_SPI_LCD::createVirtual(int iWidth, int iHeight, void *p)
 {
-    void *p;
     memset(&_lcd, 0, sizeof(_lcd));
     _lcd.iLCDType = LCD_VIRTUAL;
-    p = malloc(iWidth * iHeight * 2);
-    if (!p) return 0;
+    _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
+    if (p == NULL) {
+       p = malloc(iWidth * iHeight * 2);
+       if (!p) return 0;
+    }
     _lcd.iCurrentWidth = _lcd.iWidth = iWidth;
     _lcd.iCurrentHeight = _lcd.iHeight = iHeight;
     spilcdSetBuffer(&_lcd, p);

@@ -123,7 +123,7 @@ class BB_SPI_LCD : public Print
 {
   public:
     BB_SPI_LCD() {memset(&_lcd, 0, sizeof(_lcd));}
-    int createVirtual(int iWidth, int iHeight);
+    int createVirtual(int iWidth, int iHeight, void *pBuffer = NULL);
     int freeVirtual(void);
     int captureArea(int dst_x, int dst_y, int src_x, int src_y, int src_w, int src_h, uint16_t *pPixels, int bSwap565 = 1);
     int merge(uint16_t *pSrc, uint16_t usTrans, int bSwap565);
@@ -202,6 +202,7 @@ enum
     DISPLAY_KUMAN_24,
     DISPLAY_MAKERFABS_S3,
     DISPLAY_M5STACK_ATOMS3,
+    DISPLAY_CYD,
     DISPLAY_COUNT
 };
 #if !defined(BITBANK_LCD_MODES)
@@ -435,6 +436,7 @@ enum {
    LCD_SSD1331,
    LCD_SSD1351,
    LCD_ILI9342, // 320x240 IPS
+   LCD_ST7793, // 240x400
    LCD_ST7789, // 240x320
    LCD_ST7789_240,  // 240x240
    LCD_ST7789_135, // 135x240
