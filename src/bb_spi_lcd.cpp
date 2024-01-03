@@ -95,6 +95,7 @@ static int iHandle; // SPI handle
 // Use the default (non DMA) SPI library for boards we don't currently support
 #if !defined(__SAMD51__) && !defined(ARDUINO_SAMD_ZERO) && !defined(ARDUINO_ARCH_RP2040)
 #define mySPI SPI
+//SPIClass mySPI(HSPI);
 #elif defined(ARDUINO_ARCH_RP2040)
 MbedSPI *pSPI = new MbedSPI(12,11,13);
 //MbedSPI *pSPI = new MbedSPI(4,7,6); // use GPIO numbers, not pin #s
@@ -1485,7 +1486,7 @@ void SPI_BitBang(SPILCD *pLCD, uint8_t *pData, int iLen, int iMode)
 static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, int iFlags)
 {
     if (iLen == 0) return;
-    if (pLCD->iLCDType == LCD_VIRTUAL) iFlags = DRAW_TO_RAM;
+    if (pLCD->iLCDType == LCD_VIRTUAL_MEM) iFlags = DRAW_TO_RAM;
 
     if (iMode == MODE_DATA && pLCD->pBackBuffer != NULL && !bSetPosition && iFlags & DRAW_TO_RAM) // write it to the back buffer
     {
@@ -1526,10 +1527,10 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
             }
         }
     }
-    if (!(iFlags & DRAW_TO_LCD) || pLCD->iLCDType == LCD_VIRTUAL)
+    if (!(iFlags & DRAW_TO_LCD) || pLCD->iLCDType == LCD_VIRTUAL_MEM)
         return; // don't write it to spi
-#ifdef ARDUINO_ARCH_ESP32
-    if (pLCD->pfnDataCallback) {
+#if defined( ARDUINO_ARCH_ESP32 ) && !defined ( CONFIG_IDF_TARGET_ESP32 )
+    if (pLCD->pfnDataCallback) { // only ESP32-S2 and S3
         spilcdParallelData(pBuf, iLen);
         return;
     }
@@ -1886,7 +1887,7 @@ int i, iCount;
 #else
 #if defined( ARDUINO_ARCH_ESP32 ) || defined( RISCV )
 if (iMISOPin != iMOSIPin)
-    mySPI.begin(iCLKPin, iMISOPin, iMOSIPin, iCS);
+    mySPI.begin(iCLKPin, iMISOPin, iMOSIPin, -1); //iCS);
 else
     mySPI.begin();
 #else
@@ -2266,7 +2267,7 @@ void spilcdScrollReset(SPILCD *pLCD)
 uint32_t u32Temp;
 int iLen;
     
-    if (pLCD->iLCDType == LCD_VIRTUAL) {
+    if (pLCD->iLCDType == LCD_VIRTUAL_MEM) {
         return;
     }
 	pLCD->iScrollOffset = 0;
@@ -2877,8 +2878,8 @@ void spilcdShutdown(SPILCD *pLCD)
 //
 void spilcdWriteCmdParams(SPILCD *pLCD, uint8_t ucCMD, uint8_t *pParams, int iLen)
 {
-#ifdef ARDUINO_ARCH_ESP32
-    if (pLCD->pfnDataCallback) {
+#if defined ( ARDUINO_ARCH_ESP32 ) && !defined( CONFIG_IDF_TARGET_ESP32 )
+    if (pLCD->pfnDataCallback) { // only ESP32-S2 and S3
         spilcdParallelCMDParams(ucCMD, pParams, iLen);
         return;
     }
@@ -2896,8 +2897,8 @@ void spilcdWriteCmdParams(SPILCD *pLCD, uint8_t ucCMD, uint8_t *pParams, int iLe
 void spilcdWriteCommand(SPILCD *pLCD, unsigned char c)
 {
 unsigned char buf[2];
-#ifdef ARDUINO_ARCH_ESP32
-    if (pLCD->pfnDataCallback) {
+#if defined ( ARDUINO_ARCH_ESP32 ) && !defined ( CONFIG_IDF_TARGET_ESP32 )
+    if (pLCD->pfnDataCallback) { // only ESP32-S2 and S3
         spilcdParallelCMDParams(c, NULL, 0);
         return;
     }
@@ -2974,7 +2975,7 @@ int iLen;
     pLCD->iWindowCX = w; pLCD->iWindowCY = h;
     pLCD->iOffset = (pLCD->iCurrentWidth * 2 * y) + (x * 2);
 
-    if (!(iFlags & DRAW_TO_LCD) || pLCD->iLCDType == LCD_VIRTUAL) return; // nothing to do
+    if (!(iFlags & DRAW_TO_LCD) || pLCD->iLCDType == LCD_VIRTUAL_MEM) return; // nothing to do
     bSetPosition = 1; // flag to let myspiWrite know to ignore data writes
     y = (y + pLCD->iScrollOffset) % pLCD->iHeight; // scroll offset affects writing position
 
@@ -4346,12 +4347,12 @@ uint16_t *u16Temp = (uint16_t *)ucRXBuf;
        } // for x
     } // for y
 #else
-    // MCUs with more RAM can do it faster
-    for (i=0; i<pLCD->iCurrentWidth*2; i++) {
-        u16Temp[i] = usData;
-    }
     for (y=0; y<pLCD->iCurrentHeight; y+=2)
     {
+        // MCUs with more RAM can do it faster
+        for (i=0; i<pLCD->iCurrentWidth*2; i++) {
+            u16Temp[i] = usData; // data will be overwritten
+        }
         myspiWrite(pLCD, (uint8_t *)u16Temp, pLCD->iCurrentWidth*4, MODE_DATA, iFlags);
     } // for y
 
@@ -5466,6 +5467,10 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 4, 21, 22, 26, -1, 23, 18); // Mike's coin cell pin numbering
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
+        case DISPLAY_CYD_128:
+            memset(&_lcd, 0, sizeof(_lcd));
+            spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6); // Cheap Yellow Display (ESP32-C3 1.28" round version)
+            break; 
         case DISPLAY_CYD:
             memset(&_lcd, 0, sizeof(_lcd));
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14); // Cheap Yellow Display (common versions)
@@ -5491,7 +5496,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
 #ifdef ARDUINO_M5STACK_Core2
         case DISPLAY_M5STACK_CORE2:
             Core2AxpPowerUp();
-            spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 5, 15, -1, -1, -1, 23, 18);
+            spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 5, 15, -1, -1, 38, 23, 18);
             break;
 #endif // ARDUINO_M5STACK_Core2
         case DISPLAY_RANKIN_COLORCOIN:
@@ -5671,7 +5676,7 @@ int x, y, sx, sy, dx, dy, cx, cy;
 int BB_SPI_LCD::createVirtual(int iWidth, int iHeight, void *p)
 {
     memset(&_lcd, 0, sizeof(_lcd));
-    _lcd.iLCDType = LCD_VIRTUAL;
+    _lcd.iLCDType = LCD_VIRTUAL_MEM;
     _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
     if (p == NULL) {
        p = malloc(iWidth * iHeight * 2);
@@ -5784,7 +5789,7 @@ int i;
 
 void BB_SPI_LCD::fillScreen(int iColor)
 {
-  spilcdFill(&_lcd, iColor, (_lcd.iLCDType == LCD_VIRTUAL) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdFill(&_lcd, iColor, (_lcd.iLCDType == LCD_VIRTUAL_MEM) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
 } /* fillScreen() */
 
 void BB_SPI_LCD::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
@@ -5904,7 +5909,7 @@ int w, h;
               _lcd.iCursorY -= h;
           }
       }
-      spilcdWriteString(&_lcd, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, _lcd.iFont, (_lcd.iLCDType == LCD_VIRTUAL) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
+      spilcdWriteString(&_lcd, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, _lcd.iFont, (_lcd.iLCDType == LCD_VIRTUAL_MEM) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
     }
   } else { // Custom font
     if (c == '\n') {
@@ -5926,9 +5931,9 @@ int w, h;
             _lcd.iCursorY += h;
           }
           if (_lcd.iAntialias)
-            spilcdWriteStringAntialias(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, 0, (_lcd.iLCDType == LCD_VIRTUAL) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
+            spilcdWriteStringAntialias(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, 0, (_lcd.iLCDType == LCD_VIRTUAL_MEM) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
           else 
-            spilcdWriteStringCustom(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, 0, (_lcd.iLCDType == LCD_VIRTUAL) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
+            spilcdWriteStringCustom(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, 0, (_lcd.iLCDType == LCD_VIRTUAL_MEM) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
         }
       }
     }

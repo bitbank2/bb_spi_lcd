@@ -8,7 +8,7 @@
 
 static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 //#define USE_ESP32_GPIO
-#ifdef ARDUINO_ARCH_ESP32
+#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
 #if __has_include (<esp_lcd_panel_io.h>)
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
@@ -24,6 +24,8 @@ static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 #include <hal/lcd_types.h>
 //extern DMA_ATTR uint8_t *ucTXBuf;
 volatile bool s3_dma_busy;
+uint32_t u32IOMask, u32IOLookup[256]; // for old ESP32
+uint8_t *_data_pins;
 void spilcdParallelData(uint8_t *pData, int iLen);
 static bool s3_notify_dma_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
@@ -174,11 +176,11 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 #ifdef ARDUINO_TEENSY41
     uint32_t c, old = pData[0] -1;
     uint32_t u32 = GPIO6_DR & 0xff00ffff; // clear bits we will change
-    if (iMode == MODE_COMMAND) {
-        Serial.printf("cmd, len=%d\n", len);
-    } else {
-        Serial.printf("data, len=%d\n", len);
-    }
+//    if (iMode == MODE_COMMAND) {
+//        Serial.printf("cmd, len=%d\n", len);
+//    } else {
+//        Serial.printf("data, len=%d\n", len);
+//    }
         digitalWrite(u8CS, LOW); // activate CS
         digitalWrite(u8DC, iMode == MODE_DATA); // DC
         for (int i=0; i<len; i++) {
@@ -191,8 +193,42 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
             digitalWrite(u8WR, HIGH); // toggle WR high to latch data
         } // for i
         digitalWrite(u8CS, HIGH); // deactivate CS
+        return;
 #endif // ARDUINO_TEENSY41
-    
+
+#ifdef CONFIG_IDF_TARGET_ESP32
+    uint32_t c;
+    uint32_t u32Data, u32WR, u32 = REG_READ(GPIO_OUT_REG) & ~u32IOMask;
+//    if (iMode == MODE_COMMAND) {
+//        Serial.printf("cmd, len=%d\n", len);
+//    } else {
+//        Serial.printf("data, len=%d\n", len);
+//    }
+        digitalWrite(u8CS, LOW); // activate CS
+//        digitalWrite(u8DC, iMode == MODE_DATA); // DC
+        u32WR = 1 << u8WR;
+        u32 &= ~u32WR; // Write low for first half of operation
+        if (iMode == MODE_DATA)
+           u32 |= (1 << u8DC);
+        else
+           u32 &= ~(1 << u8DC);
+        for (int i=0; i<len; i++) {
+            c = pData[i];
+          //  digitalWrite(u8WR, LOW); // WR low
+#ifdef BRUTE_FORCE
+            for (int j=0; j<8; j++) {
+                digitalWrite(_data_pins[j], c & (1<<j));
+            }
+#else
+            u32Data = u32 | u32IOLookup[c];
+            REG_WRITE(GPIO_OUT_REG, u32Data);
+#endif // BRUTE_FORCE
+            REG_WRITE(GPIO_OUT_REG, u32Data | u32WR); // toggle WR high to latch data
+        } // for i
+        digitalWrite(u8CS, HIGH); // deactivate CS
+        return;
+#endif // CONFIG_IDF_TARGET_ESP32
+ 
 #ifdef ARDUINO_ARCH_RP2040
 // Do everything with DMA since it's the simplest way to push the data
     while (dma_channel_is_busy(parallel_dma))
@@ -215,7 +251,7 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 //  } // for i
 //  gpio_put(10, 1); // deactivate CS
 #endif // ARDUINO_ARCH_RP2040
-#ifdef ARDUINO_ARCH_ESP32
+#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
 #ifdef FUTURE
     uint8_t c, old = pData[0] -1;
         
@@ -254,14 +290,34 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
         pinMode(RD_PIN, OUTPUT); // RD
         digitalWrite(RD_PIN, HIGH); // RD deactivated
     }
-#ifdef ARDUINO_TEENSY41
+    _data_pins = data_pins;
+// old ESP32 only supports direct register parallelism
+#if defined( ARDUINO_TEENSY41 ) || defined ( CONFIG_IDF_TARGET_ESP32 )
     pinMode(u8WR, OUTPUT);
     pinMode(u8CS, OUTPUT);
     pinMode(u8DC, OUTPUT);
     for (int i=0; i<8; i++) {
         pinMode(data_pins[i], OUTPUT);
     }
-#endif // ARDUINO_TEENSY41
+// Create a bit mask and lookup table to allow fast 8-bit writes
+// to the 32-bit GPIO register
+   u32IOMask = 0;
+   for (int i=0; i<8; i++) {
+       u32IOMask |= 1 << data_pins[i];
+   }
+   REG_WRITE(GPIO_ENABLE_W1TS_REG, u32IOMask); // enable all as outputs
+// Fast lookup table to translate 8 scattered bits to 32-bit values
+   for (int i=0; i<256; i++) {
+       uint32_t u32 = 0;
+       for (int j=0; j<8; j++) {
+           if (i & (1<<j)) { // set bit
+               u32 |= (1 << data_pins[j]);
+           }
+       } // for j
+       u32IOLookup[i] = u32;
+   } // for i
+   return;
+#endif // ARDUINO_TEENSY41 || CONFIG_IDF_TARGET_ESP32
 #ifdef ARDUINO_ARCH_RP2040
 
 // Set up GPIO for output mode
@@ -305,7 +361,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
       channel_config_set_dreq(&config, pio_get_dreq(parallel_pio, parallel_sm, true));
       dma_channel_configure(parallel_dma, &config, &parallel_pio->txf[parallel_sm], NULL, 0, false);
 #endif // ARDUINO_ARCH_RP2040
-#ifdef ARDUINO_ARCH_ESP32
+#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
     if (iFlags & FLAGS_SWAP_COLOR) {
         s3_io_config.flags.swap_color_bytes = 1;
     }
@@ -341,7 +397,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
 
 void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
 {
-#ifdef ARDUINO_ARCH_ESP32
+#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
 #ifdef USE_ESP32_GPIO
     esp32_gpio_clear(u8DC); // clear DC
     spilcdParallelData(&ucCMD, 1);
@@ -364,7 +420,7 @@ void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
 
 void spilcdParallelData(uint8_t *pData, int iLen)
 {
-#ifdef ARDUINO_ARCH_ESP32
+#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
 #ifdef USE_ESP32_GPIO
     uint8_t c, old = pData[0] -1;
         

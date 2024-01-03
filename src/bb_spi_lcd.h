@@ -72,6 +72,16 @@ typedef struct {
   int8_t yOffset;        ///< Y dist from cursor pos to UL corner
 } GFXglyph;
 
+/// Data stored for FONT AS A WHOLE
+typedef struct {
+  uint8_t *bitmap;  ///< Glyph bitmaps, concatenated
+  GFXglyph *glyph;  ///< Glyph array
+  uint8_t first;    ///< ASCII extents (first char)
+  uint8_t last;     ///< ASCII extents (last char)
+  uint8_t yAdvance; ///< Newline distance (y axis)
+} GFXfont;
+#endif // _ADAFRUIT_GFX_H
+
 #ifndef TFT_BLACK
 #define TFT_BLACK 0x0000
 #define TFT_GREEN 0x07e0
@@ -84,16 +94,6 @@ typedef struct {
 #define TFT_GREY 0x5AEB
 #define TFT_ORANGE 0xbbc0
 #endif
-
-/// Data stored for FONT AS A WHOLE
-typedef struct {
-  uint8_t *bitmap;  ///< Glyph bitmaps, concatenated
-  GFXglyph *glyph;  ///< Glyph array
-  uint8_t first;    ///< ASCII extents (first char)
-  uint8_t last;     ///< ASCII extents (last char)
-  uint8_t yAdvance; ///< Newline distance (y axis)
-} GFXfont;
-#endif // _ADAFRUIT_GFX_H
 
 // Structure holding an instance of a display
 typedef struct tagSPILCD
@@ -202,7 +202,8 @@ enum
     DISPLAY_KUMAN_24,
     DISPLAY_MAKERFABS_S3,
     DISPLAY_M5STACK_ATOMS3,
-    DISPLAY_CYD,
+    DISPLAY_CYD, // ILI9341 240x320 LCD
+    DISPLAY_CYD_128, // GC9A01 240x240 LCD
     DISPLAY_COUNT
 };
 #if !defined(BITBANK_LCD_MODES)
@@ -451,7 +452,7 @@ enum {
    LCD_GC9107, // 128x128 tiny (0.85")
    LCD_JD9613, // 294x126 AMOLED
    LCD_GDOD0139, // 454x454 1.39" AMOLED
-   LCD_VIRTUAL, // memory-only display
+   LCD_VIRTUAL_MEM, // memory-only display
    LCD_VALID_MAX
 };
 
