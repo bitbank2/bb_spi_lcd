@@ -24,8 +24,10 @@ static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 #include <hal/lcd_types.h>
 //extern DMA_ATTR uint8_t *ucTXBuf;
 volatile bool s3_dma_busy;
+#ifdef CONFIG_IDF_TARGET_ESP32
 uint32_t u32IOMask, u32IOLookup[256]; // for old ESP32
 uint8_t *_data_pins;
+#endif // CONFIG_IDF_TARGET_ESP32
 void spilcdParallelData(uint8_t *pData, int iLen);
 static bool s3_notify_dma_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
@@ -290,7 +292,6 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
         pinMode(RD_PIN, OUTPUT); // RD
         digitalWrite(RD_PIN, HIGH); // RD deactivated
     }
-    _data_pins = data_pins;
 // old ESP32 only supports direct register parallelism
 #if defined( ARDUINO_TEENSY41 ) || defined ( CONFIG_IDF_TARGET_ESP32 )
     pinMode(u8WR, OUTPUT);
@@ -299,6 +300,8 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
     for (int i=0; i<8; i++) {
         pinMode(data_pins[i], OUTPUT);
     }
+#ifdef CONFIG_IDF_TARGET_ESP32
+    _data_pins = data_pins;
 // Create a bit mask and lookup table to allow fast 8-bit writes
 // to the 32-bit GPIO register
    u32IOMask = 0;
@@ -316,6 +319,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
        } // for j
        u32IOLookup[i] = u32;
    } // for i
+#endif // CONFIG_IDF_TARGET_ESP32
    return;
 #endif // ARDUINO_TEENSY41 || CONFIG_IDF_TARGET_ESP32
 #ifdef ARDUINO_ARCH_RP2040
