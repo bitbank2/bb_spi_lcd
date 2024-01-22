@@ -5844,7 +5844,7 @@ void BB_SPI_LCD::drawString(const char *pText, int x, int y, int size)
    if (size == 1) setFont(FONT_6x8);
    else if (size == 2) setFont(FONT_12x16);
    setCursor(x,y);
-   for (int i=0; i<strlen(pText); i++) {
+   for (size_t i=0; i<strlen(pText); i++) {
       write(pText[i]);
    }
 } /* drawString() */
