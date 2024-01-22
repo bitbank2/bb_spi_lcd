@@ -2,7 +2,7 @@
 // Copyright (c) 2017 Larry Bank
 // email: bitbank@pobox.com
 // Project started 5/15/2017
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -20,7 +20,7 @@
 
 // The ILITEK LCD display controllers communicate through the SPI interface
 // and two GPIO pins to control the RESET, and D/C (data/command)
-// control lines. 
+// control lines.
 //#if defined(ADAFRUIT_PYBADGE_M4_EXPRESS)
 //#define SPI SPI1
 #ifndef _LINUX_
@@ -1411,7 +1411,7 @@ const unsigned char uc480InitList[]PROGMEM = {
 	16, 0xe2, 0x0f, 0x32, 0x2e, 0x0b, 0x0d, 0x05, 0x47, 0x75, 0x37,
 		0x06, 0x10, 0x03, 0x24, 0x20, 0x00,
 	2, 0x36, 0x48,
-	0	
+	0
 };
 
 //
@@ -1440,7 +1440,7 @@ void SPI_BitBang(SPILCD *pLCD, uint8_t *pData, int iLen, int iMode)
 {
     int iMOSI, iCLK; // local vars to speed access
     uint8_t c, j;
-    
+
     iMOSI = pLCD->iMOSIPin;
     iCLK = pLCD->iCLKPin;
     myPinWrite(pLCD->iCSPin, 0);
@@ -1596,7 +1596,7 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
         return;
     }
 #endif // HAS_DMA
-        
+
 // No DMA requested or available, fall through to here
 #ifdef _LINUX_
     AIOWriteSPI(iHandle, pBuf, iLen);
@@ -1789,7 +1789,7 @@ int spilcdInit(SPILCD *pLCD, int iType, int iFlags, int32_t iSPIFreq, int iCS, i
 {
 unsigned char *s, *d;
 int i, iCount;
-   
+
     pLCD->iColStart = pLCD->iRowStart = pLCD->iMemoryX = pLCD->iMemoryY = 0;
     pLCD->iOrientation = 0;
     pLCD->iLCDType = iType;
@@ -1867,7 +1867,7 @@ int i, iCount;
     //Initialize the SPI bus
     ret=spi_bus_initialize(ESP32_SPI_HOST, &buscfg, SPI_DMA_CHAN);
     assert(ret==ESP_OK);
-    
+
     memset(&devcfg, 0, sizeof(devcfg));
     devcfg.clock_speed_hz = iSPIFreq;
     devcfg.mode = pLCD->iSPIMode;                         //SPI mode 0 or 3
@@ -1892,7 +1892,7 @@ else
     mySPI.begin();
 #else
 #ifdef _LINUX_
-    iHandle = AIOOpenSPI(0, iSPIFreq); // DEBUG - open SPI channel 0 
+    iHandle = AIOOpenSPI(0, iSPIFreq); // DEBUG - open SPI channel 0
 #else
 #ifdef ARDUINO_ARCH_RP2040
   pSPI->begin();
@@ -2254,7 +2254,7 @@ start_of_init:
 	}
 //	spilcdFill(0, 1); // erase memory
 	spilcdScrollReset(pLCD);
-   
+
 	return 0;
 
 } /* spilcdInit() */
@@ -2266,7 +2266,7 @@ void spilcdScrollReset(SPILCD *pLCD)
 {
 uint32_t u32Temp;
 int iLen;
-    
+
     if (pLCD->iLCDType == LCD_VIRTUAL_MEM) {
         return;
     }
@@ -2379,7 +2379,7 @@ int spilcdDraw53Tile(SPILCD *pLCD, int x, int y, int cx, int cy, unsigned char *
     uint16_t u32A, u32B, u32C, u32D, u32E, u32F;
     uint16_t t1, t2, u32ab, u32bc, u32de, u32ef, u32ad, u32be, u32cf;
     uint16_t u32Magic = 0xf7de;
-    
+
     // scale coordinates for stretching
     x = (x * 5)/3;
     y = (y * 5)/3;
@@ -2501,7 +2501,7 @@ int spilcdDrawSmallTile(SPILCD *pLCD, int x, int y, unsigned char *pTile, int iP
     uint32_t u32A, u32B, u32a, u32b, u32C, u32D;
     uint32_t u32Magic = 0xf7def7de;
     uint32_t u32Mask = 0xffff;
-    
+
     // scale y coordinate for shrinking
     y = (y * 7)/8;
     iPitch32 = iPitch/4;
@@ -2551,7 +2551,7 @@ int spilcdDrawRetroTile(SPILCD *pLCD, int x, int y, unsigned char *pTile, int iP
     unsigned char ucTemp[416];
     int i, j, iPitch16;
     uint16_t *s, *d, u16A, u16B;
-    
+
     // scale y coordinate for shrinking
     y = (y * 13)/16;
     iPitch16 = iPitch/2;
@@ -2580,7 +2580,7 @@ int spilcdDrawRetroTile(SPILCD *pLCD, int x, int y, unsigned char *pTile, int iP
     spilcdSetPosition(pLCD, x, y, 16, 13, iFlags);
     myspiWrite(pLCD, ucTemp, 416, MODE_DATA, iFlags);
     return 0;
-    
+
 } /* spilcdDrawRetroTile() */
 //
 // Draw a NxN RGB565 tile
@@ -2597,10 +2597,10 @@ int spilcdDrawTile150(SPILCD *pLCD, int x, int y, int iTileWidth, int iTileHeigh
     uint16_t u16Magic = 0xf7de;
     uint16_t *d16;
     uint32_t *s32;
-    
+
     if (iTileWidth*iTileHeight > 1365)
         return -1; // tile must fit in 4k SPI block size
-    
+
     iPitch32 = iPitch / 4;
     iLocalPitch = (iTileWidth * 3)/2; // offset to next output line
     d16 = (uint16_t *)ucRXBuf;
@@ -2651,7 +2651,7 @@ void spilcdDrawPattern(SPILCD *pLCD, uint8_t *pPattern, int iSrcPitch, int iDest
     uint16_t us, *d;
     uint32_t ulMask = 0x07e0f81f; // this allows all 3 values to be multipled at once
     uint32_t ulSrcClr, ulDestClr, ulDestTrans;
-    
+
     ulDestTrans = 32-iTranslucency; // inverted to combine src+dest
     ulSrcClr = (usColor & 0xf81f) | ((uint32_t)(usColor & 0x06e0) << 16); // shift green to upper 16-bits
     ulSrcClr *= iTranslucency; // prepare for color blending
@@ -2720,14 +2720,14 @@ void spilcdDrawPattern(SPILCD *pLCD, uint8_t *pPattern, int iSrcPitch, int iDest
             d += iDelta;
         } // for x
     } // for y
-    
+
 }
 void spilcdRectangle(SPILCD *pLCD, int x, int y, int w, int h, unsigned short usColor1, unsigned short usColor2, int bFill, int iFlags)
 {
 unsigned short *usTemp = (unsigned short *)ucRXBuf;
 int i, ty, th, iStart;
 uint16_t usColor;
-    
+
 	// check bounds
 	if (x < 0 || x >= pLCD->iCurrentWidth || x+w > pLCD->iCurrentWidth)
 		return; // out of bounds
@@ -2829,7 +2829,7 @@ void spilcdShowBuffer(SPILCD *pLCD, int iStartX, int iStartY, int cx, int cy, in
 {
     int y;
     uint8_t *s;
-    
+
     if (pLCD->pBackBuffer == NULL)
         return; // nothing to do
     if (iStartX + cx > pLCD->iCurrentWidth || iStartY + cy > pLCD->iCurrentHeight || iStartX < 0 || iStartY < 0)
@@ -3256,7 +3256,7 @@ esp_err_t ret;
     trans[0].tx_buffer = ucTXBuf;
     trans[0].length = iLen * 8; // Length in bits
     trans[0].rxlength = 0; // defaults to the same length as tx length
-    
+
     // Queue the transaction
 //    ret = spi_device_polling_transmit(spi, &t);
     transfer_is_done = false;
@@ -3304,12 +3304,12 @@ s2 = (unsigned short *)&pSrc[(iHeight-1)*iSrcPitch];
 d = (uint32_t *)pDest;
 d2 = (uint32_t *)&pDest[(iHeight-1)*2*iDestPitch];
 for (x=0; x<iWidth; x++)
-{     
+{
       ulPixel = *s++;
       ulPixel2 = *s2++;
       ulPixel |= (ulPixel << 16); // simply double it
       ulPixel2 |= (ulPixel2 << 16);
-      d[0] = ulPixel; 
+      d[0] = ulPixel;
       d[iDestPitch/2] = ulPixel;
       d2[0] = ulPixel2;
       d2[iDestPitch/2] = ulPixel2;
@@ -3409,7 +3409,7 @@ const uint32_t ulClrMask = 0x07E0F81F;
 uint32_t ulFG, ulBG;
 uint8_t ucTemp[64]; // enough space for a 256 pixel wide font
 uint16_t usTemp[128];
-    
+
    if (pLCD == NULL || pFont == NULL)
       return -1;
     if (x == -1)
@@ -3723,7 +3723,7 @@ uint8_t *pFont;
     if (y == -1)
         y = pLCD->iCursorY;
     if (x < 0) return -1;
-    
+
     if (iFontSize == FONT_12x16) {
         iLen = strlen(szMsg);
         if ((12*iLen) + x > pLCD->iCurrentWidth) iLen = (pLCD->iCurrentWidth - x)/12; // can't display it all
@@ -3768,7 +3768,7 @@ uint8_t *pFont;
         } // for each scanline
         return 0;
     } // 12x16
-    
+
     cx = (iFontSize == FONT_8x8) ? 8:6;
     pFont = (iFontSize == FONT_8x8) ? (uint8_t *)ucFont : (uint8_t *)ucSmallFont;
     iLen = strlen(szMsg);
@@ -3920,16 +3920,16 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
     // write the data in one shot
         if (usBGColor != -1) // don't write anything if we're doing transparent text
             myspiWrite(pLCD, (unsigned char *)usTemp, cx*16, MODE_DATA, iFlags);
-		}	
+		}
         x += (i*cx);
     } // 6x8 and 8x8
     if (iFontSize == FONT_12x16) // 6x8 stretched to 12x16 (with smoothing)
     {
         uint16_t *usD, *usTemp = (uint16_t *)ucRXBuf;
-        
+
         if ((12*iLen) + x > pLCD->iCurrentWidth) iLen = (pLCD->iCurrentWidth - x)/12; // can't display it all
         if (iLen < 0)return -1;
-        
+
         for (i=0; i<iLen; i++)
         {
             s = (uint8_t *)&ucSmallFont[((unsigned char)szMsg[i]-32) * 6];
@@ -3996,10 +3996,10 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
     if (iFontSize == FONT_16x16) // 8x8 stretched to 16x16
     {
         uint16_t *usD, *usTemp = (uint16_t *)ucRXBuf;
-        
+
         if ((16*iLen) + x > pLCD->iCurrentWidth) iLen = (pLCD->iCurrentWidth - x)/16; // can't display it all
         if (iLen < 0)return -1;
-        
+
         for (i=0; i<iLen; i++)
         {
             s = (uint8_t *)&ucFont[((unsigned char)szMsg[i]-32) * 8];
@@ -4064,7 +4064,7 @@ void DrawScaledPixel(SPILCD *pLCD, int32_t iCX, int32_t iCY, int32_t x, int32_t 
     spilcdSetPosition(pLCD, x, y, 1, 1, iFlags);
     myspiWrite(pLCD, ucBuf, 2, MODE_DATA, iFlags);
 } /* DrawScaledPixel() */
-        
+
 void DrawScaledLine(SPILCD *pLCD, int32_t iCX, int32_t iCY, int32_t x, int32_t y, int32_t iXFrac, int32_t iYFrac, uint16_t *pBuf, int iFlags)
 {
     int32_t iLen, x2;
@@ -4079,7 +4079,7 @@ void DrawScaledLine(SPILCD *pLCD, int32_t iCX, int32_t iCY, int32_t x, int32_t y
     if (x2 >= pLCD->iCurrentWidth) x2 = pLCD->iCurrentWidth-1;
     iLen = x2 - x + 1; // new length
     spilcdSetPosition(pLCD, x, y, iLen, 1, iFlags);
-#ifdef ESP32_DMA 
+#ifdef ESP32_DMA
     myspiWrite(pLCD, (uint8_t*)pBuf, iLen*2, MODE_DATA, iFlags);
 #else
     // need to refresh the output data each time
@@ -4128,7 +4128,7 @@ void spilcdEllipse(SPILCD *pLCD, int32_t iCenterX, int32_t iCenterY, int32_t iRa
     int32_t iRadius, iXFrac, iYFrac;
     int32_t iDelta, x, y;
     uint16_t us, *pus, *usTemp = (uint16_t *)ucRXBuf; // up to 320 pixels wide
-    
+
     if (iRadiusX > iRadiusY) // use X as the primary radius
     {
         iRadius = iRadiusX;
@@ -4309,7 +4309,10 @@ int bX=0, bY=0, bV=0;
 //
 int spilcdFill(SPILCD *pLCD, unsigned short usData, int iFlags)
 {
-int i, cx, tx, x, y;
+#ifdef __AVR__
+int cx, tx, x;
+#endif
+int i, y;
 uint16_t *u16Temp = (uint16_t *)ucRXBuf;
 
     // make sure we're in landscape mode to use the correct coordinates
@@ -4327,12 +4330,6 @@ uint16_t *u16Temp = (uint16_t *)ucRXBuf;
         return 0;
     }
     spilcdSetPosition(pLCD, 0,0,pLCD->iCurrentWidth,pLCD->iCurrentHeight, iFlags);
-    // fit within our temp buffer
-    cx = 1; tx = pLCD->iCurrentWidth;
-    if (pLCD->iCurrentWidth > 160)
-    {
-       cx = 2; tx = pLCD->iCurrentWidth/2;
-    }
 #ifdef __AVR__
     cx = 16;
     tx = pLCD->iCurrentWidth/16;
@@ -4509,14 +4506,14 @@ long l;
    while (iWidth > 0)
    {
       if (ucCount) // some non-repeating bytes to deal with
-      {  
+      {
          while (ucCount && iWidth > 0)
-         {  
+         {
             ucCount--;
-            iWidth--; 
+            iWidth--;
             ucColor = *s++;
             *d++ = usPalette[ucColor];
-         } 
+         }
          l = (long)s;
          if (l & 1) s++; // compressed data pointer must always be even
       }
@@ -4548,7 +4545,7 @@ long l;
          else
          {
             ucColor = *s++; // get the new colors
-         }     
+         }
       }
       while (ucRepeat && iWidth > 0)
       {
@@ -4626,13 +4623,13 @@ int iStartWidth = iWidth;
             ucOdd = 0; // start on an even source pixel
             ucColor = *s++; // get the new colors
             uc1 = ucColor >> 4; uc2 = ucColor & 0xf;
-         }     
+         }
       }
       while (ucRepeat > 0 && iWidth > 0)
       {
          ucRepeat--;
          iWidth--;
-         *d++ = (ucOdd) ? usPalette[uc2] : usPalette[uc1]; 
+         *d++ = (ucOdd) ? usPalette[uc2] : usPalette[uc1];
          ucOdd = !ucOdd;
       } // while decoding the current line
    } // while pixels on the current line to draw
@@ -4657,7 +4654,7 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
     int j, x;
     uint16_t *pus, us, *d, *usTemp = (uint16_t *)ucRXBuf; // process a line at a time
     uint8_t bFlipped = false;
-    
+
     if (pBMP[0] != 'B' || pBMP[1] != 'M') // must start with 'BM'
         return -1; // not a BMP file
     cx = pBMP[18] | pBMP[19]<<8;
@@ -4705,19 +4702,19 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
         }
     }
     if (ucCompression) // need to do it differently for RLE compressed
-    { 
+    {
     uint16_t *d = (uint16_t *)ucRXBuf;
     int y, iStartY, iEndY, iDeltaY;
-        
+
        pCompressed = &pBMP[iOffBits]; // start of compressed data
        if (bFlipped)
-       {  
+       {
           iStartY = iDestY + cy - 1;
           iEndY = iDestY - 1;
           iDeltaY = -1;
        }
        else
-       {  
+       {
           iStartY = iDestY;
           iEndY = iDestY + cy;
           iDeltaY = 1;
@@ -4725,7 +4722,7 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
        DecodeRLE4(NULL, 0,NULL,NULL); // initialize
        DecodeRLE8(NULL, 0,NULL,NULL);
        for (y=iStartY; y!= iEndY; y += iDeltaY)
-       {  
+       {
           spilcdSetPosition(pLCD, iDestX, y, cx, 1, iFlags);
           if (bpp == 4)
              pCompressed = DecodeRLE4(pCompressed, cx, d, usPalette);
@@ -5274,7 +5271,7 @@ void Core2AxpPowerUp()
     //AXP192 RTC CHG
     Write1Byte(0x35, (Read8bit(0x35) & 0x1c) | 0xa2);
     Serial.printf("axp: rtc battery charging enabled\n");
-    
+
     SetESPVoltage(3350);
     Serial.printf("axp: esp32 power voltage was set to 3.35v\n");
 
@@ -5296,7 +5293,7 @@ void Core2AxpPowerUp()
     //Serial.printf("axp: lcd_logic and sdcard power enabled\n\n");
 
     //pinMode(39, INPUT_PULLUP);
-    
+
     //AXP192 GPIO4
     Write1Byte(0X95, (Read8bit(0x95) & 0x72) | 0X84);
 
@@ -5342,7 +5339,7 @@ void AxpPowerUp()
 
     // Set ADC sample rate to 200hz
     Write1Byte(0x84, 0b11110010);
-   
+
     // Set ADC to All Enable
     Write1Byte(0x82, 0xff);
 
@@ -5470,7 +5467,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_CYD_128:
             memset(&_lcd, 0, sizeof(_lcd));
             spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6); // Cheap Yellow Display (ESP32-C3 1.28" round version)
-            break; 
+            break;
         case DISPLAY_CYD:
             memset(&_lcd, 0, sizeof(_lcd));
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14); // Cheap Yellow Display (common versions)
@@ -5629,12 +5626,12 @@ int BB_SPI_LCD::captureArea(int dst_x, int dst_y, int src_x, int src_y, int src_
 {
 uint16_t *s, *d;
 int x, y, sx, sy, dx, dy, cx, cy;
-    
+
     if (_lcd.pBackBuffer == 0) return 0; // no buffer
     // see if any overlap
     if (dst_x >= (src_x+src_w) || src_x >= (dst_x + _lcd.iCurrentWidth) || dst_y >= (src_y+src_h) || src_y >= (dst_y + _lcd.iCurrentHeight))
         return 0; // no intersection
-    
+
     s = pPixels; d = (uint16_t *)_lcd.pBackBuffer;
     dx = dy = 0;
     cx = _lcd.iCurrentWidth; cy = _lcd.iCurrentHeight;
@@ -5652,7 +5649,7 @@ int x, y, sx, sy, dx, dy, cx, cy;
     }
     if (cx > src_w) cx = src_w;
     if (cy > src_h) cy = src_h;
-    
+
     s += sx + (sy * src_w);
     d += dx + (dy * _lcd.iCurrentWidth);
     if (bSwap565) {
@@ -5782,7 +5779,7 @@ int i;
     case 270:
     case 3:
       i = LCD_ORIENTATION_270;
-      break; 
+      break;
   }
   spilcdSetOrientation(&_lcd, i);
 } /* setRotation() */
@@ -5823,7 +5820,7 @@ void BB_SPI_LCD::setFont(int iFont)
 void BB_SPI_LCD::backlight(bool bOn)
 {
    if (_lcd.iLEDPin != -1)
-      myPinWrite(_lcd.iLEDPin, (int)bOn); 
+      myPinWrite(_lcd.iLEDPin, (int)bOn);
 } /* backlight() */
 
 void BB_SPI_LCD::setFreeFont(const GFXfont *pFont)
@@ -5849,7 +5846,7 @@ void BB_SPI_LCD::drawString(const char *pText, int x, int y, int size)
    setCursor(x,y);
    for (int i=0; i<strlen(pText); i++) {
       write(pText[i]);
-   } 
+   }
 } /* drawString() */
 void BB_SPI_LCD::drawString(String text, int x, int y, int size)
 {
@@ -5932,7 +5929,7 @@ int w, h;
           }
           if (_lcd.iAntialias)
             spilcdWriteStringAntialias(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, 0, (_lcd.iLCDType == LCD_VIRTUAL_MEM) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
-          else 
+          else
             spilcdWriteStringCustom(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, 0, (_lcd.iLCDType == LCD_VIRTUAL_MEM) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
         }
       }
