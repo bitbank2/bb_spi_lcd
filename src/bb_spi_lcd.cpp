@@ -200,6 +200,8 @@ static void spilcdWriteData8(SPILCD *pLCD, unsigned char c);
 static void spilcdWriteData16(SPILCD *pLCD, unsigned short us, int iFlags);
 void spilcdSetPosition(SPILCD *pLCD, int x, int y, int w, int h, int iFlags);
 int spilcdFill(SPILCD *pLCD, unsigned short usData, int iFlags);
+// 8-bit parallel pins for the Wemos D1 R32 ESP32 + LCD shield
+uint8_t u8D1R32DataPins[8] = {12,13,26,25,17,16,27,14};
 const unsigned char ucE0_0[] PROGMEM = {0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1, 0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00};
 const unsigned char ucE1_0[] PROGMEM = {0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1, 0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F};
 const unsigned char ucE0_1[] PROGMEM = {0x1f, 0x1a, 0x18, 0x0a, 0x0f, 0x06, 0x45, 0x87, 0x32, 0x0a, 0x07, 0x02, 0x07, 0x05, 0x00};
@@ -5520,6 +5522,17 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_GC9107, 0, 50000000, 5, 6, 1, -1, -1, 2, 3);
             pinMode(10, OUTPUT);
             digitalWrite(10, LOW); // inverted backlight signal
+            break;
+        case DISPLAY_D1_R32_ILI9341:
+            pinMode(32, OUTPUT); // reset
+            digitalWrite(32, LOW);
+            delay(100);
+            digitalWrite(32, HIGH);
+            delay(100);
+            ParallelDataInit(2, 4, 33, 15, 8, u8D1R32DataPins, 0);
+            spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 0,0,0,0,0,0,0,0);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
 #ifdef ARDUINO_ARCH_RP2040
         case DISPLAY_KUMAN_35: // ILI9486 320x480 8-bit parallel
