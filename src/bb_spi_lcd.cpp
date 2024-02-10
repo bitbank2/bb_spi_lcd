@@ -1233,7 +1233,6 @@ const unsigned char uc132InitList[]PROGMEM = {
     0
 };
 
-// List of command/parameters to initialize the ili9342 display
 const unsigned char uc320InitList[]PROGMEM = {
         2, 0xc0, 0x23, // Power control
         2, 0xc1, 0x10, // Power control
@@ -1250,7 +1249,6 @@ const unsigned char uc320InitList[]PROGMEM = {
 //        3, 0xb1, 0x00, 0x10, // FrameRate Control 119Hz
         0
 };
-
 // List of command/parameters to initialize the st7735s display
 const unsigned char uc80InitList[]PROGMEM = {
 //        4, 0xb1, 0x01, 0x2c, 0x2d,    // frame rate control
@@ -5067,7 +5065,7 @@ uint16_t *d, us;
     }
 } /* obdScroll1Line() */
 
-#if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_Core2)
+#if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_Core2) || defined (ARDUINO_M5STACK_CORES3)
 void Write1Byte( uint8_t Addr ,  uint8_t Data )
 {
     Wire1.beginTransmission(0x34);
@@ -5084,6 +5082,55 @@ uint8_t Read8bit( uint8_t Addr )
     return Wire1.read();
 }
 #endif // both Core2 + StickC+
+
+#if defined (ARDUINO_M5STACK_CORES3)
+void CoreS3AxpPowerUp(void)
+{
+uint8_t u8;
+const uint8_t u8InitList[] = {
+      0x90, 0xBF,  // LDOS ON/OFF control 0
+      0x92, 18 -5, // ALDO1 set to 1.8v // for AW88298
+      0x93, 33 -5, // ALDO2 set to 3.3v // for ES7210
+      0x94, 33 -5, // ALDO3 set to 3.3v // for camera
+      0x95, 33 -5, // ALDO3 set to 3.3v // for TF card slot
+      0x27, 0x00, // PowerKey Hold=1sec / PowerOff=4sec
+      0x69, 0x11, // CHGLED setting
+      0x10, 0x30, // PMU common config
+};
+    Wire1.begin(12, 11);
+    Wire1.setClock(400000);
+
+    // turn on power boost of SY7088
+    Wire1.beginTransmission(0x58); // AW9323B I/O expander
+    Wire1.write(0x3); // P1
+    Wire1.endTransmission();
+    Wire1.requestFrom(0x58, 1);
+    u8 = Wire1.read(); // current value
+    u8 |= 0x82; // BOOST_EN (0x80) and take LCD out of RESET (0x02)
+    Wire1.beginTransmission(0x58);
+    Wire1.write(0x3);
+    Wire1.write(u8);
+    Wire1.endTransmission();
+
+    //AXP2101 34H
+    for (int i=0; i<sizeof(u8InitList); i+=2) {
+        Write1Byte(u8InitList[i], u8InitList[i+1]);
+    }
+    // enable LCD backlight and set brightness
+    Wire1.beginTransmission(0x34); // AXP2101
+    Wire1.write(0x90); // LDOS ON/OFF control
+    Wire1.endTransmission();
+    Wire1.requestFrom(0x34, 1);
+    u8 = Wire1.read(); // current value
+    u8 |= 0x80; // LCD_BL LDO enable
+    Wire1.beginTransmission(0x34);
+    Wire1.write(0x90);
+    Wire1.write(u8);
+    Wire1.endTransmission();
+    Write1Byte(0x99, 26); // set brightness PWM (20=dim, 29=bright)
+} /* CoreS3AxpPowerUp() */
+
+#endif // CORES3
 
 #if defined (ARDUINO_M5STACK_Core2)
 typedef enum
@@ -5495,6 +5542,12 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
 #endif // ARDUINO_M5Stick_C
+#ifdef ARDUINO_M5STACK_CORES3
+        case DISPLAY_M5STACK_CORES3:
+            CoreS3AxpPowerUp(); // D/C is shared with MISO
+            spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 3, 35, -1, -1, -1, 37, 36);
+            break; 
+#endif // ARDUINO_M5STACK_CORES3 
 #ifdef ARDUINO_M5STACK_Core2
         case DISPLAY_M5STACK_CORE2:
             Core2AxpPowerUp();

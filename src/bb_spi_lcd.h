@@ -23,7 +23,7 @@
 #ifndef _LINUX_
 #include <Arduino.h>
 #include <Print.h>
-#if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_Core2)
+#if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5STACK_CORES3)
 #include <Wire.h>
 #endif
 #endif // _LINUX_
@@ -189,6 +189,7 @@ enum
     DISPLAY_M5STACK_STICKC,
     DISPLAY_M5STACK_STICKCPLUS,
     DISPLAY_M5STACK_CORE2,
+    DISPLAY_M5STACK_CORES3,
     DISPLAY_RANKIN_COLORCOIN,
     DISPLAY_RANKIN_SENSOR,
     DISPLAY_RANKIN_POWER,
