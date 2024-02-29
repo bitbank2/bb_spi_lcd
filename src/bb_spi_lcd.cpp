@@ -1789,11 +1789,15 @@ int spilcdInit(SPILCD *pLCD, int iType, int iFlags, int32_t iSPIFreq, int iCS, i
 {
 unsigned char *s, *d;
 int i, iCount;
-   
+
+    if (pLCD->pFont != NULL) { // the structure is probably not initialized
+        memset(pLCD, 0, sizeof(SPILCD));
+    }   
     pLCD->iColStart = pLCD->iRowStart = pLCD->iMemoryX = pLCD->iMemoryY = 0;
     pLCD->iOrientation = 0;
     pLCD->iLCDType = iType;
     pLCD->iLCDFlags = iFlags;
+
   if (pLCD->pfnResetCallback != NULL)
   {
      (*pLCD->pfnResetCallback)();
@@ -5453,6 +5457,7 @@ void AxpPowerUp()
 //
 int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins)
 {
+    memset(&_lcd, 0, sizeof(_lcd));
     if (RST_PIN != 0xff) {
         pinMode(RST_PIN, OUTPUT);
         digitalWrite(RST_PIN, LOW);
@@ -5469,6 +5474,8 @@ int BB_SPI_LCD::begin(int iDisplayType)
 {
     int iCS=0, iDC=0, iMOSI=0, iSCK=0; // swap pins around for the different TinyPico boards
     int iLED=0, iRST = -1;
+
+    memset(&_lcd, 0, sizeof(_lcd));
 #ifdef ARDUINO_TINYPICO
     iMOSI = 23;
     iSCK = 18;
@@ -5529,11 +5536,9 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_CYD_128:
-            memset(&_lcd, 0, sizeof(_lcd));
             spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6); // Cheap Yellow Display (ESP32-C3 1.28" round version)
             break; 
         case DISPLAY_CYD:
-            memset(&_lcd, 0, sizeof(_lcd));
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14); // Cheap Yellow Display (common versions)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
