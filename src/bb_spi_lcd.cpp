@@ -1585,7 +1585,7 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
 //    spi_device_get_trans_result(spi, &rtrans, portMAX_DELAY);
 #endif
 #ifdef HAS_DMA
-    if (iMode == MODE_DATA && (iFlags & DRAW_WITH_DMA)) // only pixels will get DMA treatment
+    if (iMode == MODE_DATA && iLen <= 4000 && (iFlags & DRAW_WITH_DMA)) // only pixels will get DMA treatment
     {
         spilcdWaitDMA(); // wait for any previous transaction to finish
         iCurrentCS = pLCD->iCSPin;
@@ -5090,7 +5090,7 @@ uint8_t u8;
 const uint8_t u8InitList[] = {
       0x90, 0xBF,  // LDOS ON/OFF control 0
       0x92, 18 -5, // ALDO1 set to 1.8v // for AW88298
-      0x93, 33 -5, // ALDO2 set to 3.3v // for ES7210
+      0x93, 33 -5, // ALDO2 set to 3.3v // for ES7210 (mic)
       0x94, 33 -5, // ALDO3 set to 3.3v // for camera
       0x95, 33 -5, // ALDO3 set to 3.3v // for TF card slot
       0x27, 0x00, // PowerKey Hold=1sec / PowerOff=4sec
@@ -5101,14 +5101,26 @@ const uint8_t u8InitList[] = {
     Wire1.setClock(400000);
 
     // turn on power boost of SY7088
-    Wire1.beginTransmission(0x58); // AW9323B I/O expander
+    Wire1.beginTransmission(0x58); // AW9523B I/O expander
     Wire1.write(0x3); // P1
     Wire1.endTransmission();
     Wire1.requestFrom(0x58, 1);
     u8 = Wire1.read(); // current value
-    u8 |= 0x82; // BOOST_EN (0x80) and take LCD out of RESET (0x02)
+    u8 |= 0x82; // BOOST_EN (0x80) and take LCD out of RESET (P1_1 = 0x02)
     Wire1.beginTransmission(0x58);
     Wire1.write(0x3);
+    Wire1.write(u8);
+    Wire1.endTransmission();
+
+    // Take Microphone and Touch controller out of reset
+    Wire1.beginTransmission(0x58); // AW9523B I/O expander
+    Wire1.write(0x2); // P0 
+    Wire1.endTransmission();
+    Wire1.requestFrom(0x58, 1);
+    u8 = Wire1.read(); // current value
+    u8 |= 0x5; // MIC out of RST (P0_2 = 4) and touch out of RST (P0_0 = 1)
+    Wire1.beginTransmission(0x58);
+    Wire1.write(0x2); // P0
     Wire1.write(u8);
     Wire1.endTransmission();
 
