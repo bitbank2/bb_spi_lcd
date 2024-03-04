@@ -4,7 +4,7 @@
 #include <bb_captouch.h>
 #include <bb_spi_lcd.h>
 #include <AnimatedGIF.h>
-#define GIF_NAME earth_128x128.h
+#define GIF_NAME earth_128x128
 #include "earth_128x128.h"
 
 uint8_t *pFrameBuffer;
