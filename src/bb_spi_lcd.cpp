@@ -1568,13 +1568,22 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
         static spi_transaction_t t;
         iCurrentCS = -1;
         memset(&t, 0, sizeof(t));       //Zero out the transaction
-        t.length=iLen*8;  // length in bits
-        t.tx_buffer=pBuf;
-        t.user=(void*)iMode;
+        while (iLen) {
+          int l = iLen;
+          if (l > 4000) { // transmit maximum length (full duplex mode)
+             l = 4000;
+          }
+          t.length=l*8;  // length in bits
+          t.rxlength = 0;
+          t.tx_buffer=pBuf;
+          t.user=(void*)iMode;
     // Queue the transaction
 //    ret = spi_device_queue_trans(spi, &t, portMAX_DELAY);
-        ret=spi_device_polling_transmit(spi, &t);  //Transmit!
-        assert(ret==ESP_OK);            //Should have had no issues.
+          ret=spi_device_polling_transmit(spi, &t);  //Transmit!
+          assert(ret==ESP_OK);            //Should have had no issues.
+          iLen -= l;
+          pBuf += l;
+        } // while (iLen)
         if (iMode == MODE_COMMAND) // restore D/C pin to DATA
             spilcdSetMode(pLCD, MODE_DATA);
         myPinWrite(pLCD->iCSPin, 1);
@@ -5534,6 +5543,10 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_RANKIN_SENSOR:
             spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 4, 21, 22, 26, -1, 23, 18); // Mike's coin cell pin numbering
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            break;
+        case DISPLAY_CYD_35:
+            spilcdInit(&_lcd, LCD_ILI9488, FLAGS_FLIPX, 80000000, 15, 2, -1, 27, 12, 13, 14); // Cheap Yellow Display (ESP32 3.5" 320x480 version)
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90); 
             break;
         case DISPLAY_CYD_128:
             spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6); // Cheap Yellow Display (ESP32-C3 1.28" round version)
