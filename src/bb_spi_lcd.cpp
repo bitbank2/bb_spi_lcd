@@ -5459,11 +5459,170 @@ void AxpPowerUp()
 
 } /* AxpPowerUp() */
 #endif // ARDUINO_M5Stick_C
+//
+// Full duplex SPI transfer for the touch controller
+//
+static void rtSPIXfer(SPILCD *pLCD, uint8_t ucCMD, uint8_t *pRXBuf, int iLen)
+{
+int i, j;
+uint8_t ucIn, ucOut;
+uint8_t ucTemp[4];
+
+   ucTemp[0] = ucCMD;
+   ucTemp[1] = ucTemp[2] = 0;
+
+ // do simultaneous read+write on the SPI touch controller bus
+
+   if (pLCD->iRTMOSI != pLCD->iMOSIPin) { // use bit bang
+       for (i=0; i<iLen; i++) { // for each byte
+           ucOut = ucTemp[i];
+           ucIn = 0;
+           for (j=0; j<8; j++) { // for each bit
+               ucIn <<= 1;
+               digitalWrite(pLCD->iRTMOSI, (ucOut & 0x80) >> 7);
+               digitalWrite(pLCD->iRTCLK, 1);
+               delayMicroseconds(1);
+               ucIn |= digitalRead(pLCD->iRTMISO);
+               digitalWrite(pLCD->iRTCLK, 0);
+               ucOut <<= 1;
+           } // for each bit
+        pRXBuf[i] = ucIn; // store the received data
+        } // for each byte
+    } else { // shared SPI bus
+        memcpy(pRXBuf, ucTemp, iLen); // Arduino only allows duplex overwrite
+#ifdef ARDUINO_ARCH_RP2040
+        pSPI->beginTransaction(SPISettings(2000000, MSBFIRST, 0));            
+        pSPI->transfer(pRXBuf, iLen);
+        pSPI->endTransaction();
+#else          
+        mySPI.beginTransaction(SPISettings(2000000, MSBFIRST, 0));            
+        mySPI.transfer(pRXBuf, iLen);
+        mySPI.endTransaction();
+#endif
+    }         
+} /* rtSPIXfer() */
 
 #ifdef __cplusplus
 //
 // C++ Class implementation
 //
+int BB_SPI_LCD::rtInit(uint8_t u8MOSI, uint8_t u8MISO, uint8_t u8CLK, uint8_t u8CS)
+{
+uint8_t ucTemp[4];
+
+   _lcd.iRTMOSI = u8MOSI;
+   _lcd.iRTMISO = u8MISO;
+   _lcd.iRTCLK = u8CLK;
+   _lcd.iRTCS = u8CS;
+   if (_lcd.iRTMOSI != _lcd.iMOSIPin) { // use bit bang for the touch controller
+       pinMode(u8MOSI, OUTPUT);
+       pinMode(u8MISO, INPUT);
+       pinMode(u8CLK, OUTPUT);
+       pinMode(u8CS, OUTPUT);
+   }
+   return BB_ERROR_SUCCESS;
+} /* rtInit() */
+
+// Return the average of the closest 2 of 3 values
+static int rtAVG(int *pI)
+{
+  int da, db, dc;
+  int avg = 0;
+  if ( pI[0] > pI[1] ) da = pI[0] - pI[1]; else da = pI[1] - pI[0];
+  if ( pI[0] > pI[2] ) db = pI[0] - pI[2]; else db = pI[2] - pI[0];
+  if ( pI[2] > pI[1] ) dc = pI[2] - pI[1]; else dc = pI[1] - pI[2]; 
+        
+  if ( da <= db && da <= dc ) avg = (pI[0] + pI[1]) >> 1;
+  else if ( db <= da && db <= dc ) avg = (pI[0] + pI[2]) >> 1;
+  else avg = (pI[1] + pI[2]) >> 1;
+
+  return avg;
+} /* rtAVG() */
+
+//
+// returns 1 for a touch position available
+// or 0 for no touch or invalid parameter
+//
+int BB_SPI_LCD::rtReadTouch(TOUCHINFO *ti)
+{
+// commands and SPI transaction filler to read 3 byte response for x/y
+uint8_t ucTemp[4];
+int x, y, xa[3], ya[3], x1, y1, z, z1, z2;
+
+    if (ti == NULL)
+        return 0;
+    digitalWrite(_lcd.iRTCS, 0); // active CS
+    // read the "pressure" value to see if there is a touch
+    rtSPIXfer(&_lcd, 0xb1, ucTemp, 3);
+    rtSPIXfer(&_lcd, 0xc1, ucTemp, 3);
+    z1 = (int)((ucTemp[2] + (ucTemp[1]<<8)) >> 3);
+    z = z1 + 4095;
+    rtSPIXfer(&_lcd, 0x91, ucTemp, 3);
+    z2 = (int)((ucTemp[2] + (ucTemp[1]<<8)) >> 3);
+    z -= z2;
+    if (z > 6500) {
+        ti->count = 0;
+        digitalWrite(_lcd.iRTCS, 1); // inactive CS
+        return 0; // not a valid pressure reading
+    }
+    ti->count = 1; // only 1 touch point possible
+    z = (6500 - z)/16;
+    ti->pressure[0] = (uint8_t)z;
+
+    // read the X and Y values 3 times because they jitter
+    rtSPIXfer(&_lcd, 0x91, ucTemp, 3); // first Y is always noisy
+    rtSPIXfer(&_lcd, 0xd1, ucTemp, 3);
+    xa[0] = ((ucTemp[2] + (ucTemp[1]<<8)) >> 4);
+    rtSPIXfer(&_lcd, 0x91, ucTemp, 3);
+    ya[0] = ((ucTemp[2] + (ucTemp[1]<<8)) >> 4);
+    rtSPIXfer(&_lcd, 0xd1, ucTemp, 3);
+    xa[1] = ((ucTemp[2] + (ucTemp[1]<<8)) >> 4);
+    rtSPIXfer(&_lcd, 0x91, ucTemp, 3);
+    ya[1] = ((ucTemp[2] + (ucTemp[1]<<8)) >> 4);
+    rtSPIXfer(&_lcd, 0xd0, ucTemp, 3); // last X, power down
+    xa[2] = ((ucTemp[2] + (ucTemp[1]<<8)) >> 4);
+    rtSPIXfer(&_lcd, 0x00, ucTemp, 3); // last Y
+    ya[2] = ((ucTemp[2] + (ucTemp[1]<<8)) >> 4);
+    // take the average of the closest values
+    x = rtAVG(xa);
+    y = rtAVG(ya);
+    // since we know the display size and orientation, scale the coordinates
+    // to match. The 0 orientation corresponds to flipped X and correct Y
+    switch (_lcd.iOrientation) {
+        case LCD_ORIENTATION_0:
+        case LCD_ORIENTATION_180:
+            y1 = (1900 - y)*_lcd.iCurrentHeight;
+            y1 /= 1780;
+            if (y1 < 0) y1 = 0;
+            else if (y1 >= _lcd.iCurrentHeight) y1 = _lcd.iCurrentHeight-1;
+            x1 = (1950 - x) * _lcd.iCurrentWidth;
+            x1 /= 1750;
+            if (x1 < 0) x1 = 0;
+            else if (x1 >= _lcd.iCurrentWidth) x1 = _lcd.iCurrentWidth-1;
+            break;
+        case LCD_ORIENTATION_90:
+        case LCD_ORIENTATION_270:
+            x1 = (1900 - y) * _lcd.iCurrentWidth;
+            x1 /= 1780;
+            if (x1 < 0) x1 = 0;
+            else if (x1 >= _lcd.iCurrentWidth) x1 = _lcd.iCurrentWidth-1;
+            y1 = (1950 - x) * _lcd.iCurrentHeight;
+            y1 /= 1750;
+            if (y1 < 0) y1 = 0;
+            else if (y1 >= _lcd.iCurrentHeight) y1 = _lcd.iCurrentHeight-1;
+            break;
+    } // switch on orientation
+    if (_lcd.iOrientation == LCD_ORIENTATION_0 || _lcd.iOrientation == LCD_ORIENTATION_90) {
+        x1 = _lcd.iCurrentWidth - 1 - x1;
+        y1 = _lcd.iCurrentHeight - 1 - y1;
+    }
+    ti->x[0] = x1;
+    ti->y[0] = y1;
+    digitalWrite(_lcd.iRTCS, 1); // inactive CS
+    delay(10); // don't let the user try to read samples too quickly
+    return 1;
+} /* rtReadTouch() */
+
 int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins)
 {
     memset(&_lcd, 0, sizeof(_lcd));
@@ -5551,8 +5710,12 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_CYD_128:
             spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6); // Cheap Yellow Display (ESP32-C3 1.28" round version)
             break; 
+        case DISPLAY_CYD_28C:
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14); // Cheap Yellow Display (2.4 and 2.8 w/cap touch)
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            break;
         case DISPLAY_CYD:
-            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14); // Cheap Yellow Display (common versions)
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 21, 12, 13, 14); // Cheap Yellow Display (common versions w/resistive touch)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_M5STACK_ATOMS3:

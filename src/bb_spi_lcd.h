@@ -44,6 +44,13 @@ enum {
 #define DRAW_TO_LCD     2
 #define DRAW_WITH_DMA   4
 
+typedef struct _fttouchinfo
+{
+  int count;
+  uint16_t x[5], y[5];
+  uint8_t pressure[5], area[5];
+} TOUCHINFO;
+
 //
 // Data callback function for custom (non-SPI) LCDs
 // e.g. 8/16-bit parallel/8080
@@ -104,6 +111,7 @@ typedef struct tagSPILCD
    int iWidth, iHeight; // native direction size
    int iCurrentWidth, iCurrentHeight; // rotated size
    int iCSPin, iCLKPin, iMOSIPin, iDCPin, iResetPin, iLEDPin;
+   uint8_t iRTMOSI, iRTMISO, iRTCLK, iRTCS; // resistive touch GPIO
    int32_t iSPISpeed, iSPIMode; // SPI settings
    int iScreenPitch, iOffset, iMaxOffset; // display RAM values
    int iColStart, iRowStart, iMemoryX, iMemoryY; // display oddities
@@ -114,11 +122,13 @@ typedef struct tagSPILCD
    int iFont, iWrap, iFG, iBG, iAntialias;
    GFXfont *pFont;
    int iOldX, iOldY, iOldCX, iOldCY; // to optimize spilcdSetPosition()
+
    RESETCALLBACK pfnResetCallback;
    DATACALLBACK pfnDataCallback;
 } SPILCD;
 
 #ifdef __cplusplus
+
 class BB_SPI_LCD : public Print
 {
   public:
@@ -169,9 +179,13 @@ class BB_SPI_LCD : public Print
     void drawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY, int iCX, int iCY, uint16_t usColor, int iTranslucency);
     using Print::write;
     virtual size_t write(uint8_t);
+    // Resistive Touch methods
+    int rtInit(uint8_t u8MOSI, uint8_t uiMISO, uint8_t u8CLK, uint8_t u8CS);
+    int rtReadTouch(TOUCHINFO *ti);
 
   private:
     SPILCD _lcd;
+
 }; // class BB_SPI_LCD
 #endif // __cplusplus
 
@@ -205,6 +219,7 @@ enum
     DISPLAY_M5STACK_ATOMS3,
     DISPLAY_CYD, // ILI9341 240x320 LCD
     DISPLAY_CYD_128, // GC9A01 240x240 LCD
+    DISPLAY_CYD_28C,
     DISPLAY_CYD_35, // ILI9488 320x480 LCD
     DISPLAY_D1_R32_ILI9341,
     DISPLAY_COUNT
