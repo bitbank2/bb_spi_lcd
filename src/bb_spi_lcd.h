@@ -44,12 +44,15 @@ enum {
 #define DRAW_TO_LCD     2
 #define DRAW_WITH_DMA   4
 
+#ifndef __TOUCHINFO_STRUCT__
+#define __TOUCHINFO_STRUCT__
 typedef struct _fttouchinfo
 {
   int count;
   uint16_t x[5], y[5];
   uint8_t pressure[5], area[5];
 } TOUCHINFO;
+#endif
 
 //
 // Data callback function for custom (non-SPI) LCDs

@@ -97,7 +97,11 @@ static int iHandle; // SPI handle
 #define mySPI SPI
 //SPIClass mySPI(HSPI);
 #elif defined(ARDUINO_ARCH_RP2040)
+#ifdef ARDUINO_ARCH_MBED
 MbedSPI *pSPI = new MbedSPI(12,11,13);
+#else // Pico SDK
+SPIClassRP2040 *pSPI = &SPI;
+#endif
 //MbedSPI *pSPI = new MbedSPI(4,7,6); // use GPIO numbers, not pin #s
 #endif
 
