@@ -824,6 +824,33 @@ void spilcdSetMode(SPILCD *pLCD, int iMode)
 #endif
 } /* spilcdSetMode() */
 
+const unsigned char ucST7796InitList[] PROGMEM = {
+    1, 0x01, // software reset
+    LCD_DELAY, 120,
+    1, 0x11, // sleep exit
+    LCD_DELAY, 120,
+    2, 0xf0,0xc3, // command set control
+    2, 0xf0,0x96, // enable extension command 2 part
+    2, 0x36,0x48, // x-mirror
+    1, 0x20, // invert off
+    2, 0x3a,0x55, // pixel format RGB565
+    2, 0xb4,0x01, // column inversion
+    4, 0xb6,0x80,0x02,0x3b,
+    9, 0xe8,0x40,0x8a,0x00,0x00,0x29,0x19,0xa5,0x33,
+    2, 0xc1,0x06,
+    2, 0xc2,0xa7,
+    2, 0xc5,0x18,
+    LCD_DELAY, 120,
+    15, 0xe0,0xf0,0x09,0x0b,0x06,0x04,0x15,0x2f,0x54,0x42,0x3c,0x17,0x14,0x18,0x1b, // gamma +
+    15, 0xe1,0xe0,0x09,0x0b,0x06,0x04,0x03,0x2b,0x43,0x42,0x3b,0x16,0x14,0x17,0x1b, // gamma -
+    LCD_DELAY, 120,
+    2, 0xf0,0x3c, // disable extension cmd pt 1
+    2, 0xf0,0x69, // disable extension cmd pt 2
+    LCD_DELAY, 120,
+    1, 0x29,  // display on
+    0
+};
+
 const unsigned char ucJD9613InitList[] PROGMEM = {
     2, 0xfe, 0x01,
     4, 0xf7, 0x96, 0x13, 0xa9,
@@ -1993,7 +2020,24 @@ start_of_init:
             } // for
         } // LCD_ST7793
 
-	if (pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7789_172 || pLCD->iLCDType == LCD_ST7789_280 || pLCD->iLCDType == LCD_ST7789_240 || pLCD->iLCDType == LCD_ST7789_135 || pLCD->iLCDType == LCD_ST7789_NOCS)
+        else if (pLCD->iLCDType == LCD_ST7796 || pLCD->iLCDType == LCD_ST7796_222) {
+            uint8_t iBGR = (pLCD->iLCDFlags & FLAGS_SWAP_RB) ? 0x08:0;
+            uint8_t iFlipX = (pLCD->iLCDFlags & FLAGS_FLIPX) ? 0x40:0;
+            s = (unsigned char *)&ucST7796InitList[0];
+            memcpy_P(d, s, sizeof(ucST7796InitList));
+            s = d;
+            s[16] = iFlipX | iBGR;
+            if (pLCD->iLCDFlags & FLAGS_INVERT)
+               s[18] = 0x21; // change inversion off (default) to on
+            pLCD->iCurrentWidth = pLCD->iWidth = 320;
+            pLCD->iCurrentHeight = pLCD->iHeight = 480;
+            if (pLCD->iLCDType == LCD_ST7796_222) {
+                pLCD->iCurrentWidth = pLCD->iWidth = 222;
+                pLCD->iColStart = pLCD->iMemoryX = 49;
+            }
+            pLCD->iLCDType = LCD_ST7789; // treat them the same from here on
+        }
+	else if (pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7789_172 || pLCD->iLCDType == LCD_ST7789_280 || pLCD->iLCDType == LCD_ST7789_240 || pLCD->iLCDType == LCD_ST7789_135 || pLCD->iLCDType == LCD_ST7789_NOCS)
 	{
         uint8_t iBGR = (pLCD->iLCDFlags & FLAGS_SWAP_RB) ? 8:0;
 		s = (unsigned char *)&uc240x240InitList[0];
@@ -5829,6 +5873,14 @@ int BB_SPI_LCD::begin(int iDisplayType)
             digitalWrite(38, LOW); // turn on LCD
             begin(LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 40000000, 4, 2, 1, -1, -1, 3, 5);
             break;
+        case DISPLAY_T_DISPLAY_S3_PRO: // 222x480 ST7796
+            memset(&_lcd, 0, sizeof(_lcd));
+            // MISO=8, MOSI=17,CLK=18,CS=39,DC=9,RST=47,BL=48
+            begin(LCD_ST7796_222, FLAGS_SWAP_RB | FLAGS_INVERT | FLAGS_FLIPX, 40000000, 39, 9, 47, 48, 8, 17, 18);
+            _lcd.iLEDPin = 48;
+            //setRotation(270);
+            break;
+
         case DISPLAY_T_DISPLAY_S3:
             pinMode(38, OUTPUT); // backlight
             digitalWrite(38, HIGH);
@@ -5968,6 +6020,12 @@ void BB_SPI_LCD::freeBuffer(void)
 {
     spilcdFreeBackbuffer(&_lcd);
 }
+
+uint8_t * BB_SPI_LCD::getDMABuffer(void)
+{
+    return (uint8_t *)ucTXBuf;
+}
+
 void * BB_SPI_LCD::getBuffer(void)
 {
     return (void *)_lcd.pBackBuffer;

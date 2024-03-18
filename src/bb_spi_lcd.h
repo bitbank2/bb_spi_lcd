@@ -156,6 +156,7 @@ class BB_SPI_LCD : public Print
     int16_t getCursorY(void);
     bool allocBuffer(void);
     void * getBuffer(void);
+    uint8_t * getDMABuffer(void);
     SPILCD * getLCDStruct(void);
     void freeBuffer(void);
     void setTextSize(int iSize) {}; // empty for now
@@ -212,6 +213,7 @@ enum
     DISPLAY_RANKIN_POWER,
     DISPLAY_T_DONGLE_S3,
     DISPLAY_T_DISPLAY_S3,
+    DISPLAY_T_DISPLAY_S3_PRO,
     DISPLAY_T_DISPLAY,
     DISPLAY_T_QT,
     DISPLAY_T_TRACK,
@@ -465,6 +467,8 @@ enum {
    LCD_ST7789_NOCS, // 240x240 without CS, vertical offset of 80, MODE3
    LCD_ST7789_172, // 172x320
    LCD_ST7789_280, // 240x280
+   LCD_ST7796, // 320x480
+   LCD_ST7796_222, // 222x480
    LCD_SSD1283A, // 132x132 transflective
    LCD_SSD1286, // 132x176 transflective
    LCD_ILI9486, // 320x480

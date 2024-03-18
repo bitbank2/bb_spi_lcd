@@ -455,9 +455,9 @@ void spilcdParallelData(uint8_t *pData, int iLen)
         iSize = iLen;
         if (iSize > MAX_TX_SIZE) iSize = MAX_TX_SIZE;
         esp_lcd_panel_io_tx_color(io_handle, u8CMD, pData, iSize);
-        while (s3_dma_busy) {
+     //   while (s3_dma_busy) {
            // delayMicroseconds(1);
-        }
+     //   }
         iLen -= iSize;
         pData += iSize;
     }
