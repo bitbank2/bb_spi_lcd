@@ -5766,6 +5766,10 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 21, 12, 13, 14); // Cheap Yellow Display (common versions w/resistive touch)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
+		case DISPLAY_CYD2USB:
+            spilcdInit(&_lcd, LCD_ST7789, FLAGS_INVERT, 40000000, 15, 2, -1, 21, 12, 13, 14); // Cheap Yellow Display 2 USB (2.8 w/resistive touch, 2 USB ports)
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            break;
         case DISPLAY_M5STACK_ATOMS3:
             spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 15, 33, 34, 16, -1, 21, 17);
             break;
