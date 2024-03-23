@@ -5806,15 +5806,19 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 4, 21, 22, 26, -1, 23, 18,1); // Mike's coin cell pin numbering
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
+        case DISPLAY_CYD_2USB:
+            spilcdInit(&_lcd, LCD_ST7789, FLAGS_INVERT, 40000000, 15, 2, -1, 21, 12, 13, 14, 1); // Cheap Yellow Display 2 USB (2.8 w/resistive touch, 2 USB ports)
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            break;
         case DISPLAY_CYD_35:
-            spilcdInit(&_lcd, LCD_ILI9488, FLAGS_FLIPX, 80000000, 15, 2, -1, 27, 12, 13, 14,0); // Cheap Yellow Display (ESP32 3.5" 320x480 version)
-            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90); 
+            spilcdInit(&_lcd, LCD_ILI9488, FLAGS_FLIPX, 80000000, 15, 2, -1, 27, 12, 13, 14, 1); // Cheap Yellow Display (ESP32 3.5" 320x480 version)
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
         case DISPLAY_CYD_128:
             spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6, 1); // Cheap Yellow Display (ESP32-C3 1.28" round version)
             break;
         case DISPLAY_CYD_28C:
-            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14, 0); // Cheap Yellow Display (2.4 and 2.8 w/cap touch)
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14, 1); // Cheap Yellow Display (2.4 and 2.8 w/cap touch)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_CYD:
