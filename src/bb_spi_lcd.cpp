@@ -119,19 +119,18 @@ SPIClassRP2040 *pSPI = &SPI;
 #else
 #define ESP32_SPI_HOST SPI2_HOST
 #endif // VSPI_HOST
-#define ESP32_DMA
+//#define ESP32_DMA
 #define HAS_DMA
 #define SPI_DMA_CHAN SPI_DMA_CH_AUTO
 #endif
 
 volatile int iCurrentCS;
 
-#ifdef ESP32_DMA
+#ifdef ARDUINO_ARCH_ESP32
 #include "driver/spi_master.h"
 static void spi_pre_transfer_callback(spi_transaction_t *t);
 static spi_device_interface_config_t devcfg;
 static spi_bus_config_t buscfg;
-static int iStarted = 0; // indicates if the master driver has already been initialized
 static void spi_post_transfer_callback(spi_transaction_t *t);
 // ODROID-GO
 //const gpio_num_t SPI_PIN_NUM_MISO = GPIO_NUM_19;
@@ -147,12 +146,12 @@ static spi_device_handle_t spi;
 // ESP32 has enough memory to spare 8K
 DMA_ATTR uint8_t ucTXBuf[4096]="";
 static unsigned char ucRXBuf[4096];
-#ifndef ESP32_DMA
+//#ifndef ESP32_DMA
 static int iTXBufSize = 4096; // max reasonable size
-#endif // ESP32_DMA
-#else
-static int iTXBufSize;
-static unsigned char *ucTXBuf;
+//#endif // ESP32_DMA
+//#else
+//static int iTXBufSize;
+//static unsigned char *ucTXBuf;
 #ifdef __AVR__
 static unsigned char ucRXBuf[512];
 #else
@@ -161,7 +160,7 @@ static unsigned char ucRXBuf[512];
 // explicitly align the memory
 static unsigned char ucRXBuf[2048] __attribute__((aligned (16)));
 #else
-static unsigned char ucRXBuf[2048];
+//static unsigned char ucRXBuf[2048];
 #endif // RP2040
 #endif // __AVR__
 #endif // !ESP32
@@ -802,7 +801,7 @@ static int16_t pgm_read_word(uint8_t *ptr)
 //
 void spilcdSetTXBuffer(uint8_t *pBuf, int iSize)
 {
-#ifndef ESP32_DMA
+#ifndef ARDUINO_ARCH_ESP32
   ucTXBuf = pBuf;
   iTXBufSize = iSize;
 #endif
@@ -1517,6 +1516,9 @@ void SPI_BitBang(SPILCD *pLCD, uint8_t *pData, int iLen, int iMode)
 static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, int iFlags)
 {
     if (iLen == 0) return;
+    if ((iFlags & DRAW_WITH_DMA) && !pLCD->bUseDMA) {
+        iFlags &= ~DRAW_WITH_DMA; // DMA is not being used, so remove the flag
+    }
     if (pLCD->iLCDType == LCD_VIRTUAL_MEM) iFlags = DRAW_TO_RAM;
 
     if (iMode == MODE_DATA && pLCD->pBackBuffer != NULL && !bSetPosition && iFlags & DRAW_TO_RAM) // write it to the back buffer
@@ -1591,9 +1593,10 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
       myPinWrite(pLCD->iCSPin, 0);
 #endif // __AVR__
     }
-#ifdef ESP32_DMA
-    // don't use DMA
-    if (iMode == MODE_COMMAND || !(iFlags & DRAW_WITH_DMA))
+#ifdef ARDUINO_ARCH_ESP32
+    // DMA was requested, so we initialized the SPI peripheral, but
+    // The user is asking to not use it, so use polling SPI
+    if (pLCD->bUseDMA && (iMode == MODE_COMMAND || !(iFlags & DRAW_WITH_DMA)))
     {
         esp_err_t ret;
         static spi_transaction_t t;
@@ -1623,16 +1626,24 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
     // wait for it to complete
 //    spi_transaction_t *rtrans;
 //    spi_device_get_trans_result(spi, &rtrans, portMAX_DELAY);
-#endif
+#endif // ESP32
 #ifdef HAS_DMA
-    if (iMode == MODE_DATA && iLen <= 4000 && (iFlags & DRAW_WITH_DMA)) // only pixels will get DMA treatment
+    if (iMode == MODE_DATA && (iFlags & DRAW_WITH_DMA)) // only pixels will get DMA treatment
     {
-        spilcdWaitDMA(); // wait for any previous transaction to finish
-        iCurrentCS = pLCD->iCSPin;
-        myPinWrite(pLCD->iCSPin, 0);
-        if (pBuf != ucTXBuf) // for DMA, we must use the one output buffer
-            memcpy(ucTXBuf, pBuf, iLen);
-        spilcdWriteDataDMA(pLCD, iLen);
+        while (iLen) {
+            int l = iLen;
+            if (l > 4000) {
+                l = 4000;
+            }
+            spilcdWaitDMA(); // wait for any previous transaction to finish
+            iCurrentCS = pLCD->iCSPin;
+            myPinWrite(pLCD->iCSPin, 0);
+            if (pBuf != ucTXBuf) // for DMA, we must use the one output buffer
+                memcpy(ucTXBuf, pBuf, l);
+            pBuf += l;
+            spilcdWriteDataDMA(pLCD, l);
+            iLen -= l;
+        }
         return;
     }
 #endif // HAS_DMA
@@ -1825,14 +1836,16 @@ void spilcdSetCallbacks(SPILCD *pLCD, RESETCALLBACK pfnReset, DATACALLBACK pfnDa
 // Initialize the LCD controller and clear the display
 // LED pin is optional - pass as -1 to disable
 //
-int spilcdInit(SPILCD *pLCD, int iType, int iFlags, int32_t iSPIFreq, int iCS, int iDC, int iReset, int iLED, int iMISOPin, int iMOSIPin, int iCLKPin)
+int spilcdInit(SPILCD *pLCD, int iType, int iFlags, int32_t iSPIFreq, int iCS, int iDC, int iReset, int iLED, int iMISOPin, int iMOSIPin, int iCLKPin, int bUseDMA)
 {
 unsigned char *s, *d;
 int i, iCount;
+static int iStarted = 0; // indicates if the master driver has already been initialized 
 
     if (pLCD->pFont != NULL) { // the structure is probably not initialized
         memset(pLCD, 0, sizeof(SPILCD));
     }   
+    pLCD->bUseDMA = bUseDMA;
     pLCD->iColStart = pLCD->iRowStart = pLCD->iMemoryX = pLCD->iMemoryY = 0;
     pLCD->iOrientation = 0;
     pLCD->iLCDType = iType;
@@ -1891,8 +1904,8 @@ int i, iCount;
         pinMode(pLCD->iCLKPin, OUTPUT);
         goto skip_spi_init;
     }
-#ifdef ESP32_DMA
-    if (!iStarted) {
+#ifdef ARDUINO_ARCH_ESP32
+    if (!iStarted && bUseDMA) {
     esp_err_t ret;
 
         if (iMOSIPin == -1 || iMOSIPin == 0xff) {
@@ -1927,13 +1940,13 @@ int i, iCount;
     assert(ret==ESP_OK);
     memset(&trans[0], 0, sizeof(spi_transaction_t));
         iStarted = 1; // don't re-initialize this code
-    }
-#else
-#if defined( ARDUINO_ARCH_ESP32 ) || defined( RISCV )
-if (iMISOPin != iMOSIPin)
-    mySPI.begin(iCLKPin, iMISOPin, iMOSIPin, -1); //iCS);
-else
-    mySPI.begin();
+    } else { // no DMA
+       if (iMISOPin != iMOSIPin) {
+          mySPI.begin(iCLKPin, iMISOPin, iMOSIPin, -1); //iCS);
+       } else {
+          mySPI.begin();
+       }
+    } // bUseDMA
 #else
 #ifdef _LINUX_
     iHandle = AIOOpenSPI(0, iSPIFreq); // DEBUG - open SPI channel 0 
@@ -1961,7 +1974,6 @@ else
 #endif // ARDUINO_SAMD_ZERO
 
 #endif // _LINUX_
-#endif
 #endif
 //
 // Start here if bit bang enabled
@@ -1999,10 +2011,12 @@ else
 	}
 start_of_init:
     d = &ucRXBuf[128]; // point to middle otherwise full duplex SPI will overwrite our data
-        if (pLCD->iLCDType == LCD_ST7793)
-        {
+        switch (pLCD->iLCDType) {
+           case LCD_ST7793:
+           {
             uint16_t u16CMD, *s;
             int iSize;
+            pLCD->iCMDType = CMD_TYPE_SITRONIX_16BIT;
             pLCD->iCurrentWidth = pLCD->iWidth = 240;
             pLCD->iCurrentHeight = pLCD->iHeight = 400;
             // 16-bit commands
@@ -2018,9 +2032,11 @@ start_of_init:
                   spilcdWriteData16(pLCD, *s++, DRAW_TO_LCD);
                } // if u16CMD
             } // for
-        } // LCD_ST7793
-
-        else if (pLCD->iLCDType == LCD_ST7796 || pLCD->iLCDType == LCD_ST7796_222) {
+           } // LCD_ST7793
+           break;
+        case LCD_ST7796:
+        case LCD_ST7796_222:
+           {
             uint8_t iBGR = (pLCD->iLCDFlags & FLAGS_SWAP_RB) ? 0x08:0;
             uint8_t iFlipX = (pLCD->iLCDFlags & FLAGS_FLIPX) ? 0x40:0;
             s = (unsigned char *)&ucST7796InitList[0];
@@ -2035,9 +2051,15 @@ start_of_init:
                 pLCD->iCurrentWidth = pLCD->iWidth = 222;
                 pLCD->iColStart = pLCD->iMemoryX = 49;
             }
-            pLCD->iLCDType = LCD_ST7789; // treat them the same from here on
-        }
-	else if (pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7789_172 || pLCD->iLCDType == LCD_ST7789_280 || pLCD->iLCDType == LCD_ST7789_240 || pLCD->iLCDType == LCD_ST7789_135 || pLCD->iLCDType == LCD_ST7789_NOCS)
+            pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
+           }
+           break;
+	case LCD_ST7789:
+        case LCD_ST7789_172:
+        case LCD_ST7789_280:
+        case LCD_ST7789_240:
+        case LCD_ST7789_135:
+        case LCD_ST7789_NOCS:
 	{
         uint8_t iBGR = (pLCD->iLCDFlags & FLAGS_SWAP_RB) ? 8:0;
 		s = (unsigned char *)&uc240x240InitList[0];
@@ -2046,6 +2068,7 @@ start_of_init:
         s[6] = 0x00 + iBGR;
         if (pLCD->iLCDFlags & FLAGS_INVERT)
            s[3] = 0x20; // change inversion on (default) to off
+        pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
         pLCD->iCurrentWidth = pLCD->iWidth = 240;
         pLCD->iCurrentHeight = pLCD->iHeight = 320;
 	if (pLCD->iLCDType == LCD_ST7789_240 || pLCD->iLCDType == LCD_ST7789_NOCS)
@@ -2070,9 +2093,11 @@ start_of_init:
             pLCD->iRowStart = pLCD->iMemoryY = 0;
 	}
         pLCD->iLCDType = LCD_ST7789; // treat them the same from here on
-    } // ST7789
-    else if (pLCD->iLCDType == LCD_JD9613)
-    {
+       } // ST7789
+       break;
+    case LCD_JD9613:
+       {
+        pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
         pLCD->iCurrentWidth = pLCD->iWidth = 126;
         pLCD->iCurrentHeight = pLCD->iHeight = 294;
         pLCD->iColStart = pLCD->iMemoryX = 0;
@@ -2080,8 +2105,11 @@ start_of_init:
         s = (unsigned char *)&ucJD9613InitList[0];
         memcpy_P(d, s, sizeof(ucJD9613InitList));
         s = d;
-    }
-    else if (pLCD->iLCDType == LCD_GC9A01) {
+       }
+       break;
+    case LCD_GC9A01:
+       {
+        pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
         pLCD->iCurrentWidth = pLCD->iWidth = 240;
         pLCD->iCurrentHeight = pLCD->iHeight = 240;
         pLCD->iColStart = pLCD->iMemoryX = 0;
@@ -2089,8 +2117,11 @@ start_of_init:
         s = (unsigned char *)&ucGC9A01InitList[0];
         memcpy_P(d, s, sizeof(ucGC9A01InitList));
         s = d;
-    } // GC9A01
-    else if (pLCD->iLCDType == LCD_GC9107) {
+       } // GC9A01
+       break;
+    case LCD_GC9107:
+       {
+        pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
         pLCD->iCurrentWidth = pLCD->iWidth = 128;
         pLCD->iCurrentHeight = pLCD->iHeight = 128;
         pLCD->iColStart = pLCD->iMemoryX = 2;
@@ -2098,14 +2129,15 @@ start_of_init:
         s = (unsigned char *)&ucGC9107InitList[0];
         memcpy_P(d, s, sizeof(ucGC9107InitList));
         s = d;
-        pLCD->iLCDType = LCD_GC9A01; // treat it like this one
-    } // GC9107
-    else if (pLCD->iLCDType == LCD_SSD1331)
-    {
+       } // GC9107
+       break;
+    case LCD_SSD1331:
+       {
         s = (unsigned char *)ucSSD1331InitList;
         memcpy_P(d, ucSSD1331InitList, sizeof(ucSSD1331InitList));
         s = d;
 
+        pLCD->iCMDType = CMD_TYPE_SOLOMON_OLED2;
         pLCD->iCurrentWidth = pLCD->iWidth = 96;
         pLCD->iCurrentHeight = pLCD->iHeight = 64;
 
@@ -2113,16 +2145,19 @@ start_of_init:
         { // copy to RAM to modify it
             s[6] = 0x76;
         }
-    }
-	else if (pLCD->iLCDType == LCD_SSD1351)
+       }
+       break;
+    case LCD_SSD1351:
 	{
-		s = (unsigned char *)ucOLEDInitList; // do the commands manually
-                memcpy_P(d, s, sizeof(ucOLEDInitList));
+	s = (unsigned char *)ucOLEDInitList; // do the commands manually
+        memcpy_P(d, s, sizeof(ucOLEDInitList));
+        pLCD->iCMDType = CMD_TYPE_SOLOMON_OLED1;
         pLCD->iCurrentWidth = pLCD->iWidth = 128;
         pLCD->iCurrentHeight = pLCD->iHeight = 128;
 	}
+        break;
     // Send the commands/parameters to initialize the LCD controller
-	else if (pLCD->iLCDType == LCD_ILI9341)
+    case LCD_ILI9341:
 	{  // copy to RAM to modify
         s = (unsigned char *)uc240InitList;
         memcpy_P(d, s, sizeof(uc240InitList));
@@ -2131,34 +2166,42 @@ start_of_init:
             s[52] = 0x21; // invert pixels
         else
             s[52] = 0x20; // non-inverted
+        pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
         pLCD->iCurrentWidth = pLCD->iWidth = 240;
         pLCD->iCurrentHeight = pLCD->iHeight = 320;
 	}
-    else if (pLCD->iLCDType == LCD_SSD1283A)
-    {
+       break;
+    case LCD_SSD1283A:
+       {
         s = (unsigned char *)uc132InitList;
         memcpy_P(d, s, sizeof(uc132InitList));
+        pLCD->iCMDType = CMD_TYPE_SOLOMON_LCD;
         pLCD->iCurrentWidth = pLCD->iWidth = 132;
         pLCD->iCurrentHeight = pLCD->iHeight = 132;
-    }
-    else if (pLCD->iLCDType == LCD_SSD1286)
-    {
+       }
+       break;
+    case LCD_SSD1286:
+       {
         s = (unsigned char *)uc132x176InitList;
         memcpy_P(d, s, sizeof(uc132x176InitList));
+        pLCD->iCMDType = CMD_TYPE_SOLOMON_LCD;
         pLCD->iCurrentWidth = pLCD->iWidth = 132;
         pLCD->iCurrentHeight = pLCD->iHeight = 176;
-        pLCD->iLCDType = LCD_SSD1283A; // The rest behaves like the SSD1283A
-    }
-	else if (pLCD->iLCDType == LCD_ILI9342)
+       }
+       break;
+    case LCD_ILI9342:
 	{
 	s = (unsigned char *)uc320InitList;
         memcpy_P(d, s, sizeof(uc320InitList));
         s = d;
+        pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
         pLCD->iCurrentWidth = pLCD->iWidth = 320;
         pLCD->iCurrentHeight = pLCD->iHeight = 240;
 	}
-	else if (pLCD->iLCDType == LCD_HX8357)
+       break;
+    case LCD_HX8357:
 	{
+        pLCD->iCMDType = CMD_TYPE_SITRONIX_16BIT;
         spilcdWriteCommand(pLCD, 0xb0);
         spilcdWriteData16(pLCD, 0x00FF, DRAW_TO_LCD);
         spilcdWriteData16(pLCD, 0x0001, DRAW_TO_LCD);
@@ -2170,13 +2213,14 @@ start_of_init:
         pLCD->iCurrentWidth = pLCD->iWidth = 320;
         pLCD->iCurrentHeight = pLCD->iHeight = 480;
 	}
-    else if (pLCD->iLCDType == LCD_ILI9486 || pLCD->iLCDType == LCD_ILI9488)
+        break;
+    case LCD_ILI9486:
+    case LCD_ILI9488:
         {
             uint8_t ucBGRFlags, iBGROffset, iInvertOffset;
             if (pLCD->iLCDType == LCD_ILI9488) { // slightly different init sequence
                 s = (unsigned char *)ucILI9488InitList;
                 memcpy_P(d, s, sizeof(ucILI9488InitList));
-                pLCD->iLCDType = LCD_ILI9486; // from here on out, they're the same
                 iBGROffset = 18;
                 iInvertOffset = 20;
             } else {
@@ -2185,6 +2229,7 @@ start_of_init:
                 iBGROffset = 66;
                 iInvertOffset = 63;
             }
+            pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
             s = d;
             ucBGRFlags = 0xa; // normal direction, RGB color order
             if (pLCD->iLCDFlags & FLAGS_FLIPX) {
@@ -2201,14 +2246,16 @@ start_of_init:
             pLCD->iCurrentWidth = pLCD->iWidth = 320;
             pLCD->iCurrentHeight = pLCD->iHeight = 480;
         }
-    else if (pLCD->iLCDType == LCD_ILI9225)
-    {
+        break;
+    case LCD_ILI9225:
+        {
         uint8_t iBGR = 0x10;
         if (pLCD->iLCDFlags & FLAGS_SWAP_RB)
             iBGR = 0;
         s = (unsigned char *)ucILI9225InitList;
         memcpy_P(d, s, sizeof(ucILI9225InitList));
         s = d;
+        pLCD->iCMDType = CMD_TYPE_ILITEK_16BIT;
 //        if (iFlags & FLAGS_INVERT)
 //           s[55] = 0x21; // invert on
 //        else
@@ -2216,14 +2263,17 @@ start_of_init:
         s[74] = iBGR;
         pLCD->iCurrentWidth = pLCD->iWidth = 176;
         pLCD->iCurrentHeight = pLCD->iHeight = 220;
-    }
-    else if (pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ST7735S_B)
-    {
+       }
+       break;
+    case LCD_ST7735S:
+    case LCD_ST7735S_B:
+       {
         uint8_t iBGR = 0;
         if (pLCD->iLCDFlags & FLAGS_SWAP_RB)
             iBGR = 8;
         s = (unsigned char *)uc80InitList;
         memcpy_P(d, s, sizeof(uc80InitList));
+        pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
         s = d;
         if (pLCD->iLCDFlags & FLAGS_INVERT)
            s[55] = 0x21; // invert on
@@ -2242,12 +2292,15 @@ start_of_init:
         {
             pLCD->iColStart = pLCD->iMemoryX = 24;
         }
-    }
-	else if (pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7735_128)
+       }
+       break;
+    case LCD_ST7735R:
+    case LCD_ST7735_128:
 	{
 		s = (unsigned char *)uc128InitList;
                 memcpy_P(d, s, sizeof(uc128InitList));
                 s = d;
+                pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
         	pLCD->iCurrentWidth = pLCD->iWidth = 128;
                 if (pLCD->iLCDType == LCD_ST7735R) {
         	   pLCD->iCurrentHeight = pLCD->iHeight = 160;
@@ -2260,10 +2313,12 @@ start_of_init:
                    else
                       s[5] = 0xc8;
                 }
-                pLCD->iLCDType = LCD_ST7735R; // set to this type for the rest of the code to work
 	}
-
-	iCount = 1;
+        break;
+        default:
+          return -1;
+      } // switch on LCD type
+    iCount = 1;
     bSetPosition = 1; // don't let the data writes affect RAM
     s = d; // start of RAM copy of our data
 	while (iCount)
@@ -3040,7 +3095,7 @@ int iLen;
     bSetPosition = 1; // flag to let myspiWrite know to ignore data writes
     y = (y + pLCD->iScrollOffset) % pLCD->iHeight; // scroll offset affects writing position
 
-    if (pLCD->iLCDType == LCD_ILI9225) // 16-bit commands and data
+    if (pLCD->iCMDType == CMD_TYPE_ILITEK_16BIT) // 16-bit commands and data
     { // The display flipping bits don't change the address information, just
         // the horizontal and vertical inc/dec, so we must place the starting
         // address correctly for the 4 different orientations
@@ -3088,7 +3143,7 @@ int iLen;
         bSetPosition = 0;
         return;
     }
-	if (pLCD->iLCDType == LCD_SSD1351) // OLED has very different commands
+	if (pLCD->iCMDType == CMD_TYPE_SOLOMON_OLED1) // OLED has very different commands
 	{
 		spilcdWriteCommand(pLCD, 0x15); // set column
 		ucBuf[0] = x;
@@ -3102,7 +3157,7 @@ int iLen;
 		bSetPosition = 0;
 		return;
 	}
-        else if (pLCD->iLCDType == LCD_SSD1283A) // so does the SSD1283A
+        else if (pLCD->iCMDType == CMD_TYPE_SOLOMON_LCD) // so does the SSD1283A
         {
             switch (pLCD->iOrientation) {
                 case LCD_ORIENTATION_0:
@@ -3166,7 +3221,7 @@ int iLen;
             bSetPosition = 0;
             return;
         }
-    else if (pLCD->iLCDType == LCD_SSD1331)
+    else if (pLCD->iCMDType == CMD_TYPE_SOLOMON_OLED2)
     {
         spilcdWriteCommand(pLCD, 0x15);
         ucBuf[0] = x;
@@ -3184,7 +3239,7 @@ int iLen;
     if (x != pLCD->iOldX || w != pLCD->iOldCX)
     {
         pLCD->iOldX = x; pLCD->iOldCX = w;
-	if (pLCD->iLCDType == LCD_JD9613 || pLCD->iLCDType == LCD_ILI9341 || pLCD->iLCDType == LCD_ILI9342 || pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ILI9486 || pLCD->iLCDType == LCD_GC9A01)
+	if (pLCD->iCMDType == CMD_TYPE_SITRONIX_8BIT)
 	{
 		x += pLCD->iMemoryX;
 		ucBuf[0] = (unsigned char)(x >> 8);
@@ -3195,7 +3250,7 @@ int iLen;
 		ucBuf[3] = (unsigned char)x;
         iLen = 4;
 	}
-	else
+	else // must be Sitronix 16-bit
 	{
 // combine coordinates into 1 write to save time
 		ucBuf[0] = 0;
@@ -3215,7 +3270,7 @@ int iLen;
     if (y != pLCD->iOldY || h != pLCD->iOldCY)
     {
         pLCD->iOldY = y; pLCD->iOldCY = h;
-	if (pLCD->iLCDType == LCD_JD9613 || pLCD->iLCDType == LCD_ILI9341 || pLCD->iLCDType == LCD_ILI9342 || pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ILI9486 || pLCD->iLCDType == LCD_GC9A01)
+	if (pLCD->iCMDType == CMD_TYPE_SITRONIX_8BIT)
 	{
                 if (pLCD->iCurrentHeight == 135 && pLCD->iOrientation == LCD_ORIENTATION_90)
                    pLCD->iMemoryY+= 1; // ST7789 240x135 rotated 90 is off by 1
@@ -3230,7 +3285,7 @@ int iLen;
                 if (pLCD->iCurrentHeight == 135 && pLCD->iOrientation == LCD_ORIENTATION_90)
                    pLCD->iMemoryY -=1; // ST7789 240x135 rotated 90 is off by 1
 	}
-	else
+	else // must be Sitronix 16-bit
 	{
 // combine coordinates into 1 write to save time
 		ucBuf[0] = 0;
@@ -3268,7 +3323,7 @@ uint8_t * spilcdGetDMABuffer(void)
   return (uint8_t *)ucTXBuf;
 }
 
-#ifdef ESP32_DMA
+#ifdef ARDUINO_ARCH_ESP32
 //This function is called (in irq context!) just before a transmission starts. It will
 //set the D/C line to the value indicated in the user field.
 static void spi_pre_transfer_callback(spi_transaction_t *t)
@@ -3311,7 +3366,7 @@ void spilcdWaitDMA(void)
 // Queue a new transaction for the SPI DMA
 void spilcdWriteDataDMA(SPILCD *pLCD, int iLen)
 {
-#ifdef ESP32_DMA
+#ifdef ARDUINO_ARCH_ESP32
 esp_err_t ret;
 
     trans[0].tx_buffer = ucTXBuf;
@@ -3325,7 +3380,7 @@ esp_err_t ret;
     assert (ret==ESP_OK);
 //    iFirst = 0;
     return;
-#endif // ESP32_DMA
+#endif // ARDUINO_ARCH_ESP32
 #ifdef ARDUINO_SAMD_ZERO
   myDMA.changeDescriptor(
     desc,
@@ -4140,9 +4195,9 @@ void DrawScaledLine(SPILCD *pLCD, int32_t iCX, int32_t iCY, int32_t x, int32_t y
     if (x2 >= pLCD->iCurrentWidth) x2 = pLCD->iCurrentWidth-1;
     iLen = x2 - x + 1; // new length
     spilcdSetPosition(pLCD, x, y, iLen, 1, iFlags);
-#ifdef ESP32_DMA 
-    myspiWrite(pLCD, (uint8_t*)pBuf, iLen*2, MODE_DATA, iFlags);
-#else
+//#ifdef ESP32_DMA
+//    myspiWrite(pLCD, (uint8_t*)pBuf, iLen*2, MODE_DATA, iFlags);
+//#else
     // need to refresh the output data each time
     {
     int i;
@@ -4151,7 +4206,7 @@ void DrawScaledLine(SPILCD *pLCD, int32_t iCX, int32_t iCY, int32_t x, int32_t y
         pBuf[i] = us;
     }
     myspiWrite(pLCD, (uint8_t*)&pBuf[1], iLen*2, MODE_DATA, iFlags);
-#endif
+//#endif
 } /* DrawScaledLine() */
 //
 // Draw the 8 pixels around the Bresenham circle
@@ -4208,14 +4263,14 @@ void spilcdEllipse(SPILCD *pLCD, int32_t iCenterX, int32_t iCenterY, int32_t iRa
         us = (usColor >> 8) | (usColor << 8); // swap byte order
         y = iRadius*2;
         if (y > 320) y = 320; // max size
-#ifdef ESP32_DMA
+//#ifdef ESP32_DMA
         for (x=0; x<y; x++)
         {
             usTemp[x] = us;
         }
-#else
-	usTemp[0] = us; // otherwise just set the first one to the color
-#endif
+//#else
+//	usTemp[0] = us; // otherwise just set the first one to the color
+//#endif
         pus = usTemp;
     }
     else
@@ -4290,7 +4345,7 @@ int bX=0, bY=0, bV=0;
         break;
    }
    pLCD->iScreenPitch = pLCD->iCurrentWidth * 2;
-    if (pLCD->iLCDType == LCD_ST7789 && pLCD->iHeight == 240 && pLCD->iWidth == 240) {
+    if (pLCD->iCMDType == CMD_TYPE_SITRONIX_8BIT && pLCD->iHeight == 240 && pLCD->iWidth == 240) {
         // special issue with memory offsets in certain orientations
         if (pLCD->iOrientation == LCD_ORIENTATION_180) {
             pLCD->iMemoryX = 0; pLCD->iMemoryY = 80;
@@ -4300,7 +4355,7 @@ int bX=0, bY=0, bV=0;
             pLCD->iMemoryX = pLCD->iMemoryY = 0;
         }
     }
-   if (pLCD->iLCDType == LCD_JD9613 || pLCD->iLCDType == LCD_ILI9486 || pLCD->iLCDType == LCD_ST7789_NOCS || pLCD->iLCDType == LCD_ST7789_135 || pLCD->iLCDType == LCD_ST7789 || pLCD->iLCDType == LCD_ST7735R || pLCD->iLCDType == LCD_ST7735S || pLCD->iLCDType == LCD_ILI9341 || pLCD->iLCDType == LCD_ILI9342)
+   if (pLCD->iCMDType == CMD_TYPE_SITRONIX_8BIT)
    {
       uint8_t uc = 0;
        if (pLCD->iLCDType == LCD_JD9613 || pLCD->iLCDType == LCD_ILI9342) // x is reversed
@@ -4436,9 +4491,9 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
     int error;
     int xinc, yinc;
     int iLen, x, y;
-#ifndef ESP32_DMA
+//#ifndef ESP32_DMA
     int i;
-#endif
+//#endif
     uint16_t *usTemp = (uint16_t *)ucRXBuf, us;
 
     if (x1 < 0 || x2 < 0 || y1 < 0 || y2 < 0 || x1 >= pLCD->iCurrentWidth || x2 >= pLCD->iCurrentWidth || y1 >= pLCD->iCurrentHeight || y2 >= pLCD->iCurrentHeight)
@@ -4456,10 +4511,10 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
             y1 = y2;
             y2 = temp;
         }
-#ifdef ESP32_DMA
+//#ifdef ESP32_DMA
         for (x=0; x<dx+1; x++) // prepare color data for max length line
             usTemp[x] = us;
-#endif
+//#endif
 //        spilcdSetPosition(x1, y1, dx+1, 1); // set the starting position in both X and Y
         y = y1;
         dy = (y2 - y1);
@@ -4477,10 +4532,10 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
                 error += dx;
 		iLen = (x1-x+1);
                 spilcdSetPosition(pLCD, x, y, iLen, 1, iFlags);
-#ifndef ESP32_DMA
+//#ifndef ESP32_DMA
 	        for (i=0; i<iLen; i++) // prepare color data for max length line
                    usTemp[i] = us;
-#endif
+//#endif
                 myspiWrite(pLCD, (uint8_t*)usTemp, iLen*2, MODE_DATA, iFlags); // write the row we changed
                 y += yinc;
 //                spilcdSetPosY(y, 1); // update the y position only
@@ -4490,10 +4545,10 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
         if (x != x1) // some data needs to be written
         {
 	    iLen = (x1-x+1);
-#ifndef ESP32_DMA
+//#ifndef ESP32_DMA
             for (temp=0; temp<iLen; temp++) // prepare color data for max length line
                usTemp[temp] = us;
-#endif
+//#endif
             spilcdSetPosition(pLCD, x, y, iLen, 1, iFlags);
             myspiWrite(pLCD, (uint8_t*)usTemp, iLen*2, MODE_DATA, iFlags); // write the row we changed
         }
@@ -4509,10 +4564,10 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
             y1 = y2;
             y2 = temp;
         }
-#ifdef ESP32_DMA
+//#ifdef ESP32_DMA
         for (x=0; x<dy+1; x++) // prepare color data for max length line
             usTemp[x] = us;
-#endif
+//#endif
 //        spilcdSetPosition(x1, y1, 1, dy+1); // set the starting position in both X and Y
         dx = (x2 - x1);
         error = dy >> 1;
@@ -4528,10 +4583,10 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
             if (error < 0) { // x needs to change, write any pixels we traversed
                 error += dy;
                 iLen = y1-y+1;
-#ifndef ESP32_DMA
+//#ifndef ESP32_DMA
       		for (i=0; i<iLen; i++) // prepare color data for max length line
        		    usTemp[i] = us;
-#endif
+//#endif
                 spilcdSetPosition(pLCD, x, y, 1, iLen, iFlags);
                 myspiWrite(pLCD, (uint8_t*)usTemp, iLen*2, MODE_DATA, iFlags); // write the row we changed
                 x += xinc;
@@ -4542,10 +4597,10 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
         if (y != y1) // write the last byte we modified if it changed
         {
 	    iLen = y1-y+1;
-#ifndef ESP32_DMA
+//#ifndef ESP32_DMA
             for (i=0; i<iLen; i++) // prepare color data for max length line
                usTemp[i] = us;
-#endif
+//#endif
             spilcdSetPosition(pLCD, x, y, 1, iLen, iFlags);
             myspiWrite(pLCD, (uint8_t*)usTemp, iLen*2, MODE_DATA, iFlags); // write the row we changed
         }
@@ -5383,31 +5438,31 @@ void Core2AxpPowerUp()
 
     //AXP192 30H
     Write1Byte(0x30, (Read8bit(0x30) & 0x04) | 0X02);
-    Serial.printf("axp: vbus limit off\n");
+    //Serial.printf("axp: vbus limit off\n");
 
     //AXP192 GPIO1:OD OUTPUT
     Write1Byte(0x92, Read8bit(0x92) & 0xf8);
-    Serial.printf("axp: gpio1 init\n");
+    //Serial.printf("axp: gpio1 init\n");
 
     //AXP192 GPIO2:OD OUTPUT
     Write1Byte(0x93, Read8bit(0x93) & 0xf8);
-    Serial.printf("axp: gpio2 init\n");
+    //Serial.printf("axp: gpio2 init\n");
 
     //AXP192 RTC CHG
     Write1Byte(0x35, (Read8bit(0x35) & 0x1c) | 0xa2);
-    Serial.printf("axp: rtc battery charging enabled\n");
+    //Serial.printf("axp: rtc battery charging enabled\n");
     
     SetESPVoltage(3350);
-    Serial.printf("axp: esp32 power voltage was set to 3.35v\n");
+    //Serial.printf("axp: esp32 power voltage was set to 3.35v\n");
 
     SetLcdVoltage(2800);
-    Serial.printf("axp: lcd backlight voltage was set to 2.80v\n");
+    //Serial.printf("axp: lcd backlight voltage was set to 2.80v\n");
 
     SetLDOVoltage(2, 3300); //Periph power voltage preset (LCD_logic, SD card)
-    Serial.printf("axp: lcd logic and sdcard voltage preset to 3.3v\n");
+    //Serial.printf("axp: lcd logic and sdcard voltage preset to 3.3v\n");
 
     SetLDOVoltage(3, 2000); //Vibrator power voltage preset
-    Serial.printf("axp: vibrator voltage preset to 2v\n");
+    //Serial.printf("axp: vibrator voltage preset to 2v\n");
 
     SetLDOEnable(2, true);
     SetDCDC3(true); // LCD backlight
@@ -5683,7 +5738,7 @@ int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD
     }
     ParallelDataInit(RD_PIN, WR_PIN, CS_PIN, DC_PIN, iBusWidth, data_pins, iFlags);
     spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
-    return spilcdInit(&_lcd, iType, iFlags, 0,0,0,0,0,0,0,0);
+    return spilcdInit(&_lcd, iType, iFlags, 0,0,0,0,0,0,0,0,0);
 } /* beginParallel() */
 
 int BB_SPI_LCD::begin(int iDisplayType)
@@ -5732,88 +5787,88 @@ int BB_SPI_LCD::begin(int iDisplayType)
     switch (iDisplayType)
     {
         case DISPLAY_TINYPICO_IPS_SHIELD:
-            spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 40000000, iCS, iDC, iRST, iLED, -1, iMOSI, iSCK);
+            spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 40000000, iCS, iDC, iRST, iLED, -1, iMOSI, iSCK,1);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
         case DISPLAY_TINYPICO_EXPLORER_SHIELD:
-            spilcdInit(&_lcd, LCD_ST7789_240, FLAGS_NONE, 40000000, iCS, iDC, iRST, iLED, -1, iMOSI, iSCK);
+            spilcdInit(&_lcd, LCD_ST7789_240, FLAGS_NONE, 40000000, iCS, iDC, iRST, iLED, -1, iMOSI, iSCK,1);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_180);
             break;
         case DISPLAY_WIO_TERMINAL:
-            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 30000000, 69, 70, 71, 72, -1, -1, -1);
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 30000000, 69, 70, 71, 72, -1, -1, -1, 1);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_TEENSY_ILI9341:
-            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 60000000, 10, 9, -1, -1, -1, -1, 13);
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 60000000, 10, 9, -1, -1, -1, -1, 13,1);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
         case DISPLAY_RANKIN_SENSOR:
-            spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 4, 21, 22, 26, -1, 23, 18); // Mike's coin cell pin numbering
+            spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 4, 21, 22, 26, -1, 23, 18,1); // Mike's coin cell pin numbering
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_CYD_35:
-            spilcdInit(&_lcd, LCD_ILI9488, FLAGS_FLIPX, 80000000, 15, 2, -1, 27, 12, 13, 14); // Cheap Yellow Display (ESP32 3.5" 320x480 version)
+            spilcdInit(&_lcd, LCD_ILI9488, FLAGS_FLIPX, 80000000, 15, 2, -1, 27, 12, 13, 14,0); // Cheap Yellow Display (ESP32 3.5" 320x480 version)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90); 
             break;
         case DISPLAY_CYD_128:
-            spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6); // Cheap Yellow Display (ESP32-C3 1.28" round version)
-            break; 
+            spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6, 1); // Cheap Yellow Display (ESP32-C3 1.28" round version)
+            break;
         case DISPLAY_CYD_28C:
-            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14); // Cheap Yellow Display (2.4 and 2.8 w/cap touch)
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14, 0); // Cheap Yellow Display (2.4 and 2.8 w/cap touch)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_CYD:
-            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 21, 12, 13, 14); // Cheap Yellow Display (common versions w/resistive touch)
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 21, 12, 13, 14, 1); // Cheap Yellow Display (common versions w/resistive touch)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_M5STACK_ATOMS3:
-            spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 15, 33, 34, 16, -1, 21, 17);
+            spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 15, 33, 34, 16, -1, 21, 17, 1);
             break;
 #ifdef ARDUINO_M5Stick_C
         case DISPLAY_M5STACK_STICKC:
             AxpPowerUp();
             AxpBrightness(9);
-            spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 24000000, 5, 23, 18, -1, -1, 15, 13);
+            spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 24000000, 5, 23, 18, -1, -1, 15, 13,1);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
         case DISPLAY_M5STACK_STICKCPLUS:
             AxpPowerUp();
             AxpBrightness(9); // turn on backlight (0-12)
-            spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 5, 23, 18, -1, -1, 15, 13);
+            spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 5, 23, 18, -1, -1, 15, 13,1);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
 #endif // ARDUINO_M5Stick_C
 #ifdef ARDUINO_M5STACK_CORES3
         case DISPLAY_M5STACK_CORES3:
             CoreS3AxpPowerUp(); // D/C is shared with MISO
-            spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 3, 35, -1, -1, -1, 37, 36);
+            spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 3, 35, -1, -1, -1, 37, 36,0);
             break; 
 #endif // ARDUINO_M5STACK_CORES3 
 #ifdef ARDUINO_M5STACK_Core2
         case DISPLAY_M5STACK_CORE2:
             Core2AxpPowerUp();
-            spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 5, 15, -1, -1, 38, 23, 18);
+            spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 5, 15, -1, -1, 38, 23, 18,0);
             break;
 #endif // ARDUINO_M5STACK_Core2
         case DISPLAY_RANKIN_COLORCOIN:
-            spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 24000000, 4, 21, 22, 26, -1, 23, 18); // Mike's coin cell pin numbering
+            spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 24000000, 4, 21, 22, 26, -1, 23, 18,1); // Mike's coin cell pin numbering
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
         case DISPLAY_RANKIN_POWER:
-            spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 24000000, 4, 22, 5, 19, -1, 23, 18); // Mike's coin cell pin numbering
+            spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 24000000, 4, 22, 5, 19, -1, 23, 18,1); // Mike's coin cell pin numbering
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
         case DISPLAY_T_DISPLAY:
-            spilcdInit(&_lcd, LCD_ST7789_135, 0, 40000000, 5, 16, 23, 4, -1, 19, 18);
+            spilcdInit(&_lcd, LCD_ST7789_135, 0, 40000000, 5, 16, 23, 4, -1, 19, 18,1);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
         case DISPLAY_T_TRACK: // ESP32-S3 + 126x294 AMOLED
             pinMode(4, OUTPUT); // MOSFET power control
             digitalWrite(4, 1); // turn on the AMOLED display
-            spilcdInit(&_lcd, LCD_JD9613, FLAGS_FLIPX, 80000000, 9, 7, 8, 10, -1, 6, 5);
+            spilcdInit(&_lcd, LCD_JD9613, FLAGS_FLIPX, 80000000, 9, 7, 8, 10, -1, 6, 5, 1);
             break;
         case DISPLAY_T_QT:
-            spilcdInit(&_lcd, LCD_GC9107, 0, 50000000, 5, 6, 1, -1, -1, 2, 3);
+            spilcdInit(&_lcd, LCD_GC9107, 0, 50000000, 5, 6, 1, -1, -1, 2, 3,1);
             pinMode(10, OUTPUT);
             digitalWrite(10, LOW); // inverted backlight signal
             break;
@@ -5825,7 +5880,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             delay(100);
             ParallelDataInit(2, 4, 33, 15, 8, u8D1R32DataPins, 0);
             spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
-            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 0,0,0,0,0,0,0,0);
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 0,0,0,0,0,0,0,0,0);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
 #ifdef ARDUINO_ARCH_RP2040
@@ -5840,7 +5895,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             ucRXBuf[0] = 14; // D0
             ParallelDataInit(13, 12, 10, 11, 8, ucRXBuf, 0);
             spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
-            spilcdInit(&_lcd, LCD_ILI9486, FLAGS_SWAP_RB, 0,0,0,0,0,0,0,0);
+            spilcdInit(&_lcd, LCD_ILI9486, FLAGS_SWAP_RB, 0,0,0,0,0,0,0,0,0);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_KUMAN_24: // ILI9341 240x320 8-bit parallel
@@ -5854,7 +5909,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             ucRXBuf[0] = 14; // D0
             ParallelDataInit(13, 12, 10, 11, 8, ucRXBuf, 0);
             spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
-            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 0,0,0,0,0,0,0,0);
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 0,0,0,0,0,0,0,0,0);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_TUFTY2040: // ST7789 240x320 8-bit parallel
@@ -5863,7 +5918,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             ucRXBuf[0] = 14; // D0
             ParallelDataInit(13, 12, 10, 11, 8, ucRXBuf, 0);
             spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
-            spilcdInit(&_lcd, LCD_ST7789, 0,0,0,0,0,0,0,0,0);
+            spilcdInit(&_lcd, LCD_ST7789, 0,0,0,0,0,0,0,0,0,0);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
 #endif
@@ -5899,10 +5954,10 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_MAKERFABS_S3:
             pinMode(45, OUTPUT); // backlight
             digitalWrite(45, HIGH);
-            _lcd.iLEDPin = 45;
             {
             static const uint8_t u8Pins[16] = {47,21,14,13,12,11,10,9,3,8,16,15,7,6,5,4};
             beginParallel(LCD_ILI9488, (FLAGS_SWAP_RB | FLAGS_SWAP_COLOR), -1, 48, 35, 37, 36, 16, (uint8_t *)u8Pins);
+            _lcd.iLEDPin = 45;
             setRotation(90);
             }
             break;
@@ -6013,7 +6068,7 @@ int BB_SPI_LCD::freeVirtual(void)
 
 int BB_SPI_LCD::begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin)
 {
-  return spilcdInit(&_lcd, iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin);
+  return spilcdInit(&_lcd, iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin,1);
 } /* begin() */
 
 void BB_SPI_LCD::freeBuffer(void)

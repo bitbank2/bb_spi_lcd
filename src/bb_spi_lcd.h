@@ -39,6 +39,16 @@ enum {
 };
 #endif
 
+// LCD command type for managing the address window
+enum {
+   CMD_TYPE_SITRONIX_8BIT = 0,
+   CMD_TYPE_SITRONIX_16BIT,
+   CMD_TYPE_ILITEK_16BIT,
+   CMD_TYPE_SOLOMON_OLED1,
+   CMD_TYPE_SOLOMON_OLED2,
+   CMD_TYPE_SOLOMON_LCD,
+   CMD_TYPE_COUNT
+};
 // Drawing function render flags
 #define DRAW_TO_RAM     1
 #define DRAW_TO_LCD     2
@@ -109,6 +119,8 @@ typedef struct {
 typedef struct tagSPILCD
 {
    int iLCDType, iLCDFlags; // LCD display type and flags
+   int iCMDType; // LCD command type for write address management
+   int bUseDMA; // enable DMA if the hardware supports it
    int iOrientation; // current orientation
    int iScrollOffset, bScroll;
    int iWidth, iHeight; // native direction size
@@ -270,7 +282,7 @@ void spilcdSetTXBuffer(uint8_t *pBuf, int iSize);
 int spilcdSetGamma(SPILCD *pLCD, int iMode);
 
 // Initialize the library
-int spilcdInit(SPILCD *pLCD, int iLCDType, int iFlags, int32_t iSPIFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
+int spilcdInit(SPILCD *pLCD, int iLCDType, int iFlags, int32_t iSPIFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin, int bUseDMA);
 
 //
 // Initialize the touch controller
