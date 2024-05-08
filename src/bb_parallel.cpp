@@ -23,9 +23,10 @@ static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 //#include <soc/lcd_cam_struct.h>
 #include <hal/lcd_types.h>
 //extern DMA_ATTR uint8_t *ucTXBuf;
+extern int bSetPosition;
 volatile bool s3_dma_busy;
 #ifdef CONFIG_IDF_TARGET_ESP32
-uint32_t u32IOMask, u32IOLookup[256]; // for old ESP32
+uint32_t u32IOMask, u32IOMask2, u32IOLookup[256], u32IOLookup2[256]; // for old ESP32
 uint8_t *_data_pins;
 #endif // CONFIG_IDF_TARGET_ESP32
 void spilcdParallelData(uint8_t *pData, int iLen);
@@ -65,7 +66,7 @@ esp_lcd_i80_bus_config_t s3_bus_config = {
 
 esp_lcd_panel_io_i80_config_t s3_io_config = {
         .cs_gpio_num = 0,
-        .pclk_hz = 20000000, // >12Mhz doesn't work on my setup
+        .pclk_hz = 12000000, // >12Mhz doesn't work on my setup
         .trans_queue_depth = 4,
         .on_color_trans_done = s3_notify_dma_ready,
         .user_ctx = nullptr, // debug
@@ -201,31 +202,36 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 #ifdef CONFIG_IDF_TARGET_ESP32
     uint32_t c;
     uint32_t u32Data, u32WR, u32 = REG_READ(GPIO_OUT_REG) & ~u32IOMask;
+    uint32_t u32Data2, u32_2 = REG_READ(GPIO_OUT1_REG) & ~u32IOMask2;
 //    if (iMode == MODE_COMMAND) {
 //        Serial.printf("cmd, len=%d\n", len);
 //    } else {
 //        Serial.printf("data, len=%d\n", len);
 //    }
-        digitalWrite(u8CS, LOW); // activate CS
+//        digitalWrite(u8CS, LOW); // activate CS
 //        digitalWrite(u8DC, iMode == MODE_DATA); // DC
         u32WR = 1 << u8WR;
         u32 &= ~u32WR; // Write low for first half of operation
+        u32 &= ~(1 << u8CS);
         if (iMode == MODE_DATA)
            u32 |= (1 << u8DC);
         else
            u32 &= ~(1 << u8DC);
         for (int i=0; i<len; i++) {
             c = pData[i];
-          //  digitalWrite(u8WR, LOW); // WR low
+            digitalWrite(u8WR, LOW); // WR low
 #ifdef BRUTE_FORCE
             for (int j=0; j<8; j++) {
-                digitalWrite(_data_pins[j], c & (1<<j));
+                digitalWrite(_data_pins[j], (c & (1<<j));
             }
+            digitalWrite(u8WR, 1);
 #else
             u32Data = u32 | u32IOLookup[c];
+            u32Data2 = u32_2 | u32IOLookup2[c];
             REG_WRITE(GPIO_OUT_REG, u32Data);
-#endif // BRUTE_FORCE
+            REG_WRITE(GPIO_OUT1_REG, u32Data2);
             REG_WRITE(GPIO_OUT_REG, u32Data | u32WR); // toggle WR high to latch data
+#endif // BRUTE_FORCE
         } // for i
         digitalWrite(u8CS, HIGH); // deactivate CS
         return;
@@ -280,7 +286,7 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 //
 // Initialize the parallel bus info
 //
-void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, int iFlags)
+void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, int iFlags, uint32_t u32Freq)
 {
     u8WR = WR_PIN;
     u8RD = RD_PIN;
@@ -293,7 +299,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
         digitalWrite(RD_PIN, HIGH); // RD deactivated
     }
 // old ESP32 only supports direct register parallelism
-#if defined( ARDUINO_TEENSY41 ) || defined ( CONFIG_IDF_TARGET_ESP32 )
+#if defined( ARDUINO_TEENSY41 )// || defined ( CONFIG_IDF_TARGET_ESP32 )
     pinMode(u8WR, OUTPUT);
     pinMode(u8CS, OUTPUT);
     pinMode(u8DC, OUTPUT);
@@ -304,20 +310,28 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
     _data_pins = data_pins;
 // Create a bit mask and lookup table to allow fast 8-bit writes
 // to the 32-bit GPIO register
-   u32IOMask = 0;
+   u32IOMask = u32IOMask2 = 0;
    for (int i=0; i<8; i++) {
-       u32IOMask |= 1 << data_pins[i];
+       if (data_pins[i] < 32)
+          u32IOMask |= 1 << data_pins[i];
+       else
+          u32IOMask2 |= 1 << (data_pins[i]-32);
    }
    REG_WRITE(GPIO_ENABLE_W1TS_REG, u32IOMask); // enable all as outputs
+   REG_WRITE(GPIO_ENABLE1_W1TS_REG, u32IOMask2);
 // Fast lookup table to translate 8 scattered bits to 32-bit values
    for (int i=0; i<256; i++) {
-       uint32_t u32 = 0;
+       uint32_t u32 = 0, u32_2 = 0;
        for (int j=0; j<8; j++) {
            if (i & (1<<j)) { // set bit
-               u32 |= (1 << data_pins[j]);
+               if (data_pins[j] < 32)
+                  u32 |= (1 << data_pins[j]);
+               else
+                  u32_2 |= (1 << (data_pins[j]-32));
            }
        } // for j
        u32IOLookup[i] = u32;
+       u32IOLookup2[i] = u32_2;
    } // for i
 #endif // CONFIG_IDF_TARGET_ESP32
    return;
@@ -333,10 +347,15 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
 //  digitalWrite(10, HIGH); // CS deactivated
     gpio_set_function(DC_PIN, GPIO_FUNC_SIO);
     gpio_set_dir(DC_PIN, GPIO_OUT);
+    gpio_set_function(WR_PIN, GPIO_FUNC_SIO);
+    gpio_set_dir(WR_PIN, GPIO_OUT);
 
-    gpio_set_function(CS_PIN, GPIO_FUNC_SIO);
-    gpio_set_dir(CS_PIN, GPIO_OUT);
-    gpio_put(CS_PIN, 0); // CS always active
+    if (CS_PIN >= 0 && CS_PIN < 40) {
+        gpio_set_function(CS_PIN, GPIO_FUNC_SIO);
+        gpio_set_dir(CS_PIN, GPIO_OUT);
+        gpio_put(CS_PIN, 0); // CS always active
+    }
+
       parallel_pio = pio1;
       parallel_sm = pio_claim_unused_sm(parallel_pio, true);
       parallel_offset = pio_add_program(parallel_pio, &st7789_parallel_program);
@@ -393,6 +412,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
 //    pinMode(u8CS, OUTPUT);
 //    digitalWrite(u8CS, LOW); // permanently active
     s3_io_config.cs_gpio_num = u8CS;
+    s3_io_config.pclk_hz = u32Freq;
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_i80(i80_bus, &s3_io_config, &io_handle));
     s3_dma_busy = false;
 #endif // USE_ESP32_GPIO
@@ -415,6 +435,7 @@ void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
     }
 //    s3_dma_busy = true;
     esp_lcd_panel_io_tx_param(io_handle, ucCMD, pParams, iLen);
+    u8CMD = 0x2c; // memory restart
 //    while (s3_dma_busy) {
 //        delayMicroseconds(1);
 //    }
@@ -455,6 +476,7 @@ void spilcdParallelData(uint8_t *pData, int iLen)
         iSize = iLen;
         if (iSize > MAX_TX_SIZE) iSize = MAX_TX_SIZE;
         esp_lcd_panel_io_tx_color(io_handle, u8CMD, pData, iSize);
+        u8CMD = 0x3c; // memory continue;
      //   while (s3_dma_busy) {
            // delayMicroseconds(1);
      //   }

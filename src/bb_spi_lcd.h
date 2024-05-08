@@ -154,7 +154,8 @@ class BB_SPI_LCD : public Print
     int merge(uint16_t *pSrc, uint16_t usTrans, int bSwap565);
     int begin(int iStandardType);
     int begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
-    int beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins);
+    int beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq);
+    void setBrightness(uint8_t u8Brightness); // 0-FF = off to brightest
     void setRotation(int iAngle);
     uint8_t getRotation(void);
     void fillScreen(int iColor);
@@ -166,8 +167,10 @@ class BB_SPI_LCD : public Print
     void getTextBounds(const char *string, int16_t x, int16_t y, int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
     int16_t getCursorX(void);
     int16_t getCursorY(void);
+    int fontHeight(void);
     bool allocBuffer(void);
     void * getBuffer(void);
+    uint16_t color565(uint8_t r, uint8_t g, uint8_t b);
     uint8_t * getDMABuffer(void);
     SPILCD * getLCDStruct(void);
     void freeBuffer(void);
@@ -206,7 +209,7 @@ class BB_SPI_LCD : public Print
 #endif // __cplusplus
 
 // Parallel LCD support functions
-void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, int iSwapColor);
+void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, int iSwapColor, uint32_t u32Freq);
 void ParallelReset(void);
 void ParallelDataWrite(uint8_t *pData, int len, int iMode);
 
@@ -226,19 +229,25 @@ enum
     DISPLAY_T_DONGLE_S3,
     DISPLAY_T_DISPLAY_S3,
     DISPLAY_T_DISPLAY_S3_PRO,
+    DISPLAY_T_DISPLAY_S3_LONG,
+    DISPLAY_T_DISPLAY_S3_AMOLED,
     DISPLAY_T_DISPLAY,
     DISPLAY_T_QT,
     DISPLAY_T_TRACK,
     DISPLAY_TUFTY2040,
+    DISPLAY_RP2040_C3, // 172x320 ST7789 8-bit parallel
     DISPLAY_KUMAN_35,
     DISPLAY_KUMAN_24,
     DISPLAY_MAKERFABS_S3,
     DISPLAY_M5STACK_ATOMS3,
+    DISPLAY_WT32_SC01_PLUS,
     DISPLAY_CYD, // ILI9341 240x320 LCD
     DISPLAY_CYD_2USB, // ST7789 240x320 LCD, 2 USB ports
     DISPLAY_CYD_128, // GC9A01 240x240 LCD
     DISPLAY_CYD_28C,
     DISPLAY_CYD_35, // ILI9488 320x480 LCD
+    DISPLAY_CYD_22C, // ST7789 2.2" 320x240 parallel
+    DISPLAY_CYD_543, // 480x270 ESP32-S3 QSPI
     DISPLAY_D1_R32_ILI9341,
     DISPLAY_COUNT
 };
@@ -490,6 +499,10 @@ enum {
    LCD_GC9107, // 128x128 tiny (0.85")
    LCD_JD9613, // 294x126 AMOLED
    LCD_GDOD0139, // 454x454 1.39" AMOLED
+   LCD_QUAD_SPI, // divider for LCDs with QSPI interface
+   LCD_RM67162, // 240x536 2.4" AMOLED QSPI
+   LCD_AXS15231B, // 180x640 3.4" QSPI
+   LCD_NV3041A, // 480x272 4.3" QSPI
    LCD_VIRTUAL_MEM, // memory-only display
    LCD_VALID_MAX
 };
