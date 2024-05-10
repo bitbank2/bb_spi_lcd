@@ -5958,9 +5958,13 @@ uint8_t ucTemp[4];
            for (j=0; j<8; j++) { // for each bit
                ucIn <<= 1;
                digitalWrite(pLCD->iRTMOSI, (ucOut & 0x80) >> 7);
-               delayMicroseconds(1);
+               __asm__ __volatile__ ("nop");
+               __asm__ __volatile__ ("nop");
+//               delayMicroseconds(1);
                digitalWrite(pLCD->iRTCLK, 1);
-               delayMicroseconds(1);
+               __asm__ __volatile__ ("nop");
+               __asm__ __volatile__ ("nop");
+//               delayMicroseconds(1);
                ucIn |= digitalRead(pLCD->iRTMISO);
                digitalWrite(pLCD->iRTCLK, 0);
                ucOut <<= 1;
@@ -6003,7 +6007,7 @@ uint8_t ucTemp[4];
    }
    Serial.printf("rtInit on pins %d, %d, %d, %d\n", _lcd.iRTMOSI, _lcd.iRTMISO, _lcd.iRTCLK, _lcd.iRTCS);
    if (_lcd.iRTMOSI != _lcd.iMOSIPin) { // use bit bang for the touch controller
-       Serial.println("Resistive touch bit bang");
+       //Serial.println("Resistive touch bit bang");
        pinMode(_lcd.iRTMOSI, OUTPUT);
        pinMode(_lcd.iRTMISO, INPUT);
        pinMode(_lcd.iRTCLK, OUTPUT);
@@ -6119,7 +6123,7 @@ const int iOrients[4] = {0,90,180,270};
     ti->y[0] = y1;
     if (_lcd.iRTCS >= 0 && _lcd.iRTCS < 99)
         digitalWrite(_lcd.iRTCS, 1); // inactive CS
-    delay(10); // don't let the user try to read samples too quickly
+    //delay(10); // don't let the user try to read samples too quickly
     return 1;
 } /* rtReadTouch() */
 
