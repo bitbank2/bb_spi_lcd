@@ -3364,7 +3364,7 @@ void qspiSendCMD(SPILCD *pLCD, uint8_t u8CMD, uint8_t *pParams, int iLen)
     memset(&t, 0, sizeof(t));
     
     spilcdWaitDMA();
-    digitalWrite(pLCD->iCSPin, LOW); // activate CS
+    //digitalWrite(pLCD->iCSPin, LOW); // activate CS
     t.flags = (SPI_TRANS_MULTILINE_CMD | SPI_TRANS_MULTILINE_ADDR);
     t.cmd = 0x02;
     t.addr = u8CMD << 8;
@@ -3373,14 +3373,14 @@ void qspiSendCMD(SPILCD *pLCD, uint8_t u8CMD, uint8_t *pParams, int iLen)
         t.length = 8 * iLen; // length in bits
     }
     spi_device_polling_transmit(spi, &t);
-    digitalWrite(pLCD->iCSPin, HIGH); // de-activate CS
+    //digitalWrite(pLCD->iCSPin, HIGH); // de-activate CS
 } /* qspiSendCMD() */
 
 void qspiSendDATA(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags)
 {
     memset(&trans[0], 0, sizeof(trans[0]));
     
-    digitalWrite(pLCD->iCSPin, LOW); // activate CS
+    //digitalWrite(pLCD->iCSPin, LOW); // activate CS
     if (bSetPosition) { // first data after a setPosition
         trans[0].flags = SPI_TRANS_MODE_QIO;
         trans[0].cmd = 0x32;
@@ -3396,13 +3396,13 @@ void qspiSendDATA(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags)
     if (iFlags & DRAW_WITH_DMA) {
         spilcdWaitDMA();
         transfer_is_done = false;
-        iCurrentCS = pLCD->iCSPin;
-        digitalWrite(pLCD->iCSPin, LOW);
+        //iCurrentCS = pLCD->iCSPin;
+        //digitalWrite(pLCD->iCSPin, LOW);
         spi_device_queue_trans(spi, &trans[0], portMAX_DELAY);
     } else { // use polling
-        digitalWrite(pLCD->iCSPin, LOW);
+        //digitalWrite(pLCD->iCSPin, LOW);
         spi_device_polling_transmit(spi, &trans[0]);
-        digitalWrite(pLCD->iCSPin, HIGH); // de-activate CS
+        //digitalWrite(pLCD->iCSPin, HIGH); // de-activate CS
     }
 } /* qspiSendDATA() */
 
@@ -3634,9 +3634,8 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
 {
     esp_err_t ret;
     
-    pinMode(u8CS, OUTPUT);
-    digitalWrite(u8CS, HIGH);
-    pinMode(u8RST, OUTPUT);
+//    pinMode(u8CS, OUTPUT);
+//    digitalWrite(u8CS, HIGH);
     if (u8LED != 0xff) {
         pinMode(u8LED, OUTPUT);
         digitalWrite(u8LED, HIGH); // turn on backlight
@@ -3644,7 +3643,8 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
     pLCD->iLEDPin = u8LED;
     pLCD->iCSPin = u8CS;
     pLCD->iLCDType = iLCDType;
-    if (u8RST < 99) { // has a reset GPIO?
+    if (u8RST != 0xff) { // has a reset GPIO?
+      pinMode(u8RST, OUTPUT);
       digitalWrite(u8RST, HIGH);
       delay(130);
       digitalWrite(u8RST, LOW);
@@ -3669,8 +3669,8 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
         .address_bits = 24,
         .mode = SPI_MODE0,
         .clock_speed_hz = (int)u32Freq,
-        .spics_io_num = -1,
-        // .spics_io_num = TFT_QSPI_CS,
+        //.spics_io_num = -1,
+        .spics_io_num = u8CS,
         .flags = SPI_DEVICE_HALFDUPLEX,
         .queue_size = 17,
         .post_cb = spi_post_transfer_callback,
