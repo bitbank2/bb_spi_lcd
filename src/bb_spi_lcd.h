@@ -122,6 +122,8 @@ typedef struct tagSPILCD
    int iCMDType; // LCD command type for write address management
    int bUseDMA; // enable DMA if the hardware supports it
    int iOrientation; // current orientation
+   int iRTOrientation; // rotation of touch controller relative to display
+   int iRTThreshold; // pressure value used to know it is pressed
    int iScrollOffset, bScroll;
    int iWidth, iHeight; // native direction size
    int iCurrentWidth, iCurrentHeight; // rotated size
@@ -199,7 +201,7 @@ class BB_SPI_LCD : public Print
     using Print::write;
     virtual size_t write(uint8_t);
     // Resistive Touch methods
-    int rtInit(uint8_t u8MOSI, uint8_t uiMISO, uint8_t u8CLK, uint8_t u8CS);
+    int rtInit(uint8_t u8MOSI = 255, uint8_t uiMISO = 255, uint8_t u8CLK = 255, uint8_t u8CS = 255);
     int rtReadTouch(TOUCHINFO *ti);
 
   private:

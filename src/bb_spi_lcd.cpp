@@ -156,24 +156,20 @@ static unsigned char ucRXBuf[4096];
 //#ifndef ESP32_DMA
 static int iTXBufSize = 4096; // max reasonable size
 //#endif // ESP32_DMA
-//#else
-//static int iTXBufSize;
-//static unsigned char *ucTXBuf;
+#else
+static int iTXBufSize;
+static unsigned char *ucTXBuf;
 #ifdef __AVR__
 static unsigned char ucRXBuf[512];
-#else
-#ifdef ARDUINO_ARCH_RP2040
+#elif defined( ARDUINO_ARCH_RP2040 )
 // RP2040 somehow allocates this on an odd byte boundary if we don't
 // explicitly align the memory
 static unsigned char ucRXBuf[2048] __attribute__((aligned (16)));
 #else
-//static unsigned char ucRXBuf[2048];
-#endif // RP2040
-#endif // __AVR__
-#else
 static int iTXBufSize;
 static unsigned char *ucTXBuf;
 static unsigned char ucRXBuf[512];
+#endif // AVR | RP2040
 #endif // !ESP32
 #define LCD_DELAY 0xff
 #ifdef __AVR__
@@ -1861,7 +1857,9 @@ int spilcdInit(SPILCD *pLCD, int iType, int iFlags, int32_t iSPIFreq, int iCS, i
 {
 unsigned char *s, *d;
 int i, iCount;
+#ifdef ARDUINO_ARCH_ESP32
 static int iStarted = 0; // indicates if the master driver has already been initialized 
+#endif
 
     if (pLCD->pFont != NULL && iSPIFreq != 0) { // the structure is probably not initialized
         memset(pLCD, 0, sizeof(SPILCD));
@@ -4803,7 +4801,10 @@ int bX=0, bY=0, bV=0;
 //
 int spilcdFill(SPILCD *pLCD, unsigned short usData, int iFlags)
 {
-int i, cx, tx, x, y;
+#ifdef __AVR__
+int cx, tx;
+#endif
+int x, y;
 uint16_t *u16Temp = (uint16_t *)ucRXBuf;
 
     // make sure we're in landscape mode to use the correct coordinates
@@ -4811,8 +4812,8 @@ uint16_t *u16Temp = (uint16_t *)ucRXBuf;
     usData = (usData >> 8) | (usData << 8); // swap hi/lo byte for LCD
     if (pLCD->iLCDFlags & FLAGS_MEM_RESTART) {
         // special case for parllel LCD using ESP32 LCD API
-        for (i=0; i<pLCD->iCurrentWidth; i++)
-            u16Temp[i] = usData;
+        for (x=0; x<pLCD->iCurrentWidth; x++)
+            u16Temp[x] = usData;
         for (y=0; y<pLCD->iCurrentHeight; y++)
         {
             spilcdSetPosition(pLCD, 0,y,pLCD->iCurrentWidth,1, iFlags);
@@ -4821,12 +4822,6 @@ uint16_t *u16Temp = (uint16_t *)ucRXBuf;
         return 0;
     }
     spilcdSetPosition(pLCD, 0,0,pLCD->iCurrentWidth,pLCD->iCurrentHeight, iFlags);
-    // fit within our temp buffer
-    cx = 1; tx = pLCD->iCurrentWidth;
-    if (pLCD->iCurrentWidth > 160)
-    {
-       cx = 2; tx = pLCD->iCurrentWidth/2;
-    }
 #ifdef __AVR__
     cx = 16;
     tx = pLCD->iCurrentWidth/16;
@@ -4844,8 +4839,8 @@ uint16_t *u16Temp = (uint16_t *)ucRXBuf;
     for (y=0; y<pLCD->iCurrentHeight; y+=2)
     {
         // MCUs with more RAM can do it faster
-        for (i=0; i<pLCD->iCurrentWidth*2; i++) {
-            u16Temp[i] = usData; // data will be overwritten
+        for (x=0; x<pLCD->iCurrentWidth*2; x++) {
+            u16Temp[x] = usData; // data will be overwritten
         }
         myspiWrite(pLCD, (uint8_t *)u16Temp, pLCD->iCurrentWidth*4, MODE_DATA, iFlags);
     } // for y
@@ -5961,6 +5956,7 @@ uint8_t ucTemp[4];
            for (j=0; j<8; j++) { // for each bit
                ucIn <<= 1;
                digitalWrite(pLCD->iRTMOSI, (ucOut & 0x80) >> 7);
+               delayMicroseconds(1);
                digitalWrite(pLCD->iRTCLK, 1);
                delayMicroseconds(1);
                ucIn |= digitalRead(pLCD->iRTMISO);
@@ -5991,16 +5987,26 @@ int BB_SPI_LCD::rtInit(uint8_t u8MOSI, uint8_t u8MISO, uint8_t u8CLK, uint8_t u8
 {
 uint8_t ucTemp[4];
 
-   _lcd.iRTMOSI = u8MOSI;
-   _lcd.iRTMISO = u8MISO;
-   _lcd.iRTCLK = u8CLK;
-   _lcd.iRTCS = u8CS;
+   if (u8MOSI != 255) {
+      _lcd.iRTMOSI = u8MOSI;
+   }
+   if (u8MISO != 255) {
+      _lcd.iRTMISO = u8MISO;
+   }
+   if (u8CLK != 255) {
+      _lcd.iRTCLK = u8CLK;
+   }
+   if (u8CS != 255) {
+      _lcd.iRTCS = u8CS;
+   }
+   Serial.printf("rtInit on pins %d, %d, %d, %d\n", _lcd.iRTMOSI, _lcd.iRTMISO, _lcd.iRTCLK, _lcd.iRTCS);
    if (_lcd.iRTMOSI != _lcd.iMOSIPin) { // use bit bang for the touch controller
-       pinMode(u8MOSI, OUTPUT);
-       pinMode(u8MISO, INPUT);
-       pinMode(u8CLK, OUTPUT);
-       if (u8CS >= 0 && u8CS < 99)
-           pinMode(u8CS, OUTPUT);
+       Serial.println("Resistive touch bit bang");
+       pinMode(_lcd.iRTMOSI, OUTPUT);
+       pinMode(_lcd.iRTMISO, INPUT);
+       pinMode(_lcd.iRTCLK, OUTPUT);
+       if (_lcd.iRTCS >= 0 && _lcd.iRTCS < 99)
+           pinMode(_lcd.iRTCS, OUTPUT);
    }
    return BB_ERROR_SUCCESS;
 } /* rtInit() */
@@ -6029,7 +6035,12 @@ int BB_SPI_LCD::rtReadTouch(TOUCHINFO *ti)
 {
 // commands and SPI transaction filler to read 3 byte response for x/y
 uint8_t ucTemp[4];
-int x, y, xa[3], ya[3], x1, y1, z, z1, z2;
+int iOrient, x, y, xa[3], ya[3], x1, y1, z, z1, z2;
+const int iOrients[4] = {0,90,180,270};
+
+    iOrient = iOrients[_lcd.iOrientation];
+    iOrient += _lcd.iRTOrientation; // touch sensor relative to default angle
+    iOrient %= 360;
 
     if (ti == NULL)
         return 0;
@@ -6043,14 +6054,16 @@ int x, y, xa[3], ya[3], x1, y1, z, z1, z2;
     rtSPIXfer(&_lcd, 0x91, ucTemp, 3);
     z2 = (int)((ucTemp[2] + (ucTemp[1]<<8)) >> 3);
     z -= z2;
-    if (z > 6500) {
+    if (z > _lcd.iRTThreshold) {
         ti->count = 0;
         if (_lcd.iRTCS >= 0 && _lcd.iRTCS < 99)
             digitalWrite(_lcd.iRTCS, 1); // inactive CS
         return 0; // not a valid pressure reading
+    } else {
+      //Serial.printf("pressure = %d\n", z);
     }
     ti->count = 1; // only 1 touch point possible
-    z = (6500 - z)/16;
+    z = (_lcd.iRTThreshold - z)/16;
     ti->pressure[0] = (uint8_t)z;
 
     // read the X and Y values 3 times because they jitter
@@ -6072,9 +6085,9 @@ int x, y, xa[3], ya[3], x1, y1, z, z1, z2;
     y = rtAVG(ya);
     // since we know the display size and orientation, scale the coordinates
     // to match. The 0 orientation corresponds to flipped X and correct Y
-    switch (_lcd.iOrientation) {
-        case LCD_ORIENTATION_0:
-        case LCD_ORIENTATION_180:
+    switch (iOrient) {
+        case 0:
+        case 180:
             y1 = (1900 - y)*_lcd.iCurrentHeight;
             y1 /= 1780;
             if (y1 < 0) y1 = 0;
@@ -6084,8 +6097,8 @@ int x, y, xa[3], ya[3], x1, y1, z, z1, z2;
             if (x1 < 0) x1 = 0;
             else if (x1 >= _lcd.iCurrentWidth) x1 = _lcd.iCurrentWidth-1;
             break;
-        case LCD_ORIENTATION_90:
-        case LCD_ORIENTATION_270:
+        case 90:
+        case 270:
             x1 = (1900 - y) * _lcd.iCurrentWidth;
             x1 /= 1780;
             if (x1 < 0) x1 = 0;
@@ -6096,7 +6109,7 @@ int x, y, xa[3], ya[3], x1, y1, z, z1, z2;
             else if (y1 >= _lcd.iCurrentHeight) y1 = _lcd.iCurrentHeight-1;
             break;
     } // switch on orientation
-    if (_lcd.iOrientation == LCD_ORIENTATION_0 || _lcd.iOrientation == LCD_ORIENTATION_90) {
+    if (iOrient == 0 || iOrient == 90) {
         x1 = _lcd.iCurrentWidth - 1 - x1;
         y1 = _lcd.iCurrentHeight - 1 - y1;
     }
@@ -6222,6 +6235,12 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_CYD:
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 21, 12, 13, 14, 1); // Cheap Yellow Display (common versions w/resistive touch)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            _lcd.iRTMOSI = 32;
+            _lcd.iRTMISO = 39; // pre-configure resistive touch
+            _lcd.iRTCLK = 25;
+            _lcd.iRTCS = 33;
+            _lcd.iRTOrientation = 0;
+            _lcd.iRTThreshold = 6300;
             break;
         case DISPLAY_M5STACK_ATOMS3:
             spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 15, 33, 34, 16, -1, 21, 17, 1);
@@ -6354,6 +6373,12 @@ int BB_SPI_LCD::begin(int iDisplayType)
 
         case DISPLAY_CYD_543: // 480x272  NV3041A
             memset(&_lcd, 0, sizeof(_lcd));
+            _lcd.iRTMOSI = 11;
+            _lcd.iRTMISO = 13; // pre-configure resistive touch
+            _lcd.iRTCLK = 12;
+            _lcd.iRTCS = 38;
+            _lcd.iRTOrientation = 180;
+            _lcd.iRTThreshold = 7500;
             _lcd.bUseDMA = 1; // allows DMA access
             // CS=45, SCK=47, D0=21, D1=48, D2=40, D3=39, RST=-1, BL=1
             qspiInit(&_lcd, LCD_NV3041A, FLAGS_NONE, 32000000, 45,47,21,48,40,39,-1,1);       
