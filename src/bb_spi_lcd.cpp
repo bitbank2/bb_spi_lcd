@@ -3644,12 +3644,14 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
     pLCD->iLEDPin = u8LED;
     pLCD->iCSPin = u8CS;
     pLCD->iLCDType = iLCDType;
-    digitalWrite(u8RST, HIGH);
-    delay(130);
-    digitalWrite(u8RST, LOW);
-    delay(130);
-    digitalWrite(u8RST, HIGH);
-    delay(300);
+    if (u8RST < 99) { // has a reset GPIO?
+      digitalWrite(u8RST, HIGH);
+      delay(130);
+      digitalWrite(u8RST, LOW);
+      delay(130);
+      digitalWrite(u8RST, HIGH);
+      delay(300);
+    }
 
     spi_bus_config_t buscfg = {
         .data0_io_num = u8D0,
