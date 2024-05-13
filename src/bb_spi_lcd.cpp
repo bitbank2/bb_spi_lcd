@@ -4593,7 +4593,7 @@ void DrawScaledLine(SPILCD *pLCD, int32_t iCX, int32_t iCY, int32_t x, int32_t y
 // Draw the 8 pixels around the Bresenham circle
 // (scaled to make an ellipse)
 //
-void BresenhamCircle(SPILCD *pLCD, int32_t iCX, int32_t iCY, int32_t x, int32_t y, int32_t iXFrac, int32_t iYFrac, uint16_t iColor, uint16_t *pFill, int iFlags)
+void BresenhamCircle(SPILCD *pLCD, int32_t iCX, int32_t iCY, int32_t x, int32_t y, int32_t iXFrac, int32_t iYFrac, uint16_t iColor, uint16_t *pFill, uint8_t u8Parts, int iFlags)
 {
     if (pFill != NULL) // draw a filled ellipse
     {
@@ -4609,18 +4609,26 @@ void BresenhamCircle(SPILCD *pLCD, int32_t iCX, int32_t iCY, int32_t x, int32_t 
     }
     else // draw 8 pixels around the edges
     {
-        DrawScaledPixel(pLCD, iCX, iCY, x, y, iXFrac, iYFrac, iColor, iFlags);
-        DrawScaledPixel(pLCD, iCX, iCY, -x, y, iXFrac, iYFrac, iColor, iFlags);
-        DrawScaledPixel(pLCD, iCX, iCY, x, -y, iXFrac, iYFrac, iColor, iFlags);
-        DrawScaledPixel(pLCD, iCX, iCY, -x, -y, iXFrac, iYFrac, iColor, iFlags);
-        DrawScaledPixel(pLCD, iCX, iCY, y, x, iXFrac, iYFrac, iColor, iFlags);
-        DrawScaledPixel(pLCD, iCX, iCY, -y, x, iXFrac, iYFrac, iColor, iFlags);
-        DrawScaledPixel(pLCD, iCX, iCY, y, -x, iXFrac, iYFrac, iColor, iFlags);
-        DrawScaledPixel(pLCD, iCX, iCY, -y, -x, iXFrac, iYFrac, iColor, iFlags);
+        if (u8Parts & 1) {
+            DrawScaledPixel(pLCD, iCX, iCY, -x, -y, iXFrac, iYFrac, iColor, iFlags);
+            DrawScaledPixel(pLCD, iCX, iCY, -y, -x, iXFrac, iYFrac, iColor, iFlags);
+        }
+        if (u8Parts & 2) {
+            DrawScaledPixel(pLCD, iCX, iCY, x, -y, iXFrac, iYFrac, iColor, iFlags);
+            DrawScaledPixel(pLCD, iCX, iCY, y, -x, iXFrac, iYFrac, iColor, iFlags);
+        }
+        if (u8Parts & 4) {
+            DrawScaledPixel(pLCD, iCX, iCY, y, x, iXFrac, iYFrac, iColor, iFlags);
+            DrawScaledPixel(pLCD, iCX, iCY, x, y, iXFrac, iYFrac, iColor, iFlags);
+        }
+        if (u8Parts & 8) {
+            DrawScaledPixel(pLCD, iCX, iCY, -y, x, iXFrac, iYFrac, iColor, iFlags);
+            DrawScaledPixel(pLCD, iCX, iCY, -x, y, iXFrac, iYFrac, iColor, iFlags);
+        }
     }
 } /* BresenhamCircle() */
 
-void spilcdEllipse(SPILCD *pLCD, int32_t iCenterX, int32_t iCenterY, int32_t iRadiusX, int32_t iRadiusY, unsigned short usColor, int bFilled, int iFlags)
+void spilcdEllipse(SPILCD *pLCD, int32_t iCenterX, int32_t iCenterY, int32_t iRadiusX, int32_t iRadiusY, uint8_t u8Parts, unsigned short usColor, int bFilled, int iFlags)
 {
     int32_t iRadius, iXFrac, iYFrac;
     int32_t iDelta, x, y;
@@ -4664,7 +4672,7 @@ void spilcdEllipse(SPILCD *pLCD, int32_t iCenterX, int32_t iCenterY, int32_t iRa
     x = 0; y = iRadius;
     while (x < y)
     {
-        BresenhamCircle(pLCD, iCenterX, iCenterY, x, y, iXFrac, iYFrac, usColor, pus, iFlags);
+        BresenhamCircle(pLCD, iCenterX, iCenterY, x, y, iXFrac, iYFrac, usColor, pus, u8Parts, iFlags);
         x++;
         if (iDelta < 0)
         {
@@ -6690,6 +6698,34 @@ void BB_SPI_LCD::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c
   spilcdRectangle(&_lcd, x, y, w, h, color, color, 0, DRAW_TO_LCD | DRAW_TO_RAM);
 } /* drawRect() */
 
+void BB_SPI_LCD::fillRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color, int iFlags)
+{
+  spilcdRectangle(&_lcd, x+r, y, w-(2*r), r, color, color, 1, iFlags);
+  spilcdRectangle(&_lcd, x, y+r, w, h-(2*r), color, color, 1, iFlags);
+  spilcdRectangle(&_lcd, x+r, y+h-r, w-(2*r), r, color, color, 1, iFlags);
+
+  // draw four corners
+  spilcdEllipse(&_lcd, x+w-r-1, y+r, r, r, 1, color, 1, iFlags);
+  spilcdEllipse(&_lcd, x+r, y+r, r, r, 2, color, 1, iFlags);
+  spilcdEllipse(&_lcd, x+w-r-1, y+h-r, r, r, 1, color, 1, iFlags);
+  spilcdEllipse(&_lcd, x+r, y+h-r, r, r, 2, color, 1, iFlags);
+
+} /* fillRoundRect() */
+
+void BB_SPI_LCD::drawRoundRect(int16_t x, int16_t y, int16_t w, int16_t h,
+                                 int16_t r, uint16_t color, int iFlags)
+{
+    spilcdDrawLine(&_lcd, x+r, y, x+w-r, y, color, iFlags); // top
+    spilcdDrawLine(&_lcd, x+r, y+h-1, x+w-r, y+h-1, color, iFlags); // bottom
+    spilcdDrawLine(&_lcd, x, y+r, x, y+h-r, color, iFlags); // left
+    spilcdDrawLine(&_lcd, x+w-1, y+r, x+w-1, y+h-r, color, iFlags); // right
+    // four corners
+    spilcdEllipse(&_lcd, x+r, y+r, r, r, 1, color, 0, iFlags);
+    spilcdEllipse(&_lcd, x+w-r-1, y+r, r, r, 2, color, 0, iFlags);
+    spilcdEllipse(&_lcd, x+w-r-1, y+h-r-1, r, r, 4, color, 0, iFlags);
+    spilcdEllipse(&_lcd, x+r, y+h-r-1, r, r, 8, color, 0, iFlags);
+} /* drawRoundRect() */
+
 void BB_SPI_LCD::fillRect(int x, int y, int w, int h, int iColor)
 {
   spilcdRectangle(&_lcd, x, y, w, h, iColor, iColor, 1, DRAW_TO_LCD | DRAW_TO_RAM);
@@ -6870,19 +6906,19 @@ int16_t BB_SPI_LCD::height(void)
 }
 void BB_SPI_LCD::drawCircle(int32_t x, int32_t y, int32_t r, uint32_t color)
 {
-  spilcdEllipse(&_lcd, x, y, r, r, (uint16_t)color, 0, DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdEllipse(&_lcd, x, y, r, r, 0xf, (uint16_t)color, 0, DRAW_TO_LCD | DRAW_TO_RAM);
 }
 void BB_SPI_LCD::fillCircle(int32_t x, int32_t y, int32_t r, uint32_t color)
 {
-  spilcdEllipse(&_lcd, x, y, r, r, (uint16_t)color, 1, DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdEllipse(&_lcd, x, y, r, r, 0xf, (uint16_t)color, 1, DRAW_TO_LCD | DRAW_TO_RAM);
 }
 void BB_SPI_LCD::drawEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color)
 {
-  spilcdEllipse(&_lcd, x, y, rx, ry, (uint16_t)color, 0, DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdEllipse(&_lcd, x, y, rx, ry, 0xf, (uint16_t)color, 0, DRAW_TO_LCD | DRAW_TO_RAM);
 }
 void BB_SPI_LCD::fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color)
 {
-  spilcdEllipse(&_lcd, x, y, rx, ry, (uint16_t)color, 1, DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdEllipse(&_lcd, x, y, rx, ry, 0xf, (uint16_t)color, 1, DRAW_TO_LCD | DRAW_TO_RAM);
 }
 
 void BB_SPI_LCD::pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags)

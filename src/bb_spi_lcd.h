@@ -193,6 +193,8 @@ class BB_SPI_LCD : public Print
     int drawBMP(const uint8_t *pBMP, int iDestX, int iDestY, int bStretch = 0, int iTransparent = -1, int iFlags = DRAW_TO_LCD);
     void drawLine(int x1, int y1, int x2, int y2, int iColor);
     void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
+    void drawRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color, int iFlags = DRAW_TO_LCD);
+    void fillRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color, int iFlags = DRAW_TO_LCD);
     void drawCircle(int32_t x, int32_t y, int32_t r, uint32_t color);
     void fillCircle(int32_t x, int32_t y, int32_t r, uint32_t color);
     void drawEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color);
@@ -382,7 +384,7 @@ int spilcdSetPixel(SPILCD *pLCD, int x, int y, unsigned short usPixel, int bRend
 int spilcdSetOrientation(SPILCD *pLCD, int iOrientation);
 
 // Draw an ellipse with X and Y radius
-void spilcdEllipse(SPILCD *pLCD, int32_t centerX, int32_t centerY, int32_t radiusX, int32_t radiusY, unsigned short color, int bFilled, int bRender);
+void spilcdEllipse(SPILCD *pLCD, int32_t centerX, int32_t centerY, int32_t radiusX, int32_t radiusY, uint8_t u8Parts, uint16_t color, int bFilled, int bRender);
 //
 // Draw a line between 2 points using Bresenham's algorithm
 // 
