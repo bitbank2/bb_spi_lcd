@@ -212,7 +212,9 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 //        digitalWrite(u8DC, iMode == MODE_DATA); // DC
         u32WR = 1 << u8WR;
         u32 &= ~u32WR; // Write low for first half of operation
-        u32 &= ~(1 << u8CS);
+        if (u8CS < 32) {
+           u32 &= ~(1 << u8CS);
+        }
         if (iMode == MODE_DATA)
            u32 |= (1 << u8DC);
         else
@@ -390,7 +392,9 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
     }
 #ifdef USE_ESP32_GPIO
     pinMode(u8WR, OUTPUT);
-    pinMode(u8CS, OUTPUT);
+    if (u8CS < 99) {
+        pinMode(u8CS, OUTPUT);
+    }
     pinMode(u8DC, OUTPUT);
     // Create N-bit dedicated GPIO bundle to toggle all pins at once
     for (int i = 0; i < iBusWidth; i++) {
@@ -411,7 +415,10 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
     ESP_ERROR_CHECK(esp_lcd_new_i80_bus(&s3_bus_config, &i80_bus));
 //    pinMode(u8CS, OUTPUT);
 //    digitalWrite(u8CS, LOW); // permanently active
-    s3_io_config.cs_gpio_num = u8CS;
+    if (u8CS < 99)
+        s3_io_config.cs_gpio_num = u8CS;
+    else
+        s3_io_config.cs_gpio_num = -1;
     s3_io_config.pclk_hz = u32Freq;
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_i80(i80_bus, &s3_io_config, &io_handle));
     s3_dma_busy = false;

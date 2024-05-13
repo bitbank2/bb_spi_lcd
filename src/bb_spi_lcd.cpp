@@ -3436,7 +3436,11 @@ void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h)
 
 void qspiSetBrightness(SPILCD *pLCD ,uint8_t u8Brightness)
 {
-    qspiSendCMD(pLCD, 0x51, &u8Brightness, 1);
+    if (pLCD->iLEDPin < 99) {
+       ledcWrite(pLCD->iLEDPin, u8Brightness); // PWM
+    } else { // AMOLED display
+       qspiSendCMD(pLCD, 0x51, &u8Brightness, 1);
+    }
 } /* qspiSetBrightness() */
 
 void qspiRotate(SPILCD *pLCD, int iOrient)
@@ -3637,8 +3641,11 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
 //    pinMode(u8CS, OUTPUT);
 //    digitalWrite(u8CS, HIGH);
     if (u8LED != 0xff) {
-        pinMode(u8LED, OUTPUT);
-        digitalWrite(u8LED, HIGH); // turn on backlight
+     // ledcSetup(0, 5000, 8); // set PWM channel 0, 5Khz, 8-bit resolution
+      ledcAttach(u8LED, 5000, 8); // attach pin to channel 0
+      ledcWrite(u8LED, 192); // set to moderate brightness to begin
+//        pinMode(u8LED, OUTPUT);
+//        digitalWrite(u8LED, HIGH); // turn on backlight
     }
     pLCD->iLEDPin = u8LED;
     pLCD->iCSPin = u8CS;
@@ -6212,7 +6219,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_CYD_35:
-            spilcdInit(&_lcd, LCD_ILI9488, FLAGS_FLIPX, 80000000, 15, 2, -1, 27, 12, 13, 14, 1); // Cheap Yellow Display (ESP32 3.5" 320x480 version)
+            spilcdInit(&_lcd, LCD_ILI9488, FLAGS_FLIPX | FLAGS_SWAP_RB, 80000000, 15, 2, -1, 27, 12, 13, 14, 1); // Cheap Yellow Display (ESP32 3.5" 320x480 version)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
         case DISPLAY_WT32_SC01_PLUS: // 3.5" 480x320 ST7796 8-bit parallel
@@ -6220,7 +6227,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             pinMode(45, OUTPUT); // backlight
             digitalWrite(45, HIGH);
             _lcd.iLEDPin = 45; 
-            beginParallel(LCD_ST7796, FLAGS_INVERT | FLAGS_MEM_RESTART, 4, -1, 47, -1, 0, 8, (uint8_t *)u8_WT32_Pins, 12000000);
+            beginParallel(LCD_ST7796, FLAGS_INVERT | FLAGS_FLIPX | FLAGS_SWAP_RB | FLAGS_MEM_RESTART, 4, -1, 47, -1, 0, 8, (uint8_t *)u8_WT32_Pins, 12000000);
             setRotation(270);
             break;
         case DISPLAY_CYD_22C: // 2.2" ST7789 8-bit parallel
