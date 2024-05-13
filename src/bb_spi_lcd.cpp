@@ -3437,7 +3437,9 @@ void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h)
 void qspiSetBrightness(SPILCD *pLCD ,uint8_t u8Brightness)
 {
     if (pLCD->iLEDPin < 99) {
-       //ledcWrite(pLCD->iLEDPin, u8Brightness); // PWM
+#if (ESP_IDF_VERSION_MAJOR > 4)
+       ledcWrite(pLCD->iLEDPin, u8Brightness); // PWM
+#endif
     } else { // AMOLED display
        qspiSendCMD(pLCD, 0x51, &u8Brightness, 1);
     }
@@ -3641,11 +3643,13 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
 //    pinMode(u8CS, OUTPUT);
 //    digitalWrite(u8CS, HIGH);
     if (u8LED != 0xff) {
-     // ledcSetup(0, 5000, 8); // set PWM channel 0, 5Khz, 8-bit resolution
-    //  ledcAttach(u8LED, 5000, 8); // attach pin to channel 0
-    //  ledcWrite(u8LED, 192); // set to moderate brightness to begin
+#if (ESP_IDF_VERSION_MAJOR > 4)
+        ledcAttach(u8LED, 5000, 8); // attach pin to channel 0
+        ledcWrite(u8LED, 192); // set to moderate brightness to begin
+#else
         pinMode(u8LED, OUTPUT);
         digitalWrite(u8LED, HIGH); // turn on backlight
+#endif
     }
     pLCD->iLEDPin = u8LED;
     pLCD->iCSPin = u8CS;
