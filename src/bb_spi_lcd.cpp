@@ -151,7 +151,10 @@ static spi_transaction_t trans[2];
 static spi_device_handle_t spi;
 //static TaskHandle_t xTaskToNotify = NULL;
 // ESP32 has enough memory to spare 8K
-DMA_ATTR uint8_t ucTXBuf[4096]="";
+DMA_ATTR uint8_t ucTXBuf[8192]="";
+uint8_t *pDMA0 = ucTXBuf;
+uint8_t *pDMA1 = &ucTXBuf[4096]; // 2 ping-pong buffers
+uint8_t *pDMA;
 static unsigned char ucRXBuf[4096];
 //#ifndef ESP32_DMA
 static int iTXBufSize = 4096; // max reasonable size
@@ -1527,6 +1530,12 @@ void SPI_BitBang(SPILCD *pLCD, uint8_t *pData, int iLen, int iMode)
 static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, int iFlags)
 {
     if (iLen == 0) return;
+// swap DMA buffers
+    if (pDMA == pDMA0) {
+        pDMA = pDMA1;
+    } else {
+        pDMA = pDMA0;
+    }
     if ((iFlags & DRAW_WITH_DMA) && !pLCD->bUseDMA) {
         iFlags &= ~DRAW_WITH_DMA; // DMA is not being used, so remove the flag
     }
@@ -2520,11 +2529,11 @@ int spilcdDraw53Tile(SPILCD *pLCD, int x, int y, int cx, int cy, unsigned char *
     y = (y * 5)/3;
     iPitch16 = iPitch/2;
     if (cx < 24 || cy < 24)
-        memset(ucTXBuf, 0, 40*40*2);
+        memset(pDMA, 0, 40*40*2);
     for (j=0; j<cy/3; j++) // 8 blocks of 3 lines
     {
         s = (uint16_t *)&pTile[j*3*iPitch];
-        d = (uint16_t *)&ucTXBuf[j*40*5*2];
+        d = (uint16_t *)&pDMA[j*40*5*2];
         for (i=0; i<cx-2; i+=3) // source columns (3 at a time)
         {
             u32A = s[i];
@@ -2589,7 +2598,7 @@ int spilcdDraw53Tile(SPILCD *pLCD, int x, int y, int cx, int cy, unsigned char *
         } // for i
     } // for j
     spilcdSetPosition(pLCD, x, y, 40, 40, iFlags);
-    myspiWrite(pLCD, ucTXBuf, 40*40*2, MODE_DATA, iFlags);
+    myspiWrite(pLCD, pDMA, 40*40*2, MODE_DATA, iFlags);
     return 0;
 } /* spilcdDraw53Tile() */
 //
@@ -3364,7 +3373,6 @@ void qspiSendCMD(SPILCD *pLCD, uint8_t u8CMD, uint8_t *pParams, int iLen)
     memset(&t, 0, sizeof(t));
     
     spilcdWaitDMA();
-    //digitalWrite(pLCD->iCSPin, LOW); // activate CS
     t.flags = (SPI_TRANS_MULTILINE_CMD | SPI_TRANS_MULTILINE_ADDR);
     t.cmd = 0x02;
     t.addr = u8CMD << 8;
@@ -3373,36 +3381,28 @@ void qspiSendCMD(SPILCD *pLCD, uint8_t u8CMD, uint8_t *pParams, int iLen)
         t.length = 8 * iLen; // length in bits
     }
     spi_device_polling_transmit(spi, &t);
-    //digitalWrite(pLCD->iCSPin, HIGH); // de-activate CS
 } /* qspiSendCMD() */
 
 void qspiSendDATA(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags)
 {
+    spilcdWaitDMA();
     memset(&trans[0], 0, sizeof(trans[0]));
     
-    //digitalWrite(pLCD->iCSPin, LOW); // activate CS
+    trans[0].flags = SPI_TRANS_MODE_QIO;
+    trans[0].cmd = 0x32;
     if (bSetPosition) { // first data after a setPosition
-        trans[0].flags = SPI_TRANS_MODE_QIO;
-        trans[0].cmd = 0x32;
         trans[0].addr = 0x2c00;
         bSetPosition = 0;
     } else { // all data after...
-        trans[0].flags = SPI_TRANS_MODE_QIO;
-        trans[0].cmd = 0x32;
         trans[0].addr = 0x3c00;
     }
     trans[0].tx_buffer = pData;
     trans[0].length = iLen*8;
     if (iFlags & DRAW_WITH_DMA) {
-        spilcdWaitDMA();
         transfer_is_done = false;
-        //iCurrentCS = pLCD->iCSPin;
-        //digitalWrite(pLCD->iCSPin, LOW);
         spi_device_queue_trans(spi, &trans[0], portMAX_DELAY);
     } else { // use polling
-        //digitalWrite(pLCD->iCSPin, LOW);
         spi_device_polling_transmit(spi, &trans[0]);
-        //digitalWrite(pLCD->iCSPin, HIGH); // de-activate CS
     }
 } /* qspiSendDATA() */
 
@@ -3735,14 +3735,14 @@ void dma_callback(Adafruit_ZeroDMA *dma) {
 // wait for previous transaction to complete
 void spilcdWaitDMA(void)
 {
-#ifdef HAS_DMA
+//#ifdef HAS_DMA
     while (!transfer_is_done);
-    myPinWrite(iCurrentCS, 1);
-    iCurrentCS = -1;
+//    myPinWrite(iCurrentCS, 1);
+//    iCurrentCS = -1;
 #ifdef ARDUINO_SAMD_ZERO
     mySPI.endTransaction();
 #endif // ARDUINO_SAMD_ZERO
-#endif // HAS_DMA
+//#endif // HAS_DMA
 }
 // Queue a new transaction for the SPI DMA
 void spilcdWriteDataDMA(SPILCD *pLCD, int iLen)
@@ -5970,7 +5970,7 @@ uint8_t ucTemp[4];
 
  // do simultaneous read+write on the SPI touch controller bus
 
-   if (pLCD->iRTMOSI != pLCD->iMOSIPin) { // use bit bang
+   if (pLCD->iRTMOSI != 0xff) { // use bit bang
        for (i=0; i<iLen; i++) { // for each byte
            ucOut = ucTemp[i];
            ucIn = 0;
@@ -5991,20 +5991,25 @@ uint8_t ucTemp[4];
         pRXBuf[i] = ucIn; // store the received data
         } // for each byte
     } else { // shared SPI bus
+        spi_transaction_t t;
         memcpy(pRXBuf, ucTemp, iLen); // Arduino only allows duplex overwrite
-#ifdef ARDUINO_ARCH_RP2040
-        pSPI->beginTransaction(SPISettings(2000000, MSBFIRST, 0));            
-        pSPI->transfer(pRXBuf, iLen);
-        pSPI->endTransaction();
-#else          
-        mySPI.beginTransaction(SPISettings(2000000, MSBFIRST, 0));            
-        mySPI.transfer(pRXBuf, iLen);
-        mySPI.endTransaction();
-#endif
+        digitalWrite(pLCD->iRTCS, LOW);
+        pLCD->pSPI->beginTransaction(SPISettings(2000000, MSBFIRST, 0));
+        pLCD->pSPI->transfer(pRXBuf, iLen);
+        pLCD->pSPI->endTransaction();
+        digitalWrite(pLCD->iRTCS, HIGH);
     }         
 } /* rtSPIXfer() */
 
 #ifdef __cplusplus
+int BB_SPI_LCD::rtInit(SPIClass &spi, uint8_t u8CS)
+{
+    if (u8CS != 0xff) _lcd.iRTCS = u8CS;
+    _lcd.pSPI = &spi;
+    _lcd.iRTMOSI = 0xff; // disable bit banging logic
+    pinMode(_lcd.iRTCS, OUTPUT);
+    return 1;
+}
 //
 // C++ Class implementation
 //
@@ -6260,6 +6265,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_CYD:
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 21, 12, 13, 14, 1); // Cheap Yellow Display (common versions w/resistive touch)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            _lcd.pSPI = NULL;
             _lcd.iRTMOSI = 32;
             _lcd.iRTMISO = 39; // pre-configure resistive touch
             _lcd.iRTCLK = 25;
@@ -6580,6 +6586,11 @@ void BB_SPI_LCD::freeBuffer(void)
 {
     spilcdFreeBackbuffer(&_lcd);
 }
+
+void BB_SPI_LCD::waitDMA(void)
+{
+    spilcdWaitDMA();
+} /* waitDMA() */
 
 uint8_t * BB_SPI_LCD::getDMABuffer(void)
 {

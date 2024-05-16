@@ -24,7 +24,7 @@ static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 #include <hal/lcd_types.h>
 //extern DMA_ATTR uint8_t *ucTXBuf;
 extern int bSetPosition;
-volatile bool s3_dma_busy;
+extern volatile bool transfer_is_done;
 #ifdef CONFIG_IDF_TARGET_ESP32
 uint32_t u32IOMask, u32IOMask2, u32IOLookup[256], u32IOLookup2[256]; // for old ESP32
 uint8_t *_data_pins;
@@ -34,7 +34,7 @@ static bool s3_notify_dma_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_pane
 {
 //    lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
 //    lv_disp_flush_ready(disp_driver);
-    s3_dma_busy = false;
+    transfer_is_done = true;
     return false;
 }
 // from esp-idf/components/esp_lcd/src/esp_lcd_panel_io_i80.c
@@ -404,7 +404,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
     }
     // Create bundleA, output only
     ESP_ERROR_CHECK(dedic_gpio_new_bundle(&bundleA_config, &bundleA));
-    s3_dma_busy = false;
+    transfer_is_done = true;
 #else // USE_ESP32_GPIO
     s3_bus_config.dc_gpio_num = u8DC;
     s3_bus_config.wr_gpio_num = u8WR;
@@ -421,7 +421,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
         s3_io_config.cs_gpio_num = -1;
     s3_io_config.pclk_hz = u32Freq;
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_i80(i80_bus, &s3_io_config, &io_handle));
-    s3_dma_busy = false;
+    transfer_is_done = true;
 #endif // USE_ESP32_GPIO
 #endif // ARDUINO_ARCH_ESP32
 } /* ParallelDataInit() */
@@ -437,15 +437,11 @@ void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
         spilcdParallelData(pParams, iLen);
     }
 #else
-    while (s3_dma_busy) {
+    while (!transfer_is_done) {
 //        delayMicroseconds(1);
     }
-//    s3_dma_busy = true;
     esp_lcd_panel_io_tx_param(io_handle, ucCMD, pParams, iLen);
     u8CMD = 0x2c; // memory restart
-//    while (s3_dma_busy) {
-//        delayMicroseconds(1);
-//    }
 #endif // USE_ESP32_GPIO
 #endif // ARDUINO_ARCH_ESP32
 } /* spilcdParallelCMDParams() */
@@ -476,17 +472,14 @@ void spilcdParallelData(uint8_t *pData, int iLen)
 #else
     int iSize;
     while (iLen) {
-        while (s3_dma_busy) {
+        while (!transfer_is_done) {
            // delayMicroseconds(1);
         }
-        s3_dma_busy = true; // since we're not using a ping-pong buffer scheme
+        transfer_is_done = false; // since we're not using a ping-pong buffer scheme
         iSize = iLen;
         if (iSize > MAX_TX_SIZE) iSize = MAX_TX_SIZE;
         esp_lcd_panel_io_tx_color(io_handle, u8CMD, pData, iSize);
         u8CMD = 0x3c; // memory continue;
-     //   while (s3_dma_busy) {
-           // delayMicroseconds(1);
-     //   }
         iLen -= iSize;
         pData += iSize;
     }

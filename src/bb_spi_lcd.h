@@ -22,6 +22,7 @@
 // these are defined the same in the OLED library
 #ifndef _LINUX_
 #include <Arduino.h>
+#include <SPI.h>
 #include <Print.h>
 #if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5STACK_CORES3)
 #include <Wire.h>
@@ -128,6 +129,7 @@ typedef struct tagSPILCD
    int iWidth, iHeight; // native direction size
    int iCurrentWidth, iCurrentHeight; // rotated size
    int iCSPin, iCLKPin, iMOSIPin, iDCPin, iResetPin, iLEDPin;
+   SPIClass *pSPI;
    uint8_t iRTMOSI, iRTMISO, iRTCLK, iRTCS; // resistive touch GPIO
    int32_t iSPISpeed, iSPIMode; // SPI settings
    int iScreenPitch, iOffset, iMaxOffset; // display RAM values
@@ -174,6 +176,7 @@ class BB_SPI_LCD : public Print
     void * getBuffer(void);
     uint16_t color565(uint8_t r, uint8_t g, uint8_t b);
     uint8_t * getDMABuffer(void);
+    void waitDMA(void);
     SPILCD * getLCDStruct(void);
     void freeBuffer(void);
     void setTextSize(int iSize) {}; // empty for now
@@ -204,6 +207,7 @@ class BB_SPI_LCD : public Print
     virtual size_t write(uint8_t);
     // Resistive Touch methods
     int rtInit(uint8_t u8MOSI = 255, uint8_t uiMISO = 255, uint8_t u8CLK = 255, uint8_t u8CS = 255);
+    int rtInit(SPIClass &pSPI, uint8_t u8CS = 0xff);
     int rtReadTouch(TOUCHINFO *ti);
 
   private:
