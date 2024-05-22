@@ -2015,8 +2015,13 @@ static int iStarted = 0; // indicates if the master driver has already been init
 	pinMode(pLCD->iDCPin, OUTPUT);
 	if (pLCD->iLEDPin != -1)
     {
+#if (ESP_IDF_VERSION_MAJOR > 4)
+        ledcAttach(pLCD->iLEDPin, 5000, 8); // attach pin to channel 0
+        ledcWrite(pLCD->iLEDPin, 192); // set to moderate brightness to begin
+#else   
 	pinMode(pLCD->iLEDPin, OUTPUT);
         myPinWrite(pLCD->iLEDPin, 1); // turn on the backlight
+#endif
     }
 	if (pLCD->iResetPin != -1)
 	{
@@ -6234,6 +6239,13 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_CYD_2USB:
             spilcdInit(&_lcd, LCD_ST7789, FLAGS_INVERT, 40000000, 15, 2, -1, 21, 12, 13, 14, 1); // Cheap Yellow Display 2 USB (2.8 w/resistive touch, 2 USB ports)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            _lcd.pSPI = NULL;
+            _lcd.iRTMOSI = 32;
+            _lcd.iRTMISO = 39; // pre-configure resistive touch
+            _lcd.iRTCLK = 25;
+            _lcd.iRTCS = 33;
+            _lcd.iRTOrientation = 0;
+            _lcd.iRTThreshold = 6300;
             break;
         case DISPLAY_CYD_35:
             spilcdInit(&_lcd, LCD_ILI9488, FLAGS_FLIPX | FLAGS_SWAP_RB, 80000000, 15, 2, -1, 27, 12, 13, 14, 1); // Cheap Yellow Display (ESP32 3.5" 320x480 version)
@@ -6571,9 +6583,7 @@ uint16_t u16;
 void BB_SPI_LCD::setBrightness(uint8_t u8Brightness)
 {
 #ifdef ARDUINO_ARCH_ESP32
-    if (_lcd.iLCDType > LCD_QUAD_SPI) {
-        qspiSetBrightness(&_lcd, u8Brightness);
-    }
+     qspiSetBrightness(&_lcd, u8Brightness);
 #endif
 } /* setBrightness() */
 
