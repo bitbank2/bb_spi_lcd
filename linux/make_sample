@@ -1,4 +1,4 @@
-CFLAGS=-c -Wall -O2 -D_LINUX_
+CFLAGS=-c -Wall -O2 -D__LINUX__
 LIBS = -lbb_spi_lcd -lgpiod -lm -lpthread
 
 all: sample

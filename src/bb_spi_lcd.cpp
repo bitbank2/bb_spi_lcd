@@ -23,7 +23,7 @@
 // control lines. 
 //#if defined(ADAFRUIT_PYBADGE_M4_EXPRESS)
 //#define SPI SPI1
-#ifndef _LINUX_
+#ifndef __LINUX__
 #include <SPI.h>
 #endif
 //#define SPI mySPI
@@ -69,7 +69,7 @@ SPIClass mySPI(
 #endif // WIO
 #endif // ARDUINO_SAMD_ZERO
 
-#ifdef _LINUX_
+#ifdef __LINUX__
 #include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -781,7 +781,7 @@ const uint8_t ucSmallFont[]PROGMEM = {
     0x41,0x41,0x3e,0x08,0x00,0x02,0x01,0x02,0x01,0x00,0x00,0x3c,0x26,0x23,0x26,0x3c};
 
 // wrapper/adapter functions to make the code work on Linux
-#ifdef _LINUX_
+#ifdef __LINUX__
 static int digitalRead(int iPin)
 {
   return gpiod_line_get_value(lines[iPin]);
@@ -827,7 +827,7 @@ static int16_t pgm_read_word(uint8_t *ptr)
   return ptr[0] + (ptr[1]<<8);
 }
 #endif // FUTURE
-#endif // _LINUX_
+#endif // __LINUX__
 void spilcdParallelData(uint8_t *pData, int iLen)
 {
 	// not supported on Linux
@@ -839,7 +839,7 @@ void spilcdParallelData(uint8_t *pData, int iLen)
 //
 void spilcdSetTXBuffer(uint8_t *pBuf, int iSize)
 {
-#if !defined( ARDUINO_ARCH_ESP32 ) && !defined( _LINUX_ )
+#if !defined( ARDUINO_ARCH_ESP32 ) && !defined( __LINUX__ )
   ucTXBuf = pBuf;
   iTXBufSize = iSize;
 #endif
@@ -1555,7 +1555,7 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
 {
     if (iLen == 0) return;
 // swap DMA buffers
-#ifndef _LINUX_
+#ifndef __LINUX__
     if (pDMA == pDMA0) {
         pDMA = pDMA1;
     } else {
@@ -1701,7 +1701,7 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
 #endif // HAS_DMA
         
 // No DMA requested or available, fall through to here
-#ifdef _LINUX_
+#ifdef __LINUX__
 {
 struct spi_ioc_transfer spi;
    memset(&spi, 0, sizeof(spi));
@@ -1731,7 +1731,7 @@ struct spi_ioc_transfer spi;
 #else
     mySPI.endTransaction();
 #endif
-#endif // _LINUX_
+#endif // __LINUX__
     if (iMode == MODE_COMMAND) // restore D/C pin to DATA
         spilcdSetMode(pLCD, MODE_DATA);
     if (pLCD->iCSPin != -1)
@@ -1938,12 +1938,12 @@ static int iStarted = 0; // indicates if the master driver has already been init
     pLCD->iLEDPin = -1; // assume it's not defined
 	if (iType <= LCD_INVALID || iType >= LCD_VALID_MAX)
 	{
-#ifndef _LINUX_
+#ifndef __LINUX__
 		Serial.println("Unsupported display type\n");
-#endif // _LINUX_
+#endif // __LINUX__
 		return -1;
 	}
-#ifndef _LINUX_
+#ifndef __LINUX__
     pLCD->iSPIMode = (iType == LCD_ST7789_NOCS || iType == LCD_ST7789) ? SPI_MODE3 : SPI_MODE0;
 #endif
     pLCD->iSPISpeed = iSPIFreq;
@@ -1955,7 +1955,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
     pLCD->iLEDPin = iLED;
 	if (pLCD->iDCPin == -1)
 	{
-#ifndef _LINUX_
+#ifndef __LINUX__
 		Serial.println("One or more invalid GPIO pin numbers\n");
 #endif
 		return -1;
@@ -2010,7 +2010,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
        }
     } // bUseDMA
 #else
-#ifdef _LINUX_
+#ifdef __LINUX__
     spi_fd = open("/dev/spidev0.1", O_RDWR); // DEBUG - open SPI channel 0 
 #else
 #ifdef ARDUINO_ARCH_RP2040
@@ -2035,7 +2035,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
   myDMA.setCallback(dma_callback);
 #endif // ARDUINO_SAMD_ZERO
 
-#endif // _LINUX_
+#endif // __LINUX__
 #endif
 //
 // Start here if bit bang enabled
@@ -3049,12 +3049,12 @@ void spilcdShutdown(SPILCD *pLCD)
 		spilcdWriteCommand(pLCD, 0x28); // Display OFF
     myPinWrite(pLCD->iLEDPin, 0); // turn off the backlight
     spilcdFreeBackbuffer(pLCD);
-#ifdef _LINUX_
+#ifdef __LINUX__
 	close(spi_fd);
 	//AIORemoveGPIO(pLCD->iDCPin);
 	//AIORemoveGPIO(pLCD->iResetPin);
 	//AIORemoveGPIO(pLCD->iLEDPin);
-#endif // _LINUX_
+#endif // __LINUX__
 } /* spilcdShutdown() */
 //
 // Write a command byte followed by parameters
@@ -6000,7 +6000,7 @@ void AxpPowerUp()
 //
 void rtSPIXfer(SPILCD *pLCD, uint8_t ucCMD, uint8_t *pRXBuf, int iLen)
 {
-#ifdef _LINUX_
+#ifdef __LINUX__
 	// not supported
     (void)pLCD;
     (void)ucCMD;
@@ -6045,7 +6045,7 @@ uint8_t ucTemp[4];
         pLCD->pSPI->endTransaction();
         digitalWrite(pLCD->iRTCS, HIGH);
     }
-#endif // !_LINUX_   
+#endif // !__LINUX__   
 } /* rtSPIXfer() */
 
 #ifdef __cplusplus

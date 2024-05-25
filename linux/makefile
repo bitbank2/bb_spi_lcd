@@ -1,4 +1,4 @@
-CFLAGS=-c -Wall -O2 -D_LINUX_ -I../src
+CFLAGS=-c -Wall -O2 -D__LINUX__ -I../src
 LIBS = -lm -lpthread
 
 all: libbb_spi_lcd.a
@@ -9,7 +9,7 @@ libbb_spi_lcd.a: bb_spi_lcd.o
 	sudo cp ../src/bb_spi_lcd.h /usr/local/include
 
 bb_spi_lcd.o: bb_spi_lcd.c ../src/bb_spi_lcd.cpp ../src/bb_spi_lcd.h
-	$(CC) $(CFLAGS) -D_LINUX_ bb_spi_lcd.c
+	$(CC) $(CFLAGS) bb_spi_lcd.c
 
 clean:
 	rm *.o libbb_spi_lcd.a

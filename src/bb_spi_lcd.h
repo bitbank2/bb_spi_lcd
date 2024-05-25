@@ -20,14 +20,14 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 // these are defined the same in the OLED library
-#ifndef _LINUX_
+#ifndef __LINUX__
 #include <Arduino.h>
 #include <SPI.h>
 #include <Print.h>
 #if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5STACK_CORES3)
 #include <Wire.h>
 #endif
-#endif // _LINUX_
+#endif // __LINUX__
 
 #if !defined( __SS_OLED_H__ ) && !defined( __ONEBITDISPLAY__ )
 enum {
@@ -129,7 +129,7 @@ typedef struct tagSPILCD
    int iWidth, iHeight; // native direction size
    int iCurrentWidth, iCurrentHeight; // rotated size
    int iCSPin, iCLKPin, iMOSIPin, iDCPin, iResetPin, iLEDPin;
-#ifndef _LINUX_
+#ifndef __LINUX__
    SPIClass *pSPI;
 #endif
    uint8_t iRTMOSI, iRTMISO, iRTCLK, iRTCS; // resistive touch GPIO
@@ -280,7 +280,7 @@ typedef enum
 #define FLAGS_MEM_RESTART 32
 #define FLAGS_CS_EACHBYTE 64
 
-#if defined(_LINUX_) && defined(__cplusplus)
+#if defined(__LINUX__) && defined(__cplusplus)
 extern "C" {
 #endif
 
@@ -528,7 +528,7 @@ enum {
 // touch panel types
 #define TOUCH_XPT2046 1
 
-#if defined(_LINUX_) && defined(__cplusplus)
+#if defined(__LINUX__) && defined(__cplusplus)
 }
 #endif
 
