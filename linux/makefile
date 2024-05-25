@@ -1,4 +1,4 @@
-CFLAGS=-c -Wall -O2 -I../src
+CFLAGS=-c -Wall -O2 -D_LINUX_ -I../src
 LIBS = -lm -lpthread
 
 all: libbb_spi_lcd.a

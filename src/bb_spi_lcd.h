@@ -129,7 +129,9 @@ typedef struct tagSPILCD
    int iWidth, iHeight; // native direction size
    int iCurrentWidth, iCurrentHeight; // rotated size
    int iCSPin, iCLKPin, iMOSIPin, iDCPin, iResetPin, iLEDPin;
+#ifndef _LINUX_
    SPIClass *pSPI;
+#endif
    uint8_t iRTMOSI, iRTMISO, iRTCLK, iRTCS; // resistive touch GPIO
    int32_t iSPISpeed, iSPIMode; // SPI settings
    int iScreenPitch, iOffset, iMaxOffset; // display RAM values

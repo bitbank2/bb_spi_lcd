@@ -78,19 +78,27 @@ SPIClass mySPI(
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/i2c-dev.h>
+#include <linux/spi/spidev.h>
+#include <gpiod.h>
 #include <math.h>
-#include <armbianio.h>
+#ifndef CONSUMER
+#define CONSUMER "Consumer"
+#endif
+struct gpiod_chip *chip = NULL;
+struct gpiod_line *lines[64];
+uint8_t ucTXBuf[4096];
+uint8_t *pDMA = ucTXBuf;
+static uint8_t transfer_is_done = 1;
 #define false 0
 #define true 1
 #define PROGMEM
 #define memcpy_P memcpy
-// convert wire library constants into ArmbianIO values
-#define OUTPUT GPIO_OUT
-#define INPUT GPIO_IN
-#define INPUT_PULLUP GPIO_IN_PULLUP
+#define OUTPUT 0
+#define INPUT 1
+#define INPUT_PULLUP 2
 #define HIGH 1
 #define LOW 0
-static int iHandle; // SPI handle
+static int spi_fd; // SPI handle
 #else // Arduino
 // Use the default (non DMA) SPI library for boards we don't currently support
 #if !defined(__SAMD51__) && !defined(ARDUINO_SAMD_ZERO) && !defined(ARDUINO_ARCH_RP2040)
@@ -160,8 +168,8 @@ static unsigned char ucRXBuf[4096];
 static int iTXBufSize = 4096; // max reasonable size
 //#endif // ESP32_DMA
 #else
-static int iTXBufSize;
-static unsigned char *ucTXBuf;
+//static int iTXBufSize;
+//static unsigned char *ucTXBuf;
 #ifdef __AVR__
 static unsigned char ucRXBuf[512];
 #elif defined( ARDUINO_ARCH_RP2040 )
@@ -169,9 +177,9 @@ static unsigned char ucRXBuf[512];
 // explicitly align the memory
 static unsigned char ucRXBuf[2048] __attribute__((aligned (16)));
 #else
-static int iTXBufSize;
-static unsigned char *ucTXBuf;
-static unsigned char ucRXBuf[512];
+//static int iTXBufSize;
+//static unsigned char *ucTXBuf;
+static unsigned char ucRXBuf[1024];
 #endif // AVR | RP2040
 #endif // !ESP32
 #define LCD_DELAY 0xff
@@ -776,17 +784,27 @@ const uint8_t ucSmallFont[]PROGMEM = {
 #ifdef _LINUX_
 static int digitalRead(int iPin)
 {
-  return AIOReadGPIO(iPin);
+  return gpiod_line_get_value(lines[iPin]);
 } /* digitalRead() */
 
 static void digitalWrite(int iPin, int iState)
 {
-   AIOWriteGPIO(iPin, iState);
+   gpiod_line_set_value(lines[iPin], iState);
 } /* digitalWrite() */
 
 static void pinMode(int iPin, int iMode)
 {
-   AIOAddGPIO(iPin, iMode);
+   if (chip == NULL) {
+       chip = gpiod_chip_open_by_name("gpiochip0");
+   }
+   lines[iPin] = gpiod_chip_get_line(chip, iPin);
+   if (iMode == OUTPUT) {
+       gpiod_line_request_output(lines[iPin], CONSUMER, 0);
+   } else if (iMode == INPUT_PULLUP) {
+       gpiod_line_request_input_flags(lines[iPin], CONSUMER, GPIOD_LINE_REQUEST_FLAG_BIAS_PULL_UP);
+   } else { // plain input
+       gpiod_line_request_input(lines[iPin], CONSUMER);
+   }
 } /* pinMode() */
 
 static void delay(int iMS)
@@ -815,7 +833,7 @@ static int16_t pgm_read_word(uint8_t *ptr)
 //
 void spilcdSetTXBuffer(uint8_t *pBuf, int iSize)
 {
-#ifndef ARDUINO_ARCH_ESP32
+#if !defined( ARDUINO_ARCH_ESP32 ) && !defined( _LINUX_ )
   ucTXBuf = pBuf;
   iTXBufSize = iSize;
 #endif
@@ -1531,11 +1549,13 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
 {
     if (iLen == 0) return;
 // swap DMA buffers
+#ifndef _LINUX_
     if (pDMA == pDMA0) {
         pDMA = pDMA1;
     } else {
         pDMA = pDMA0;
     }
+#endif
     if ((iFlags & DRAW_WITH_DMA) && !pLCD->bUseDMA) {
         iFlags &= ~DRAW_WITH_DMA; // DMA is not being used, so remove the flag
     }
@@ -1676,7 +1696,15 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
         
 // No DMA requested or available, fall through to here
 #ifdef _LINUX_
-    AIOWriteSPI(iHandle, pBuf, iLen);
+{
+struct spi_ioc_transfer spi;
+   memset(&spi, 0, sizeof(spi));
+   spi.tx_buf = (unsigned long)pBuf;
+   spi.len = iLen;
+   spi.speed_hz = pLCD->iSPISpeed;
+   spi.bits_per_word = 8;
+   ioctl(spi_fd, SPI_IOC_MESSAGE(1), &spi);
+}
 #else
 #ifdef ARDUINO_ARCH_RP2040
     pSPI->beginTransaction(SPISettings(pLCD->iSPISpeed, MSBFIRST, pLCD->iSPIMode));
@@ -1977,7 +2005,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
     } // bUseDMA
 #else
 #ifdef _LINUX_
-    iHandle = AIOOpenSPI(0, iSPIFreq); // DEBUG - open SPI channel 0 
+    spi_fd = open("/dev/spidev0.1", O_RDWR); // DEBUG - open SPI channel 0 
 #else
 #ifdef ARDUINO_ARCH_RP2040
   pSPI->begin();
@@ -3016,10 +3044,10 @@ void spilcdShutdown(SPILCD *pLCD)
     myPinWrite(pLCD->iLEDPin, 0); // turn off the backlight
     spilcdFreeBackbuffer(pLCD);
 #ifdef _LINUX_
-	AIOCloseSPI(iHandle);
-	AIORemoveGPIO(pLCD->iDCPin);
-	AIORemoveGPIO(pLCD->iResetPin);
-	AIORemoveGPIO(pLCD->iLEDPin);
+	close(spi_fd);
+	//AIORemoveGPIO(pLCD->iDCPin);
+	//AIORemoveGPIO(pLCD->iResetPin);
+	//AIORemoveGPIO(pLCD->iLEDPin);
 #endif // _LINUX_
 } /* spilcdShutdown() */
 //
@@ -5964,8 +5992,15 @@ void AxpPowerUp()
 //
 // Full duplex SPI transfer for the touch controller
 //
-static void rtSPIXfer(SPILCD *pLCD, uint8_t ucCMD, uint8_t *pRXBuf, int iLen)
+void rtSPIXfer(SPILCD *pLCD, uint8_t ucCMD, uint8_t *pRXBuf, int iLen)
 {
+#ifdef _LINUX_
+	// not supported
+    (void)pLCD;
+    (void)ucCMD;
+    (void)pRXBuf;
+    (void)iLen;
+#else
 int i, j;
 uint8_t ucIn, ucOut;
 uint8_t ucTemp[4];
@@ -6003,7 +6038,8 @@ uint8_t ucTemp[4];
         pLCD->pSPI->transfer(pRXBuf, iLen);
         pLCD->pSPI->endTransaction();
         digitalWrite(pLCD->iRTCS, HIGH);
-    }         
+    }
+#endif // !_LINUX_   
 } /* rtSPIXfer() */
 
 #ifdef __cplusplus
