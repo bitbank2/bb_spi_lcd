@@ -1,5 +1,5 @@
 CFLAGS=-c -Wall -O2 -D_LINUX_
-LIBS = -lbb_spi_lcd -larmbianio -lm -lpthread
+LIBS = -lbb_spi_lcd -lgpiod -lm -lpthread
 
 all: sample
 

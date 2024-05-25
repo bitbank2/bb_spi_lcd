@@ -10,15 +10,14 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "bb_spi_lcd.h"
-#include <armbianio.h>
 
 #define PIMORONI_HAT
 
 #ifdef PIMORONI_HAT
-#define DC_PIN 21
+#define DC_PIN 9
 #define RESET_PIN -1
-#define CS_PIN 26
-#define LED_PIN 33
+#define CS_PIN 7
+#define LED_PIN 13
 #define LCD_TYPE LCD_ST7789
 #else
 // Pin definitions for Adafruit PiTFT HAT
@@ -40,17 +39,10 @@ int main(int argc, char *argv[])
 {
 int i;
 
-	i = AIOInitBoard("Raspberry Pi");
-	if (i == 0) // problem
-	{
-		printf("Error in AIOInit(); check if this board is supported\n");
-		return 0;
-	}
 // int spilcdInit(int iLCDType, int bFlipRGB, int bInvert, int bFlipped, int32_t iSPIFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
-	i = spilcdInit(&lcd, LCD_TYPE, FLAGS_NONE, 31250000, CS_PIN, DC_PIN, RESET_PIN, LED_PIN, -1,-1,-1);
+	i = spilcdInit(&lcd, LCD_TYPE, FLAGS_NONE, 31250000, CS_PIN, DC_PIN, RESET_PIN, LED_PIN, -1,-1,-1,1);
 	if (i == 0)
 	{
-		spilcdSetTXBuffer(ucBuffer, 4096);
 		spilcdSetOrientation(&lcd, LCD_ORIENTATION_90);
 		spilcdFill(&lcd, 0, DRAW_TO_LCD);
 		for (i=0; i<30; i++)

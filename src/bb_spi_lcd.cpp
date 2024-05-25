@@ -828,6 +828,12 @@ static int16_t pgm_read_word(uint8_t *ptr)
 }
 #endif // FUTURE
 #endif // _LINUX_
+void spilcdParallelData(uint8_t *pData, int iLen)
+{
+	// not supported on Linux
+	(void)pData;
+	(void)iLen;
+}
 //
 // Provide a small temporary buffer for use by the graphics functions
 //
