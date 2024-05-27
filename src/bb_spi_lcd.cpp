@@ -827,13 +827,13 @@ static int16_t pgm_read_word(uint8_t *ptr)
   return ptr[0] + (ptr[1]<<8);
 }
 #endif // FUTURE
-#endif // __LINUX__
 void spilcdParallelData(uint8_t *pData, int iLen)
 {
 	// not supported on Linux
 	(void)pData;
 	(void)iLen;
 }
+#endif // __LINUX__
 //
 // Provide a small temporary buffer for use by the graphics functions
 //

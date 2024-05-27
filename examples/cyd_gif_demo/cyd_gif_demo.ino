@@ -1,7 +1,6 @@
 //
 // CYD (Cheap Yellow Display) GIF example
 //
-#include <bb_captouch.h>
 #include <bb_spi_lcd.h>
 #include <AnimatedGIF.h>
 #define GIF_NAME earth_128x128
@@ -11,14 +10,32 @@ uint8_t *pFrameBuffer;
 
 // Define one of these depending on your device
 // CYD_35C = 320x480 3.5" cap touch
-// CYD_28C = 240x320 (any size)
+// CYD_28C = 240x320 2.8" cap touch
+// CYD_28R = 240x320 2.8" resistive touch
+// CYD_28R_2USB = 240x320 2.8" resistive touch with both USB-C and USB-microb
 // CYD_128 = 240x240 round 1.28" ESP32-C3
-#define CYD_35C
+
+//#define CYD_35C
 //#define CYD_128C
 //#define CYD_28C
+//#define CYD_28R
+#define CYD_28R_2USB
+
+
+// 3.5" 320x480 LCD w/capacitive touch
+#ifdef CYD_28R
+#define TOUCH_RESISTIVE
+#define LCD DISPLAY_CYD
+#endif
+// 3.5" 320x480 LCD w/capacitive touch
+#ifdef CYD_28R_2USB
+#define TOUCH_RESISTIVE
+#define LCD DISPLAY_CYD_2USB
+#endif
 
 // 3.5" 320x480 LCD w/capacitive touch
 #ifdef CYD_35C
+#define TOUCH_CAPACITIVE
 #define LCD DISPLAY_CYD_35
 #define TOUCH_SDA 33
 #define TOUCH_SCL 32
@@ -28,6 +45,7 @@ uint8_t *pFrameBuffer;
 
 #ifdef CYD_28C
 // 2.8" ESP32 LCD board with the GT911 touch controller
+#define TOUCH_CAPACITIVE
 #define TOUCH_SDA 33
 #define TOUCH_SCL 32
 #define TOUCH_INT 21
@@ -37,6 +55,7 @@ uint8_t *pFrameBuffer;
 
 #ifdef CYD_128C
 // 1.28" ESP32-C3 round LCD board with the CST816D touch controller
+#define TOUCH_CAPACITIVE
 #define TOUCH_SDA 4
 #define TOUCH_SCL 5
 #define TOUCH_INT 0
@@ -45,8 +64,13 @@ uint8_t *pFrameBuffer;
 #define QWIIC_SCL 20
 #define LCD DISPLAY_CYD_128
 #endif
-AnimatedGIF gif;
+
+#ifdef TOUCH_CAPACTIVE
+#include <bb_captouch.h>
 BBCapTouch bbct;
+#endif
+
+AnimatedGIF gif;
 BB_SPI_LCD lcd;
 int iOffX, iOffY;
 //
@@ -79,7 +103,11 @@ void setup() {
   lcd.println("GIF + Touch Test");
   lcd.println("Touch to pause/unpause");
   delay(3000);
+  #ifdef TOUCH_CAPACITIVE
   bbct.init(TOUCH_SDA, TOUCH_SCL, TOUCH_RST, TOUCH_INT);
+  #else
+  lcd.rtInit(); // GPIO pins are already known to bb_spi_lcd
+  #endif
 } /* setup() */
 
 void loop() {
@@ -97,13 +125,25 @@ void loop() {
       iOffY = (lcd.height() - h)/2;
       while (gif.playFrame(true, NULL)) {
         TOUCHINFO ti;
-        if (bbct.getSamples(&ti)) { // a touch event
+#ifdef TOUCH_CAPACITIVE
+        if (bbct.getSamples(&ti) && ti.count >= 1) { // a touch event
           delay(500);
           bbct.getSamples(&ti); // get release event
-          while (!bbct.getSamples(&ti)) {};
+          do {
+            bbct.getSamples(&ti);
+          } while (ti.count == 0);
           delay(50);
           bbct.getSamples(&ti); // get release event
         }
+#else
+        if (lcd.rtReadTouch(&ti) && ti.count >= 1) { // a touch event
+          delay(500);
+          do {
+            lcd.rtReadTouch(&ti);
+          } while (ti.count == 0);
+          delay(150);
+        }
+#endif
       }
       gif.reset();
     }
