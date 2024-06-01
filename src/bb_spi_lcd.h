@@ -304,6 +304,8 @@ int spilcdSetGamma(SPILCD *pLCD, int iMode);
 // Initialize the library
 int spilcdInit(SPILCD *pLCD, int iLCDType, int iFlags, int32_t iSPIFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin, int bUseDMA);
 
+// Parallel LCD init (C API)
+int spilcdParallelInit(SPILCD *pLCD, int iLCDType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *datapins, uint32_t u32Freq);
 //
 // Initialize the touch controller
 //

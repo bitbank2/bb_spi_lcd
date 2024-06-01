@@ -2,11 +2,15 @@
 // Parallel LCD support for bb_spi_lcd
 //
 
+#ifndef __LINUX__
 #include <Arduino.h>
 #include <SPI.h>
+#endif // __LINUX__
+
 #include <bb_spi_lcd.h>
 
 static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
+static uint8_t *_data_pins;
 //#define USE_ESP32_GPIO
 #if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
 #if __has_include (<esp_lcd_panel_io.h>)
@@ -27,7 +31,6 @@ extern int bSetPosition;
 extern volatile bool transfer_is_done;
 #ifdef CONFIG_IDF_TARGET_ESP32
 uint32_t u32IOMask, u32IOMask2, u32IOLookup[256], u32IOLookup2[256]; // for old ESP32
-uint8_t *_data_pins;
 #endif // CONFIG_IDF_TARGET_ESP32
 void spilcdParallelData(uint8_t *pData, int iLen);
 static bool s3_notify_dma_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
@@ -176,6 +179,25 @@ void ParallelReset(void) {
 
 void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 {
+#ifdef __LINUX__
+    uint32_t c, old = pData[0]-1;
+    digitalWrite(u8CS, LOW); // activate CS
+    digitalWrite(u8DC, (iMode == MODE_DATA));
+    for (int i=0; i<len; i++) {
+        c = pData[i];
+	digitalWrite(u8WR, LOW); // WR low
+	if  (c != old) {
+	    old = c;
+            for (int j=0; j<8; j++) {
+	       digitalWrite(_data_pins[j], (c >> j) & 1);
+	    } // for j
+	} // new data
+        digitalWrite(u8WR, HIGH); // WR high to latch new data
+    } // for i
+    digitalWrite(u8CS, HIGH); // deactivate CS
+    return;
+#endif // __LINUX__
+
 #ifdef ARDUINO_TEENSY41
     uint32_t c, old = pData[0] -1;
     uint32_t u32 = GPIO6_DR & 0xff00ffff; // clear bits we will change
@@ -300,16 +322,16 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
         pinMode(RD_PIN, OUTPUT); // RD
         digitalWrite(RD_PIN, HIGH); // RD deactivated
     }
-// old ESP32 only supports direct register parallelism
-#if defined( ARDUINO_TEENSY41 )// || defined ( CONFIG_IDF_TARGET_ESP32 )
+// Linux and Teensy 4.x use parallel GPIO for now
+#if defined ( __LINUX__ ) || defined( ARDUINO_TEENSY41 )
     pinMode(u8WR, OUTPUT);
     pinMode(u8CS, OUTPUT);
     pinMode(u8DC, OUTPUT);
     for (int i=0; i<8; i++) {
         pinMode(data_pins[i], OUTPUT);
     }
-#ifdef CONFIG_IDF_TARGET_ESP32
     _data_pins = data_pins;
+#ifdef CONFIG_IDF_TARGET_ESP32
 // Create a bit mask and lookup table to allow fast 8-bit writes
 // to the 32-bit GPIO register
    u32IOMask = u32IOMask2 = 0;
@@ -337,7 +359,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
    } // for i
 #endif // CONFIG_IDF_TARGET_ESP32
    return;
-#endif // ARDUINO_TEENSY41 || CONFIG_IDF_TARGET_ESP32
+#endif // __LINUX__ || ARDUINO_TEENSY41
 #ifdef ARDUINO_ARCH_RP2040
 
 // Set up GPIO for output mode

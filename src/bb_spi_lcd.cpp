@@ -827,12 +827,6 @@ static int16_t pgm_read_word(uint8_t *ptr)
   return ptr[0] + (ptr[1]<<8);
 }
 #endif // FUTURE
-void spilcdParallelData(uint8_t *pData, int iLen)
-{
-	// not supported on Linux
-	(void)pData;
-	(void)iLen;
-}
 #endif // __LINUX__
 //
 // Provide a small temporary buffer for use by the graphics functions
@@ -1892,6 +1886,21 @@ void spilcdSetCallbacks(SPILCD *pLCD, RESETCALLBACK pfnReset, DATACALLBACK pfnDa
     pLCD->pfnDataCallback = pfnData;
     pLCD->pfnResetCallback = pfnReset;
 }
+int spilcdParallelInit(SPILCD *pLCD, int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq)
+{
+    memset(pLCD, 0, sizeof(SPILCD));
+    if (RST_PIN != 0xff) {
+        pinMode(RST_PIN, OUTPUT);
+        digitalWrite(RST_PIN, LOW);
+        delay(100);
+        digitalWrite(RST_PIN, HIGH);
+        delay(100);
+    }
+    ParallelDataInit(RD_PIN, WR_PIN, CS_PIN, DC_PIN, iBusWidth, data_pins, iFlags, u32Freq);
+    spilcdSetCallbacks(pLCD, ParallelReset, ParallelDataWrite);
+    return spilcdInit(pLCD, iType, iFlags, 0,0,0,0,0,0,0,0,0);
+} /* spilcdParallelInit() */
+
 //
 // Initialize the LCD controller and clear the display
 // LED pin is optional - pass as -1 to disable
