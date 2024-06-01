@@ -11,6 +11,20 @@
 
 static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 static uint8_t *_data_pins;
+#ifdef __LINUX__
+#include <sys/mman.h>
+volatile uint32_t *gpio_port, *set_reg, *clr_reg;
+// ---- GPIO specific defines
+#define GPIO_REGISTER_BASE 0x200000
+#define GPIO_SET_OFFSET 0x1C
+#define GPIO_CLR_OFFSET 0x28
+#define PHYSICAL_GPIO_BUS (0x7E000000 + GPIO_REGISTER_BASE)
+#define BCM2708_PI1_PERI_BASE  0x20000000
+#define BCM2709_PI2_PERI_BASE  0x3F000000
+#define BCM2711_PI4_PERI_BASE  0xFE000000
+#define PERI_BASE BCM2708_PI1_PERI_BASE
+#define PAGE_SIZE 4096
+#endif // __LINUX__
 //#define USE_ESP32_GPIO
 #if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
 #if __has_include (<esp_lcd_panel_io.h>)
@@ -180,21 +194,26 @@ void ParallelReset(void) {
 void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 {
 #ifdef __LINUX__
-    uint32_t c, old = pData[0]-1;
-    digitalWrite(u8CS, LOW); // activate CS
-    digitalWrite(u8DC, (iMode == MODE_DATA));
+    uint32_t c;
+    *clr_reg = (1 << u8CS); // activate CS
+    if (iMode == MODE_DATA) {
+	    *set_reg = (1 << u8DC);
+    } else {
+	    *clr_reg = (1 << u8DC);
+    }
     for (int i=0; i<len; i++) {
-        c = pData[i];
-	digitalWrite(u8WR, LOW); // WR low
-	if  (c != old) {
-	    old = c;
-            for (int j=0; j<8; j++) {
-	       digitalWrite(_data_pins[j], (c >> j) & 1);
-	    } // for j
-	} // new data
-        digitalWrite(u8WR, HIGH); // WR high to latch new data
+	*clr_reg = (1 << u8WR); // WR low
+	c = *pData++;
+	*set_reg = (c << 14); // set 1 bits
+	c ^= 0xff; // invert for zero bits
+	*clr_reg = (c << 14); // set 0 bits
+	for (int j=0; j<1; j++) { // add some delay
+           iMode |= (c << j);
+	}
+	transfer_is_done = iMode; // force compiler to actually use the code
+        *set_reg = (1 << u8WR); // WR high to latch new data
     } // for i
-    digitalWrite(u8CS, HIGH); // deactivate CS
+    *set_reg = (1 << u8CS); // deactivate CS
     return;
 #endif // __LINUX__
 
@@ -307,6 +326,35 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 #endif // FUTURE
 #endif // ARDUINO_ARCH_ESP32
 } /* ParallelDataWrite() */
+#ifdef __LINUX__
+// Return a pointer to a periphery subsystem register.
+static void *mmap_bcm_register(off_t register_offset) {
+  const off_t base = PERI_BASE;
+
+  int mem_fd;
+  if ((mem_fd = open("/dev/mem", O_RDWR|O_SYNC) ) < 0) {
+    perror("can't open /dev/mem: ");
+    fprintf(stderr, "You need to run this as root!\n");
+    return NULL;
+  }
+
+  uint32_t *result =
+    (uint32_t*) mmap(NULL,                  // Any adddress in our space will do
+                     PAGE_SIZE,
+                     PROT_READ|PROT_WRITE,  // Enable r/w on GPIO registers.
+                     MAP_SHARED,
+                     mem_fd,                // File to map
+                     base + register_offset // Offset to bcm register
+                     );
+  close(mem_fd);
+
+  if (result == MAP_FAILED) {
+    fprintf(stderr, "mmap error %p\n", result);
+    return NULL;
+  }
+  return result;
+} /* mmap_bcm_register() */
+#endif // __LINUX__
 //
 // Initialize the parallel bus info
 //
@@ -331,6 +379,10 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
         pinMode(data_pins[i], OUTPUT);
     }
     _data_pins = data_pins;
+  // Prepare GPIO
+  gpio_port = mmap_bcm_register(GPIO_REGISTER_BASE);
+  set_reg = gpio_port + (GPIO_SET_OFFSET / sizeof(uint32_t));
+  clr_reg = gpio_port + (GPIO_CLR_OFFSET / sizeof(uint32_t));
 #ifdef CONFIG_IDF_TARGET_ESP32
 // Create a bit mask and lookup table to allow fast 8-bit writes
 // to the 32-bit GPIO register
