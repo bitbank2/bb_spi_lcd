@@ -22,7 +22,7 @@ volatile uint32_t *gpio_port, *set_reg, *clr_reg;
 #define BCM2708_PI1_PERI_BASE  0x20000000
 #define BCM2709_PI2_PERI_BASE  0x3F000000
 #define BCM2711_PI4_PERI_BASE  0xFE000000
-#define PERI_BASE BCM2708_PI1_PERI_BASE
+#define PERI_BASE BCM2709_PI2_PERI_BASE
 #define PAGE_SIZE 4096
 #endif // __LINUX__
 //#define USE_ESP32_GPIO

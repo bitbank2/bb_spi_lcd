@@ -27,6 +27,19 @@
 #if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5STACK_CORES3)
 #include <Wire.h>
 #endif
+#else
+#define false 0
+#define true 1
+#define PROGMEM
+#define memcpy_P memcpy
+#define OUTPUT 0
+#define INPUT 1
+#define INPUT_PULLUP 2
+#define HIGH 1
+#define LOW 0
+void pinMode(int iPin, int iMode);
+void digitalWrite(int iPin, int iValue);
+int digitalRead(int iPin);
 #endif // __LINUX__
 
 #if !defined( __SS_OLED_H__ ) && !defined( __ONEBITDISPLAY__ )

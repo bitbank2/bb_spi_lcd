@@ -89,15 +89,6 @@ struct gpiod_line *lines[64];
 uint8_t ucTXBuf[4096];
 uint8_t *pDMA = ucTXBuf;
 static uint8_t transfer_is_done = 1;
-#define false 0
-#define true 1
-#define PROGMEM
-#define memcpy_P memcpy
-#define OUTPUT 0
-#define INPUT 1
-#define INPUT_PULLUP 2
-#define HIGH 1
-#define LOW 0
 static int spi_fd; // SPI handle
 #else // Arduino
 // Use the default (non DMA) SPI library for boards we don't currently support
@@ -782,17 +773,17 @@ const uint8_t ucSmallFont[]PROGMEM = {
 
 // wrapper/adapter functions to make the code work on Linux
 #ifdef __LINUX__
-static int digitalRead(int iPin)
+int digitalRead(int iPin)
 {
   return gpiod_line_get_value(lines[iPin]);
 } /* digitalRead() */
 
-static void digitalWrite(int iPin, int iState)
+void digitalWrite(int iPin, int iState)
 {
    gpiod_line_set_value(lines[iPin], iState);
 } /* digitalWrite() */
 
-static void pinMode(int iPin, int iMode)
+void pinMode(int iPin, int iMode)
 {
    if (chip == NULL) {
        chip = gpiod_chip_open_by_name("gpiochip0");
