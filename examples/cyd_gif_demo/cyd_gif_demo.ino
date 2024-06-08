@@ -13,14 +13,37 @@ uint8_t *pFrameBuffer;
 // CYD_28C = 240x320 2.8" cap touch
 // CYD_28R = 240x320 2.8" resistive touch
 // CYD_28R_2USB = 240x320 2.8" resistive touch with both USB-C and USB-microb
+// CYD_22C = 240x320 2.2" cap touch
 // CYD_128 = 240x240 round 1.28" ESP32-C3
+// CYD_MF35 = 320x480 3.5" MakerFabs 16-bit parallel w/cap touch
 
+#define CYD_MF35
 //#define CYD_35C
 //#define CYD_128C
 //#define CYD_28C
 //#define CYD_28R
-#define CYD_28R_2USB
+//#define CYD_28R_2USB
+//#define CYD_22C
 
+// 3.5" 320x480 ILI9488 parallel MakerFabs 3.5"
+#ifdef CYD_MF35
+#define TOUCH_CAPACITIVE
+#define TOUCH_SDA 38
+#define TOUCH_SCL 39
+#define TOUCH_INT -1
+#define TOUCH_RST -1
+#define LCD DISPLAY_MAKERFABS_S3
+#endif
+
+// 2.2" 240x320 ST7789 parallel LCD w/cap touch
+#ifdef CYD_22C
+#define TOUCH_CAPACITIVE
+#define TOUCH_SDA 21
+#define TOUCH_SCL 22
+#define TOUCH_INT -1
+#define TOUCH_RST -1
+#define LCD DISPLAY_CYD_22C
+#endif
 
 // 3.5" 320x480 LCD w/capacitive touch
 #ifdef CYD_28R
@@ -65,7 +88,7 @@ uint8_t *pFrameBuffer;
 #define LCD DISPLAY_CYD_128
 #endif
 
-#ifdef TOUCH_CAPACTIVE
+#ifdef TOUCH_CAPACITIVE
 #include <bb_captouch.h>
 BBCapTouch bbct;
 #endif
@@ -102,12 +125,14 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.println("GIF + Touch Test");
   lcd.println("Touch to pause/unpause");
-  delay(3000);
   #ifdef TOUCH_CAPACITIVE
   bbct.init(TOUCH_SDA, TOUCH_SCL, TOUCH_RST, TOUCH_INT);
+  lcd.printf("Touch = cap type %d\n", bbct.sensorType());
   #else
   lcd.rtInit(); // GPIO pins are already known to bb_spi_lcd
+  lcd.println("Touch = resistive");
   #endif
+  delay(3000);
 } /* setup() */
 
 void loop() {

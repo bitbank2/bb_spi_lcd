@@ -2916,7 +2916,7 @@ uint16_t usColor;
 		return; // out of bounds
 	if (y < 0 || y >= pLCD->iCurrentHeight || y+h > pLCD->iCurrentHeight)
 		return;
-
+	if (w <= 0 || h <= 0) return; // nothing to draw
 	ty = y;
 	th = h;
 	if (bFill)
@@ -6329,6 +6329,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             break;
         case DISPLAY_M5STACK_ATOMS3:
             spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 15, 33, 34, 16, -1, 21, 17, 1);
+            qspiSetBrightness(&_lcd, 255); // something wrong with the backlight LED; needs to be set bright
             break;
 #ifdef ARDUINO_M5Stick_C
         case DISPLAY_M5STACK_STICKC:
