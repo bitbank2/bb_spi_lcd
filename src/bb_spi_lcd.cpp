@@ -6084,6 +6084,8 @@ uint8_t ucTemp[4];
        pinMode(_lcd.iRTCLK, OUTPUT);
        if (_lcd.iRTCS >= 0 && _lcd.iRTCS < 99)
            pinMode(_lcd.iRTCS, OUTPUT);
+   } else if (_lcd.iRTCS != 255) { // CYD_24R
+       pinMode(_lcd.iRTCS, OUTPUT);
    }
    return BB_ERROR_SUCCESS;
 } /* rtInit() */
@@ -6311,6 +6313,15 @@ int BB_SPI_LCD::begin(int iDisplayType)
             break;
         case DISPLAY_CYD_128:
             spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6, 1); // Cheap Yellow Display (ESP32-C3 1.28" round version)
+            break;
+        case DISPLAY_CYD_24R:
+            spilcdInit(&_lcd, LCD_ST7789, FLAGS_INVERT, 40000000, 15, 2, -1, 27, 12, 13, 14, 0); // Cheap Yellow Display (2.4 w/resistive touch)
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            _lcd.pSPI = &SPI; // shared SPI
+            _lcd.iRTCS = 33;
+            _lcd.iRTMOSI = 255;
+            _lcd.iRTOrientation = 270;
+            _lcd.iRTThreshold = 6300;
             break;
         case DISPLAY_CYD_28C:
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14, 1); // Cheap Yellow Display (2.4 and 2.8 w/cap touch)
