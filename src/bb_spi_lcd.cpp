@@ -3510,7 +3510,7 @@ DRAM_ATTR static const uint8_t nv3041a_init[] = {
     0xff, 0xa5,
     0xE7, 0x10,
     0x35, 0x00,
-    0x36, 0xc0,
+    0x36, 0xd0,
     0x3A, 0x01, // 01---565，00---666
     0x40, 0x01,
     0x41, 0x03, // 01--8bit, 03-16bit
@@ -3627,6 +3627,7 @@ DRAM_ATTR static const uint8_t nv3041a_init[] = {
 
     0xff, 0x00,
 };
+static const uint8_t u8ScrollInit[4] = {0,0,1,16};
 
     pLCD->iCurrentWidth = pLCD->iWidth = 480;
     pLCD->iCurrentHeight = pLCD->iHeight = 272;
@@ -3637,6 +3638,9 @@ DRAM_ATTR static const uint8_t nv3041a_init[] = {
     qspiSendCMD(pLCD, 0x11, NULL, 0); // sleep out
     delay(200);
     qspiSendCMD(pLCD, 0x29, NULL, 0); // display on
+    // set up whole screen scrolling as the default
+    qspiSendCMD(pLCD, 0x33, (uint8_t *)u8ScrollInit, 4); // initialize scrolling
+    qspiSendCMD(pLCD, 0x37, (uint8_t *)u8ScrollInit, 2); // 0 offset to start    
 } /* NV3041AInit() */
 
 void AXS15231Init(SPILCD *pLCD)
@@ -6049,6 +6053,35 @@ uint8_t ucTemp[4];
 } /* rtSPIXfer() */
 
 #ifdef __cplusplus
+void BB_SPI_LCD::setScrollPosition(int iLines)
+{
+uint8_t ucTemp[4];
+
+    ucTemp[0] = (uint8_t)(iLines >> 8);
+    ucTemp[1] = (uint8_t)iLines;
+
+    if (_lcd.iLCDType > LCD_QUAD_SPI) {
+       qspiSendCMD(&_lcd, 0x37, ucTemp, 2);
+    } else { // SPI and parallel LCDs
+        if (_lcd.iLCDType == LCD_SSD1351) {
+            spilcdWriteCommand(&_lcd, 0xa1); // set scroll start line
+            spilcdWriteData8(&_lcd, iLines);
+            return;
+        } else if (_lcd.iLCDType == LCD_SSD1331) {
+            spilcdWriteCommand(&_lcd, 0xa1);
+            spilcdWriteCommand(&_lcd, iLines);
+            return;
+        } else {
+            if (_lcd.iLCDType == LCD_ILI9341 || _lcd.iLCDType == LCD_ILI9342 || _lcd.iLCDType == LCD_ST7735R || _lcd.iLCDType == LCD_ST7789 || _lcd.iLCDType == LCD_ST7789_135 || _lcd.iLCDType == LCD_ST7735S) {
+               spilcdWriteCmdParams(&_lcd, 0x37, ucTemp, 2);
+            } else {
+               spilcdWriteData16(&_lcd, iLines >> 8, DRAW_TO_LCD);
+               spilcdWriteData16(&_lcd, iLines & -1, DRAW_TO_LCD);
+            }
+        }
+    } // spi / parallel
+} /* setScrollPosition() */
+
 int BB_SPI_LCD::rtInit(SPIClass &spi, uint8_t u8CS)
 {
     if (u8CS != 0xff) _lcd.iRTCS = u8CS;
@@ -6316,7 +6349,6 @@ int BB_SPI_LCD::begin(int iDisplayType)
             break;
         case DISPLAY_CYD_24R:
             spilcdInit(&_lcd, LCD_ST7789, FLAGS_INVERT, 40000000, 15, 2, -1, 27, 12, 13, 14, 0); // Cheap Yellow Display (2.4 w/resistive touch)
-            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             _lcd.pSPI = &SPI; // shared SPI
             _lcd.iRTCS = 33;
             _lcd.iRTMOSI = 255;

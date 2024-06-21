@@ -197,6 +197,7 @@ class BB_SPI_LCD : public Print
     void setTextSize(int iSize) {}; // empty for now
     void setFont(int iFont);
     void setScroll(bool bScroll);
+    void setScrollPosition(int iLines);
     void setAntialias(bool bAntialias);
     void setFreeFont(const GFXfont *pFont);
     int16_t height(void);
