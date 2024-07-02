@@ -87,7 +87,7 @@ SPIClass mySPI(
 struct gpiod_chip *chip = NULL;
 struct gpiod_line *lines[64];
 uint8_t ucTXBuf[4096];
-uint8_t *pDMA = ucTXBuf;
+volatile uint8_t *pDMA = ucTXBuf;
 static uint8_t transfer_is_done = 1;
 static int spi_fd; // SPI handle
 #else // Arduino
@@ -150,10 +150,10 @@ static spi_transaction_t trans[2];
 static spi_device_handle_t spi;
 //static TaskHandle_t xTaskToNotify = NULL;
 // ESP32 has enough memory to spare 8K
-DMA_ATTR uint8_t ucTXBuf[8192]="";
+DMA_ATTR uint8_t ucTXBuf[8192];
 uint8_t *pDMA0 = ucTXBuf;
 uint8_t *pDMA1 = &ucTXBuf[4096]; // 2 ping-pong buffers
-uint8_t *pDMA;
+volatile uint8_t *pDMA = pDMA0;
 static unsigned char ucRXBuf[4096];
 //#ifndef ESP32_DMA
 static int iTXBufSize = 4096; // max reasonable size
@@ -181,7 +181,7 @@ uint8_t bitDC, bitCS; // bit mask for the chosen pins
 #ifdef HAS_DMA
 volatile bool transfer_is_done = true; // Done yet?
 void spilcdWaitDMA(void);
-void spilcdWriteDataDMA(SPILCD *pLCD, int iLen);
+void spilcdWriteDataDMA(SPILCD *pLCD, uint8_t *pBuf, int iLen);
 #endif
 static void myPinWrite(int iPin, int iValue);
 //static int32_t iSPISpeed;
@@ -212,6 +212,73 @@ static void spilcdWriteData8(SPILCD *pLCD, unsigned char c);
 static void spilcdWriteData16(SPILCD *pLCD, unsigned short us, int iFlags);
 void spilcdSetPosition(SPILCD *pLCD, int x, int y, int w, int h, int iFlags);
 int spilcdFill(SPILCD *pLCD, unsigned short usData, int iFlags);
+// commands to initialize st7701 parallel display controller
+// for the Makerfabs 4" 480x480 board
+const uint8_t st7701list[] = {
+        6, 0xff, 0x77, 0x01, 0x00, 0x00, 0x10,
+        3, 0xc0, 0x3b, 0x00,
+        3, 0xc1, 0x0d, 0x02,
+        2, 0xcd, 0x08,
+        17, 0xb0, 0x00, 0x11, 0x18, 0x0e, 0x11, 0x06, 0x07, 0x08, 0x07, 0x22, 0x04, 0x12, 0x0f, 0xaa, 0x31, 0x18,
+        17, 0xb1, 0x00, 0x11, 0x19, 0x0e, 0x12, 0x07, 0x08, 0x08, 0x08, 0x22, 0x04, 0x11, 0x11, 0xa9, 0x32, 0x18,
+        6, 0xff, 0x77, 0x01, 0x00, 0x00, 0x11,
+        2, 0xb0, 0x60,
+        2, 0xb1, 0x32,
+        2, 0xb2, 0x07,
+        2, 0xb3, 0x80,
+        2, 0xb5, 0x49,
+        2, 0xb7, 0x85,
+        2, 0xb8, 0x21,
+        2, 0xc1, 0x78,
+        2, 0xc2, 0x78,
+        4, 0xe0, 0x00, 0x1b, 0x02,
+        12, 0xe1, 0x08, 0xa0, 0x00, 0x00, 0x07, 0xa0, 0x00, 0x00, 0x00, 0x44, 0x44,
+        13, 0xe2, 0x11, 0x11, 0x44, 0x44, 0xed, 0xa0, 0x00, 0x00, 0xec, 0xa0, 0x00, 0x00,
+        5, 0xe3, 0x00, 0x00, 0x11, 0x11,
+        3, 0xe4, 0x44, 0x44,
+        17, 0xe5, 0x0a, 0xe9, 0xd8, 0xa0, 0x0c, 0xeb, 0xd8, 0xa0, 0x0e, 0xed, 0xd8, 0xa0, 0x10, 0xef, 0xd8, 0xa0,
+        5, 0xe6, 0x00, 0x00, 0x11, 0x11,
+        3, 0xe7, 0x44, 0x44,
+        17, 0xe8, 0x09, 0xe8, 0xe8, 0xa0, 0x0b, 0xea, 0xd8, 0xa0, 0x0d, 0xec, 0xd8, 0xa0, 0x0f, 0xee, 0xd8, 0xa0,
+        8, 0xeb, 0x02, 0x00, 0xe4, 0xe4, 0x88, 0x00, 0x40,
+        3, 0xec, 0x3c, 0x00,
+        17, 0xed, 0xab, 0x89, 0x76, 0x54, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x20, 0x45, 0x67, 0x98, 0xba,
+        6, 0xff, 0x77, 0x01, 0x00, 0x00, 0x13,
+        2, 0xe5, 0xe4,
+        6, 0xff, 0x77, 0x01, 0x00, 0x00, 0x00,
+        1, 0x21,
+        2, 0x3a, 0x60,
+        1, 0x11, // sleep out
+        LCD_DELAY, 120,
+	1, 0x29, // display on
+        0
+};
+// 16-bit RGB panel 480x480
+const BB_RGB rgbpanel_480x480 = { 
+    1 /* CS */, 12 /* SCK */, 11 /* SDA */,
+    45 /* DE */, 4 /* VSYNC */, 5 /* HSYNC */, 21 /* PCLK */,
+    39 /* R0 */, 40 /* R1 */, 41 /* R2 */, 42 /* R3 */, 2 /* R4 */,          
+    0 /* G0 */, 9 /* G1 */, 14 /* G2 */, 47 /* G3 */, 48 /* G4 */, 3 /* G5 */, 
+    6 /* B0 */, 7 /* B1 */, 15 /* B2 */, 16 /* B3 */, 8 /* B4 */,
+    50 /* hsync_back_porch */, 10 /* hsync_front_porch */, 8 /* hsync_pulse_width */,
+    20 /* vsync_back_porch */, 10 /* vsync_front_porch */, 8 /* vsync_pulse_width */,
+    1 /* hsync_polarity */, 1 /* vsync_polarity */,
+    480, 480,
+    16000000 // speed
+};
+// 16-bit RGB panel 800x480
+const BB_RGB rgbpanel_800x480 = {
+    -1 /* CS */, -1 /* SCK */, -1 /* SDA */,
+    40 /* DE */, 41 /* VSYNC */, 39 /* HSYNC */, 42 /* PCLK */,
+    45 /* R0 */, 48 /* R1 */, 47 /* R2 */, 21 /* R3 */, 14 /* R4 */,
+    5 /* G0 */, 6 /* G1 */, 7 /* G2 */, 15 /* G3 */, 16 /* G4 */, 4 /* G5 */,
+    8 /* B0 */, 3 /* B1 */, 46 /* B2 */, 9 /* B3 */, 1 /* B4 */,
+    8 /* hsync_back_porch */, 8 /* hsync_front_porch */, 4 /* hsync_pulse_width */,
+    8 /* vsync_back_porch */, 8 /* vsync_front_porch */, 4 /* vsync_pulse_width */,
+    0 /* hsync_polarity */, 0 /* vsync_polarity */,
+    800, 480,
+    16000000 // speed
+};
 // 8-bit parallel pins for the CYD 2.2" ST7789
 uint8_t u8_22C_Pins[8] = {15,13,12,14,27,25,33,32};
 // 8-bit parallel pins for the WT32-SC01-PLUS
@@ -1675,10 +1742,8 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
             spilcdWaitDMA(); // wait for any previous transaction to finish
             iCurrentCS = pLCD->iCSPin;
             myPinWrite(pLCD->iCSPin, 0);
-            if (pBuf != ucTXBuf) // for DMA, we must use the one output buffer
-                memcpy(ucTXBuf, pBuf, l);
+            spilcdWriteDataDMA(pLCD, pBuf, l);
             pBuf += l;
-            spilcdWriteDataDMA(pLCD, l);
             iLen -= l;
         }
         return;
@@ -2568,7 +2633,7 @@ int spilcdDraw53Tile(SPILCD *pLCD, int x, int y, int cx, int cy, unsigned char *
     y = (y * 5)/3;
     iPitch16 = iPitch/2;
     if (cx < 24 || cy < 24)
-        memset(pDMA, 0, 40*40*2);
+        memset((void *)pDMA, 0, 40*40*2);
     for (j=0; j<cy/3; j++) // 8 blocks of 3 lines
     {
         s = (uint16_t *)&pTile[j*3*iPitch];
@@ -2637,7 +2702,7 @@ int spilcdDraw53Tile(SPILCD *pLCD, int x, int y, int cx, int cy, unsigned char *
         } // for i
     } // for j
     spilcdSetPosition(pLCD, x, y, 40, 40, iFlags);
-    myspiWrite(pLCD, pDMA, 40*40*2, MODE_DATA, iFlags);
+    myspiWrite(pLCD, (uint8_t *)pDMA, 40*40*2, MODE_DATA, iFlags);
     return 0;
 } /* spilcdDraw53Tile() */
 //
@@ -2656,7 +2721,7 @@ int spilcdDrawTile(SPILCD *pLCD, int x, int y, int iTileWidth, int iTileHeight, 
         return -1; // tile must fit in 4k SPI block size
     }
     // First convert to big-endian order
-    d16 = (uint16_t *)ucRXBuf;
+    d16 = (uint16_t *)pDMA;
     for (j=0; j<iTileHeight; j++)
     {
         s16 = (uint16_t*)&pTile[j*iPitch];
@@ -2666,7 +2731,7 @@ int spilcdDrawTile(SPILCD *pLCD, int x, int y, int iTileWidth, int iTileHeight, 
         } // for i;
     } // for j
     spilcdSetPosition(pLCD, x, y, iTileWidth, iTileHeight, iFlags);
-    myspiWrite(pLCD, ucRXBuf, iTileWidth*iTileHeight*2, MODE_DATA, iFlags);
+    myspiWrite(pLCD, (uint8_t *)pDMA, iTileWidth*iTileHeight*2, MODE_DATA, iFlags);
     return 0;
 } /* spilcdDrawTile() */
 
@@ -2786,7 +2851,7 @@ int spilcdDrawTile150(SPILCD *pLCD, int x, int y, int iTileWidth, int iTileHeigh
     
     iPitch32 = iPitch / 4;
     iLocalPitch = (iTileWidth * 3)/2; // offset to next output line
-    d16 = (uint16_t *)ucRXBuf;
+    d16 = (uint16_t *)pDMA;
     for (j=0; j<iTileHeight; j+=2)
     {
         s32 = (uint32_t*)&pTile[j*iPitch];
@@ -2816,7 +2881,7 @@ int spilcdDrawTile150(SPILCD *pLCD, int x, int y, int iTileWidth, int iTileHeigh
         d16 += iLocalPitch*2; // skip lines we already output
     } // for j
     spilcdSetPosition(pLCD, (x*3)/2, (y*3)/2, (iTileWidth*3)/2, (iTileHeight*3)/2, iFlags);
-    myspiWrite(pLCD, ucRXBuf, (iTileWidth*iTileHeight*9)/2, MODE_DATA, iFlags);
+    myspiWrite(pLCD, (uint8_t *)pDMA, (iTileWidth*iTileHeight*9)/2, MODE_DATA, iFlags);
     return 0;
 } /* spilcdDrawTile150() */
 
@@ -2853,7 +2918,7 @@ void spilcdDrawPattern(SPILCD *pLCD, uint8_t *pPattern, int iSrcPitch, int iDest
       {
         s = &pPattern[y * iSrcPitch];
         ucMask = uc = 0;
-        d = (uint16_t *)&ucTXBuf[0];
+        d = (uint16_t *)pDMA;
         for (x=0; x<iCX; x++)
         {
             ucMask >>= 1;
@@ -2867,7 +2932,7 @@ void spilcdDrawPattern(SPILCD *pLCD, uint8_t *pPattern, int iSrcPitch, int iDest
             else
                *d++ = 0;
         } // for x
-        myspiWrite(pLCD, ucTXBuf, iCX*2, MODE_DATA, DRAW_TO_LCD);
+        myspiWrite(pLCD, (uint8_t *)pDMA, iCX*2, MODE_DATA, DRAW_TO_LCD);
       } // for y
       return;
     }
@@ -2907,7 +2972,7 @@ void spilcdDrawPattern(SPILCD *pLCD, uint8_t *pPattern, int iSrcPitch, int iDest
 }
 void spilcdRectangle(SPILCD *pLCD, int x, int y, int w, int h, unsigned short usColor1, unsigned short usColor2, int bFill, int iFlags)
 {
-unsigned short *usTemp = (unsigned short *)ucRXBuf;
+unsigned short *usTemp = (unsigned short *)pDMA;
 int i, ty, th, iStart;
 uint16_t usColor;
     
@@ -3394,7 +3459,7 @@ int spilcdSetPixel(SPILCD *pLCD, int x, int y, unsigned short usColor, int iFlag
 
 uint8_t * spilcdGetDMABuffer(void)
 {
-  return (uint8_t *)ucTXBuf;
+  return (uint8_t *)pDMA;
 }
 
 #ifdef ARDUINO_ARCH_ESP32
@@ -3508,7 +3573,7 @@ void NV3041AInit(SPILCD *pLCD)
 
 DRAM_ATTR static const uint8_t nv3041a_init[] = {
     0xff, 0xa5,
-    0xE7, 0x10,
+    //0xE7, 0x10,
     0x35, 0x00,
     0x36, 0xd0,
     0x3A, 0x01, // 01---565，00---666
@@ -3788,12 +3853,12 @@ void spilcdWaitDMA(void)
 //#endif // HAS_DMA
 }
 // Queue a new transaction for the SPI DMA
-void spilcdWriteDataDMA(SPILCD *pLCD, int iLen)
+void spilcdWriteDataDMA(SPILCD *pLCD, uint8_t *pBuf, int iLen)
 {
 #ifdef ARDUINO_ARCH_ESP32
 esp_err_t ret;
 
-    trans[0].tx_buffer = ucTXBuf;
+    trans[0].tx_buffer = pBuf;
     trans[0].length = iLen * 8; // Length in bits
     trans[0].rxlength = 0; // defaults to the same length as tx length
     
@@ -4272,7 +4337,7 @@ uint8_t *pFont;
         spilcdSetPosition(pLCD, x, y, iStride, 16, iFlags);
         for (k = 0; k<8; k++) { // create a pair of scanlines from each original
            uint8_t ucMask = (1 << k);
-           usD = (unsigned short *)&ucRXBuf[0];
+           usD = (uint16_t *)pDMA;
            for (i=0; i<iStride*2; i++)
               usD[i] = usBG; // set to background color first
            for (i=0; i<iLen; i++)
@@ -4304,7 +4369,7 @@ uint8_t *pFont;
                } // for j
                usD += 2; // leave "6th" column blank
             } // for each character
-            myspiWrite(pLCD, ucRXBuf, iStride*4, MODE_DATA, iFlags);
+            myspiWrite(pLCD, (uint8_t *)pDMA, iStride*4, MODE_DATA, iFlags);
         } // for each scanline
         return 0;
     } // 12x16
@@ -4323,7 +4388,7 @@ uint8_t *pFont;
         uint8_t ucMask = 1;
         for (k=0; k<8; k++) // for each scanline
         {
-            usD = (unsigned short *)&ucRXBuf[(k*iStride) + (i * cx*2)];
+            usD = (uint16_t *)&pDMA[(k*iStride) + (i * cx*2)];
             for (j=0; j<cx; j++)
             {
                 if (s[j] & ucMask)
@@ -4336,7 +4401,7 @@ uint8_t *pFont;
     } // for i
     // write the data in one shot
     spilcdSetPosition(pLCD, x, y, cx*iLen, 8, iFlags);
-    myspiWrite(pLCD, ucRXBuf, iLen*cx*16, MODE_DATA, iFlags);
+    myspiWrite(pLCD, (uint8_t *)pDMA, iLen*cx*16, MODE_DATA, iFlags);
     pLCD->iCursorX = x + (cx*iLen);
     pLCD->iCursorY = y;
 	return 0;
@@ -4375,7 +4440,7 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
 		if (iLen < 0) return -1;
 		for (i=0; i<iLen; i++)
 		{
-			uint16_t *usD, *usTemp = (uint16_t *)ucRXBuf;
+			uint16_t *usD, *usTemp = (uint16_t *)pDMA;
 			s = (uint8_t *)&ucBigFont[((unsigned char)szMsg[i]-32)*64];
 			usD = &usTemp[0];
             if (usBGColor == -1) // transparent text is not rendered to the display
@@ -4418,7 +4483,7 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
 #endif // !__AVR__
     if (iFontSize == FONT_8x8 || iFontSize == FONT_6x8) // draw the 6x8 or 8x8 font
 	{
-		uint16_t *usD, *usTemp = (uint16_t *)ucRXBuf;
+		uint16_t *usD, *usTemp = (uint16_t *)pDMA;
         int cx;
         uint8_t *pFont;
 
@@ -4465,7 +4530,7 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
     } // 6x8 and 8x8
     if (iFontSize == FONT_12x16) // 6x8 stretched to 12x16 (with smoothing)
     {
-        uint16_t *usD, *usTemp = (uint16_t *)ucRXBuf;
+        uint16_t *usD, *usTemp = (uint16_t *)pDMA;
         
         if ((12*iLen) + x > pLCD->iCurrentWidth) iLen = (pLCD->iCurrentWidth - x)/12; // can't display it all
         if (iLen < 0)return -1;
@@ -4535,7 +4600,7 @@ uint16_t usPitch = pLCD->iScreenPitch/2;
     } // FONT_12x16
     if (iFontSize == FONT_16x16) // 8x8 stretched to 16x16
     {
-        uint16_t *usD, *usTemp = (uint16_t *)ucRXBuf;
+        uint16_t *usD, *usTemp = (uint16_t *)pDMA;
         
         if ((16*iLen) + x > pLCD->iCurrentWidth) iLen = (pLCD->iCurrentWidth - x)/16; // can't display it all
         if (iLen < 0)return -1;
@@ -4675,7 +4740,7 @@ void spilcdEllipse(SPILCD *pLCD, int32_t iCenterX, int32_t iCenterY, int32_t iRa
 {
     int32_t iRadius, iXFrac, iYFrac;
     int32_t iDelta, x, y;
-    uint16_t us, *pus, *usTemp = (uint16_t *)ucRXBuf; // up to 320 pixels wide
+    uint16_t us, *pus, *usTemp = (uint16_t *)pDMA; // up to 320 pixels wide
     
     if (iCenterX < 0 || iCenterY < 0 || iRadiusX <= 0 || iRadiusY <= 0) return;
 
@@ -4869,7 +4934,7 @@ int spilcdFill(SPILCD *pLCD, unsigned short usData, int iFlags)
 int cx, tx;
 #endif
 int x, y;
-uint16_t *u16Temp = (uint16_t *)ucRXBuf;
+uint16_t *u16Temp = (uint16_t *)pDMA;
 
     // make sure we're in landscape mode to use the correct coordinates
     spilcdScrollReset(pLCD);
@@ -4891,6 +4956,7 @@ uint16_t *u16Temp = (uint16_t *)ucRXBuf;
     tx = pLCD->iCurrentWidth/16;
     for (y=0; y<pLCD->iCurrentHeight; y++)
     {
+       u16Temp = (uint16_t *)pDMA;
        for (x=0; x<cx; x++)
        {
 // have to do this every time because the buffer gets overrun (no half-duplex mode in Arduino SPI library)
@@ -4931,7 +4997,7 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
 //#ifndef ESP32_DMA
     int i;
 //#endif
-    uint16_t *usTemp = (uint16_t *)ucRXBuf, us;
+    uint16_t *usTemp = (uint16_t *)pDMA, us;
 
     if (x1 < 0 || x2 < 0 || y1 < 0 || y2 < 0 || x1 >= pLCD->iCurrentWidth || x2 >= pLCD->iCurrentWidth || y1 >= pLCD->iCurrentHeight || y2 >= pLCD->iCurrentHeight)
         return;
@@ -5203,12 +5269,12 @@ int iStartWidth = iWidth;
 int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStretch, int iTransparent, int iFlags)
 {
     int iOffBits, iPitch;
-    uint16_t usPalette[256];
+    uint16_t *usPalette = (uint16_t *)ucRXBuf;
     uint8_t *pCompressed;
     uint8_t ucCompression;
     int16_t cx, cy, bpp, y; // offset to bitmap data
     int j, x;
-    uint16_t *pus, us, *d, *usTemp = (uint16_t *)ucRXBuf; // process a line at a time
+    uint16_t *pus, us, *d, *usTemp = (uint16_t *)pDMA; // process a line at a time
     uint8_t bFlipped = false;
     
     if (pBMP[0] != 'B' || pBMP[1] != 'M') // must start with 'BM'
@@ -5259,7 +5325,7 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
     }
     if (ucCompression) // need to do it differently for RLE compressed
     { 
-    uint16_t *d = (uint16_t *)ucRXBuf;
+    uint16_t *d;
     int y, iStartY, iEndY, iDeltaY;
         
        pCompressed = &pBMP[iOffBits]; // start of compressed data
@@ -5278,13 +5344,14 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
        DecodeRLE4(NULL, 0,NULL,NULL); // initialize
        DecodeRLE8(NULL, 0,NULL,NULL);
        for (y=iStartY; y!= iEndY; y += iDeltaY)
-       {  
+       { 
+          d = (uint16_t *)pDMA;
           spilcdSetPosition(pLCD, iDestX, y, cx, 1, iFlags);
           if (bpp == 4)
              pCompressed = DecodeRLE4(pCompressed, cx, d, usPalette);
           else
              pCompressed = DecodeRLE8(pCompressed, iPitch, d, usPalette);
-           myspiWrite(pLCD, (uint8_t *)d, cx*2, MODE_DATA, iFlags);
+          myspiWrite(pLCD, (uint8_t *)d, cx*2, MODE_DATA, iFlags);
        }
        return 0;
     } // RLE compressed
@@ -5442,7 +5509,7 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
                 {
                     uint8_t uc, *s = (uint8_t *)pus;
                     if (iFlags & DRAW_TO_LCD)
-                        d = usTemp;
+                        d = (uint16_t *)pDMA;
                     else // write to the correct spot directly to save time
                         d = (uint16_t *)&pLCD->pBackBuffer[pLCD->iOffset + (y*pLCD->iScreenPitch)];
                     if (iTransparent == -1) // no transparency
@@ -5468,7 +5535,7 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
                     }
                 }
                 if (iFlags & DRAW_TO_LCD)
-                    spilcdWriteDataBlock(pLCD, (uint8_t *)usTemp, cx*2, iFlags);
+                    spilcdWriteDataBlock(pLCD, (uint8_t *)pDMA, cx*2, iFlags);
             } // for y
         } // 1:1
     return 0;
@@ -6233,6 +6300,61 @@ const int iOrients[4] = {0,90,180,270};
     return 1;
 } /* rtReadTouch() */
 
+void Write9Bits(const BB_RGB *pPanel, uint8_t dc, uint8_t *pData, int iCount)
+{
+int i, j;
+uint8_t uc;
+
+   for (i=0; i<iCount; i++) {
+       uc = *pData++;
+       digitalWrite(pPanel->sck, LOW);
+       digitalWrite(pPanel->mosi, dc); // D/C bit
+       delayMicroseconds(1);
+       digitalWrite(pPanel->sck, HIGH); // clock D/C bit
+       delayMicroseconds(1);
+       for (int j=0; j<8; j++) {
+          digitalWrite(pPanel->sck, LOW);
+          digitalWrite(pPanel->mosi, (uc >> 7) & 1);
+          delayMicroseconds(1);
+          digitalWrite(pPanel->sck, HIGH); // each bit
+          uc <<= 1;
+          delayMicroseconds(1);
+       } // for j
+   } // for i
+} /* Write9Bits() */
+
+void spilcdWritePanelCommands(const BB_RGB *pPanel, const uint8_t *pCmdList, int iListLen)
+{
+uint8_t c, *s = (uint8_t *)pCmdList;
+uint8_t ucTemp[16];
+
+// 9-bit mode (no D/C pin)
+   pinMode(pPanel->mosi, OUTPUT);
+   pinMode(pPanel->sck, OUTPUT);
+   pinMode(pPanel->cs, OUTPUT);
+   digitalWrite(pPanel->cs, HIGH);
+//   SPI.begin(pPanel->sck, -1/*MISO*/, pPanel->mosi, -1/*pPanel->cs*/);
+   while (*s) {
+      c = *s++; // count
+      if (c == LCD_DELAY) { // pause
+         c = *s++;
+         delay(c);
+      } else {
+         //SPI.beginTransaction(SPISettings(2000000, MSBFIRST, SPI_MODE0));    
+         //SPI.transferBytes(s, ucTemp, c);
+         digitalWrite(pPanel->cs, LOW);
+         Write9Bits(pPanel, 0, s, 1); // command
+         if (c > 1) {
+            Write9Bits(pPanel, 1, &s[1], c-1); // data
+         }
+         digitalWrite(pPanel->cs, HIGH);
+         s += c;
+         //SPI.endTransaction();
+      }
+   } // while
+   //digitalWrite(pPanel->cs, HIGH);
+} /* spilcdWritePanelCommands() */
+
 int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq)
 {
     memset(&_lcd, 0, sizeof(_lcd));
@@ -6349,6 +6471,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             break;
         case DISPLAY_CYD_24R:
             spilcdInit(&_lcd, LCD_ST7789, FLAGS_INVERT, 40000000, 15, 2, -1, 27, 12, 13, 14, 0); // Cheap Yellow Display (2.4 w/resistive touch)
+            setRotation(270);
             _lcd.pSPI = &SPI; // shared SPI
             _lcd.iRTCS = 33;
             _lcd.iRTMOSI = 255;
@@ -6358,6 +6481,27 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_CYD_28C:
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14, 1); // Cheap Yellow Display (2.4 and 2.8 w/cap touch)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            break;
+        case DISPLAY_CYD_4848: // 4.0" 480x480 ESP32-S3
+            memset(&_lcd, 0, sizeof(_lcd));
+            _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
+            _lcd.iLEDPin = -1; 
+            _lcd.iLCDType = LCD_VIRTUAL_MEM;
+            _lcd.iWidth = _lcd.iCurrentWidth = 480;
+            _lcd.iHeight = _lcd.iCurrentHeight = 480;
+            spilcdWritePanelCommands(&rgbpanel_480x480, st7701list, sizeof(st7701list));
+            spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_480x480));
+            break;
+        case DISPLAY_CYD_8048: // 4.3" 800x480 ESP32-S3
+            memset(&_lcd, 0, sizeof(_lcd));
+            _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
+            _lcd.iLEDPin = 2;
+            pinMode(2, OUTPUT);
+            digitalWrite(2, HIGH);
+            _lcd.iLCDType = LCD_VIRTUAL_MEM;
+            _lcd.iWidth = _lcd.iCurrentWidth = 800;
+            _lcd.iHeight = _lcd.iCurrentHeight = 480;
+            spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_800x480));
             break;
         case DISPLAY_CYD:
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 21, 12, 13, 14, 1); // Cheap Yellow Display (common versions w/resistive touch)
@@ -6675,6 +6819,9 @@ void BB_SPI_LCD::setBrightness(uint8_t u8Brightness)
 
 int BB_SPI_LCD::begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin)
 {
+  if (iMISOPin == -1) iMISOPin = MISO;
+  if (iMOSIPin == -1) iMOSIPin = MOSI;
+  if (iCLKPin == -1) iCLKPin = SCK;
   return spilcdInit(&_lcd, iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin,1);
 } /* begin() */
 
@@ -6690,7 +6837,7 @@ void BB_SPI_LCD::waitDMA(void)
 
 uint8_t * BB_SPI_LCD::getDMABuffer(void)
 {
-    return (uint8_t *)ucTXBuf;
+    return (uint8_t *)pDMA;
 }
 
 void * BB_SPI_LCD::getBuffer(void)

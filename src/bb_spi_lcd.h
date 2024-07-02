@@ -129,6 +129,21 @@ typedef struct {
 #define TFT_ORANGE 0xbbc0
 #endif
 
+// Structure holding the info for a parallel RGB panel type LCD
+typedef struct tagBB_RGB
+{
+  int8_t cs, sck, mosi; // SPI interface
+  int8_t de, vsync, hsync, pclk;
+  int8_t r0,r1,r2,r3,r4; // 5 bits of red
+  int8_t g0,g1,g2,g3,g4,g5; // 6 bits of green
+  int8_t b0,b1,b2,b3,b4; // 5 bits of blue
+  int8_t hsync_back_porch, hsync_front_porch, hsync_pulse_width;
+  int8_t vsync_back_porch, vsync_front_porch, vsync_pulse_width;
+  int8_t hsync_polarity, vsync_polarity;
+  int16_t width, height; // size in pixels
+  uint32_t speed;
+} BB_RGB;
+
 // Structure holding an instance of a display
 typedef struct tagSPILCD
 {
@@ -172,7 +187,7 @@ class BB_SPI_LCD : public Print
     int captureArea(int dst_x, int dst_y, int src_x, int src_y, int src_w, int src_h, uint16_t *pPixels, int bSwap565 = 1);
     int merge(uint16_t *pSrc, uint16_t usTrans, int bSwap565);
     int begin(int iStandardType);
-    int begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
+    int begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin = -1, int iMISOPin = -1, int iMOSIPin = -1, int iCLKPin = -1);
     int beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq);
     void setBrightness(uint8_t u8Brightness); // 0-FF = off to brightest
     void setRotation(int iAngle);
@@ -273,6 +288,8 @@ enum
     DISPLAY_CYD_35, // ILI9488 320x480 LCD
     DISPLAY_CYD_22C, // ST7789 2.2" 320x240 parallel
     DISPLAY_CYD_543, // 480x270 ESP32-S3 QSPI
+    DISPLAY_CYD_8048, // 800x480 ESP32-S3 RGB 'panel'
+    DISPLAY_CYD_4848, // Makerfabs 4" 480x480
     DISPLAY_D1_R32_ILI9341,
     DISPLAY_COUNT
 };
@@ -295,6 +312,7 @@ typedef enum
 #define FLAGS_MEM_RESTART 32
 #define FLAGS_CS_EACHBYTE 64
 
+uint16_t * RGBInit(BB_RGB *pRGB);
 #if defined(__LINUX__) && defined(__cplusplus)
 extern "C" {
 #endif
