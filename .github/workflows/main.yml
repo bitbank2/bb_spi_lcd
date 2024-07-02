@@ -30,3 +30,4 @@ jobs:
           libraries: |
             - source-path: ./
             - name: AnimatedGIF
+            - name: bb_captouch
