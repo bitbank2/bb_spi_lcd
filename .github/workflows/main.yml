@@ -27,3 +27,6 @@ jobs:
           fqbn: ${{ matrix.platform }}
           platforms: |
             - name: "esp32:esp32"
+          libraries: |
+            - source-path: ./
+            - name: AnimatedGIF
