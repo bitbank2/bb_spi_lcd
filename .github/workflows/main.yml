@@ -36,3 +36,4 @@ jobs:
             - source-path: ./
             - name: AnimatedGIF
             - name: bb_captouch
+          sketch-paths: ${{ matrix.example }}
