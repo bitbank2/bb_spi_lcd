@@ -22,9 +22,8 @@ jobs:
         exclude:
           - platform: "esp32:esp32:esp32"
             example: "examples/callback_demo"
-            exclude:
-              - platform: "esp32:esp32:esp32"
-                example: "examples/wio_dma_gif_demo"
+          - platform: "esp32:esp32:esp32"
+            example: "examples/wio_dma_gif_demo"
         # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       - uses: actions/checkout@v4
