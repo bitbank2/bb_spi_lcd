@@ -18,8 +18,14 @@ jobs:
       fail-fast: false
       matrix:
         platform: ["esp32:esp32:esp32"]
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
+        example: ["examples/atoms3_gif", "examples/callback_demo", "examples/parallel_shield_demo", "examples/spi_lcd_demo", "examples/spi_touch_test", "examples/spilcd_prop_font", "examples/UNO_shield_demo", "examples/wio_dma_gif_demo"]
+        exclude:
+          - platform: "esp32:esp32:esp32"
+            example: "examples/callback_demo"
+            exclude:
+              - platform: "esp32:esp32:esp32"
+                example: "examples/wio_dma_gif_demo"
+        # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       - uses: actions/checkout@v4
       - uses: arduino/compile-sketches@v1
