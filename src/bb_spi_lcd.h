@@ -191,6 +191,7 @@ class BB_SPI_LCD : public Print
     int beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq);
     void setBrightness(uint8_t u8Brightness); // 0-FF = off to brightest
     void setRotation(int iAngle);
+    void setWordwrap(int bWrap);
     uint8_t getRotation(void);
     void fillScreen(int iColor);
     void drawPixel(int16_t x, int16_t y, uint16_t color);
@@ -288,6 +289,7 @@ enum
     DISPLAY_CYD_35, // ILI9488 320x480 LCD
     DISPLAY_CYD_22C, // ST7789 2.2" 320x240 parallel
     DISPLAY_CYD_543, // 480x270 ESP32-S3 QSPI
+    DISPLAY_CYD_518, // 360x360 ESP32-S3 QSPI
     DISPLAY_CYD_8048, // 800x480 ESP32-S3 RGB 'panel'
     DISPLAY_CYD_4848, // Makerfabs 4" 480x480
     DISPLAY_D1_R32_ILI9341,
@@ -548,6 +550,7 @@ enum {
    LCD_RM67162, // 240x536 2.4" AMOLED QSPI
    LCD_AXS15231B, // 180x640 3.4" QSPI
    LCD_NV3041A, // 480x272 4.3" QSPI
+   LCD_ST77916, // 360x360 round 1.8" QSPI
    LCD_VIRTUAL_MEM, // memory-only display
    LCD_VALID_MAX
 };
