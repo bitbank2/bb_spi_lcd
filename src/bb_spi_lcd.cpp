@@ -266,7 +266,20 @@ const BB_RGB rgbpanel_480x480 = {
     480, 480,
     16000000 // speed
 };
-// 16-bit RGB panel 800x480
+// 16-bit RGB panel 800x480 for JC8048W700 (7.0" 800x480)
+const BB_RGB rgbpanel_800x480_7 = { 
+    -1 /* CS */, -1 /* SCK */, -1 /* SDA */,
+    41 /* DE */, 40 /* VSYNC */, 39 /* HSYNC */, 42 /* PCLK */,
+    14 /* R0 */, 21 /* R1 */, 47 /* R2 */, 48 /* R3 */, 45 /* R4 */,
+    9 /* G0 */, 46 /* G1 */, 3 /* G2 */, 8 /* G3 */, 16 /* G4 */, 1 /* G5 */,           
+    15 /* B0 */, 7 /* B1 */, 6 /* B2 */, 5 /* B3 */, 4 /* B4 */,
+    16 /* hsync_back_porch */, 180 /* hsync_front_porch */, 30 /* hsync_pulse_width */,     
+    10 /* vsync_back_porch */, 12 /* vsync_front_porch */, 13 /* vsync_pulse_width */,     
+    0 /* hsync_polarity */, 0 /* vsync_polarity */,
+    800, 480,
+    16000000 // speed
+};
+// 16-bit RGB panel 800x480 for JC8048W543 and JC8048W550 (4.3"/5.5" 800x480)
 const BB_RGB rgbpanel_800x480 = {
     -1 /* CS */, -1 /* SCK */, -1 /* SDA */,
     40 /* DE */, 41 /* VSYNC */, 39 /* HSYNC */, 42 /* PCLK */,
@@ -6747,7 +6760,19 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdWritePanelCommands(&rgbpanel_480x480, st7701list, sizeof(st7701list));
             spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_480x480));
             break;
-        case DISPLAY_CYD_8048: // 4.3" 800x480 ESP32-S3
+        case DISPLAY_CYD_700: // 7" 800x480 ESP32-S3
+            memset(&_lcd, 0, sizeof(_lcd));
+            _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
+            _lcd.iLEDPin = 2;
+            pinMode(2, OUTPUT);
+            digitalWrite(2, HIGH);
+            _lcd.iLCDType = LCD_VIRTUAL_MEM;
+            _lcd.iWidth = _lcd.iCurrentWidth = 800;
+            _lcd.iHeight = _lcd.iCurrentHeight = 480;
+            spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_800x480_7));
+            break;
+
+        case DISPLAY_CYD_8048: // 4.3" and 5.5" 800x480 ESP32-S3
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
             _lcd.iLEDPin = 2;
@@ -6768,6 +6793,11 @@ int BB_SPI_LCD::begin(int iDisplayType)
             _lcd.iRTCS = 33;
             _lcd.iRTOrientation = 0;
             _lcd.iRTThreshold = 6300;
+            break;
+        case DISPLAY_LOLIN_S3_MINI_PRO: // ESP32-S3 + 0.85" 128x128 LCD
+// spilcdInit(&_lcd, LCD_ST7789_240, FLAGS_NONE, 40000000, iCS, iDC, iRST, iLED, -1, iMOSI, iSCK,1);
+            spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 35, 36, 34, 33, -1, 38, 40, 1);
+            //qspiSetBrightness(&_lcd, 255); // something wrong with the backlight LED; needs to be set bright
             break;
         case DISPLAY_M5STACK_ATOMS3:
             spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 15, 33, 34, 16, -1, 21, 17, 1);

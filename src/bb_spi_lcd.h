@@ -137,8 +137,8 @@ typedef struct tagBB_RGB
   int8_t r0,r1,r2,r3,r4; // 5 bits of red
   int8_t g0,g1,g2,g3,g4,g5; // 6 bits of green
   int8_t b0,b1,b2,b3,b4; // 5 bits of blue
-  int8_t hsync_back_porch, hsync_front_porch, hsync_pulse_width;
-  int8_t vsync_back_porch, vsync_front_porch, vsync_pulse_width;
+  int16_t hsync_back_porch, hsync_front_porch, hsync_pulse_width;
+  int16_t vsync_back_porch, vsync_front_porch, vsync_pulse_width;
   int8_t hsync_polarity, vsync_polarity;
   int16_t width, height; // size in pixels
   uint32_t speed;
@@ -259,6 +259,7 @@ enum
     DISPLAY_TINYPICO_EXPLORER_SHIELD,
     DISPLAY_WIO_TERMINAL,
     DISPLAY_TEENSY_ILI9341,
+    DISPLAY_LOLIN_S3_MINI_PRO,
     DISPLAY_M5STACK_STICKC,
     DISPLAY_M5STACK_STICKCPLUS,
     DISPLAY_M5STACK_CORE2,
@@ -290,7 +291,8 @@ enum
     DISPLAY_CYD_22C, // ST7789 2.2" 320x240 parallel
     DISPLAY_CYD_543, // 480x270 ESP32-S3 QSPI
     DISPLAY_CYD_518, // 360x360 ESP32-S3 QSPI
-    DISPLAY_CYD_8048, // 800x480 ESP32-S3 RGB 'panel'
+    DISPLAY_CYD_700, // 7.0" 800x480 ST7262
+    DISPLAY_CYD_8048, // 4.3" and 5.5" 800x480 ESP32-S3 RGB 'panel'
     DISPLAY_CYD_4848, // Makerfabs 4" 480x480
     DISPLAY_D1_R32_ILI9341,
     DISPLAY_COUNT
