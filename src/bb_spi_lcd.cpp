@@ -6979,7 +6979,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_T_TRACK: // ESP32-S3 + 126x294 AMOLED
             pinMode(4, OUTPUT); // MOSFET power control
             digitalWrite(4, 1); // turn on the AMOLED display
-            spilcdInit(&_lcd, LCD_JD9613, FLAGS_FLIPX, 40000000, 9, 7, 8, 10, -1, 6, 5, 1);
+            spilcdInit(&_lcd, LCD_JD9613, FLAGS_FLIPX, 32000000, 9, 7, 8, 10, -1, 6, 5, 1);
             break;
         case DISPLAY_T_QT_C6:
             spilcdInit(&_lcd, LCD_GC9107, 0, 40000000, 14, 19, 20, 2, -1, 15, 18,1); 
@@ -7107,7 +7107,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             pinMode(16, OUTPUT); // power enable for LCD
             digitalWrite(16, 1);
             // CS=10, SCK=12, D0=11, D1=13, D2=14, D3=15, RST=17, BL=-1
-            qspiInit(&_lcd, LCD_ICNA3311, FLAGS_NONE, 1000000, 10,12,11,13,14,15,17,-1);
+            qspiInit(&_lcd, LCD_ICNA3311, FLAGS_NONE, 40000000, 10,12,11,13,14,15,17,-1);
             break;
 
         case DISPLAY_T_DISPLAY_S3:
