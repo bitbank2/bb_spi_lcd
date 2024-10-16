@@ -290,7 +290,7 @@ const BB_RGB rgbpanel_800x480 = {
     8 /* vsync_back_porch */, 8 /* vsync_front_porch */, 4 /* vsync_pulse_width */,
     0 /* hsync_polarity */, 0 /* vsync_polarity */,
     800, 480,
-    16000000 // speed
+    14000000 // speed
 };
 // 8-bit parallel pins for the CYD 2.2" ST7789
 uint8_t u8_22C_Pins[8] = {15,13,12,14,27,25,33,32};
@@ -1045,6 +1045,79 @@ const unsigned char ucJD9613InitList[] PROGMEM = {
     2, 0x29, 0x00,
     LCD_DELAY, 120,
 }; // JD9613
+
+const unsigned char ucGC9D01InitList[] PROGMEM = {
+    1, 0xFE,// Inter Register Enable1 (FEh)
+    1, 0xEF,// Inter Register Enable2 (EFh)
+    2,0x80,0xff,
+    2,0x81,0xFF,
+    2,0x82,0xFF,
+    2,0x83,0xFF,
+    2,0x84,0xFF,
+    2,0x85,0xFF,
+    2,0x86,0xFF,
+    2,0x87,0xFF,
+    2,0x88,0xFF,
+    2,0x89,0xFF,
+    2,0x8A,0xFF,
+    2,0x8B,0xFF,
+    2,0x8C,0xFF,
+    2,0x8D,0xFF,
+    2,0x8E,0xFF,
+    2,0x8F,0xFF,
+    2,0x3A,0x05, // COLMOD: Pixel Format Set (3Ah) MCU interface, 16 bits / pixel
+    2,0xEC,0x10, // Inversion (ECh) DINV=1+2 column for Single Gate (BFh=0)
+    2,0x7E,0x7A,
+    8,0x74,0x02,0x0E,0x00,0x00,0x28,0x00,0x00,
+    2,0x98,0x3E,
+    2,0x99,0x3E,
+    3,0xB5,0x0E,0x0E, // Blanking Porch Control (B5h) VFP=14 VBP=14 HBP=Off
+    5,0x60,0x38,0x09,0x6D,0x67,
+    6,0x63,0x38,0xAD,0x6D,0x67,0x05,
+    7,0x64,0x38,0x0B,0x70,0xAB,0x6D,0x67,
+    7,0x66,0x38,0x0F,0x70,0xAF,0x6D,0x67,
+    3,0x6A,0x00,0x00,
+    8,0x68,0x3B,0x08,0x04,0x00,0x04,0x64,0x67,
+    8,0x6C,0x22,0x02,0x22,0x02,0x22,0x22,0x50,
+   33,0x6E,0x00,0x00,0x00,0x00,0x07,0x01,0x13,0x11,0x0B,0x09,0x16,0x15,0x1D,0x1E,0x00,0x00,0x00,0x00,0x1E,0x1D,0x15,0x16,0x0A,0x0C,0x12,0x14,0x02,0x08,0x00,0x00,0x00,0x00,
+    2,0xA9,0x1B,
+    2,0xA8,0x6B,
+    2,0xA8,0x6D,
+    2,0xA7,0x40,
+    2,0xAD,0x47,
+    2,0xAF,0x73,
+    2,0xAF,0x73,
+    2,0xAC,0x44,
+    2,0xA3,0x6C,
+    2,0xCB,0x00,
+    2,0xCD,0x22,
+    2,0xC2,0x10,
+    2,0xC5,0x00,
+    2,0xC6,0x0E,
+    2,0xC7,0x1F,
+    2,0xC8,0x0E,
+    2,0xBF,0x00,  // Dual-Single Gate Select (BFh) 0=>Single gate
+    2,0xF9,0x20,
+    2,0x9B,0x3B,
+    4,0x93,0x33,0x7F,0x00,
+    7,0x70,0x0E,0x0F,0x03,0x0E,0x0F,0x03,
+    4,0x71,0x0E,0x16,0x03,
+    3,0x91,0x0E,0x09,
+    2,0xC3,0x2C,  // Vreg1a Voltage Control 2 (C3h) vreg1_vbp_d=0x2C
+    2,0xC4,0x1A,  // Vreg1b Voltage Control 2 (C4h) vreg1_vbn_d=0x1A
+    7,0xF0,0x51,0x13,0x0C,0x06,0x00,0x2F,  // SET_GAMMA1 (F0h)
+    7,0xF2,0x51,0x13,0x0C,0x06,0x00,0x33,  // SET_GAMMA3 (F2h)
+    7,0xF1,0x3C,0x94,0x4F,0x33,0x34,0xCF,  // SET_GAMMA2 (F1h)
+    7,0xF3,0x4D,0x94,0x4F,0x33,0x34,0xCF,  // SET_GAMMA4 (F3h)
+    2,0x36,0x00,  // Memory Access Control (36h) MY=0, MX=0, MV=0, ML=0, BGR=0, MH=0
+    1,0x11,  // Sleep Out Mode (11h) and delay(200)
+    LCD_DELAY, 200,
+    1,0x29,  // Display ON (29h) and delay(20)
+    LCD_DELAY, 20,
+    1,0x2C,  // Memory Write (2Ch) D=0
+    0
+}; // GC9D01 160x160 round
+
 const unsigned char ucGC9A01InitList[]PROGMEM = {
     1, 0xEF,
     2, 0xEB, 0x14,
@@ -2144,7 +2217,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
 		myPinWrite(pLCD->iResetPin, 0); // reset the controller
 		delayMicroseconds(60000);
 		myPinWrite(pLCD->iResetPin, 1);
-		delayMicroseconds(60000);
+		delayMicroseconds(460000);
 	}
 	if (pLCD->iLCDType != LCD_SSD1351 && pLCD->iLCDType != LCD_SSD1331) // no backlight and no soft reset on OLED
 	{
@@ -2253,6 +2326,20 @@ start_of_init:
         s = d;
        }
        break;
+
+    case LCD_GC9D01:
+       {
+        pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
+        pLCD->iCurrentWidth = pLCD->iWidth = 120;
+        pLCD->iCurrentHeight = pLCD->iHeight = 120;
+        pLCD->iColStart = pLCD->iMemoryX = 0;
+        pLCD->iRowStart = pLCD->iMemoryY = 0;
+        s = (unsigned char *)&ucGC9D01InitList[0];
+        memcpy_P(d, s, sizeof(ucGC9D01InitList));
+        s = d;
+       } // GC9D01
+       break;
+
     case LCD_GC9A01:
        {
         pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
@@ -3533,6 +3620,8 @@ void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h)
     {
         x2 = x + w - 1;
         pLCD->iOldX = x; pLCD->iOldCX = w;
+        x += pLCD->iMemoryX;
+        x2 += pLCD->iMemoryX;
         u8Temp[0] = (uint8_t)(x >> 8);
         u8Temp[1] = (uint8_t)x;
         u8Temp[2] = (uint8_t)(x2 >> 8);
@@ -3990,6 +4079,45 @@ void AXS15231Init(SPILCD *pLCD)
     qspiSendCMD(pLCD, 0x36, u8Temp, 1);
 } /* AXS15231Init() */
 
+void ICNA3311Init(SPILCD *pLCD)
+{
+    uint8_t u8Temp[4];
+        
+    pLCD->iCurrentWidth = pLCD->iWidth = 280;
+    pLCD->iCurrentHeight = pLCD->iHeight = 456;
+    pLCD->iMemoryX = 20;
+
+    qspiSendCMD(pLCD, 0x11, NULL, 0); // sleep out
+    delay(120);
+    u8Temp[0] = 0x00;
+    qspiSendCMD(pLCD, 0xfe, u8Temp, 1);
+    u8Temp[0] = 0x80; // SPI mode control
+    qspiSendCMD(pLCD, 0xc4, u8Temp, 1);
+    u8Temp[0] = 0x55; // pixel format
+    qspiSendCMD(pLCD, 0x3a, u8Temp, 1);
+
+    u8Temp[0] = 0x20;
+    qspiSendCMD(pLCD, 0x53, u8Temp, 1); // write ctrl 1
+
+    u8Temp[0] = 0xff;
+    qspiSendCMD(pLCD, 0x63, u8Temp, 1); // brightness in HBM mode
+
+    u8Temp[0] = 0; u8Temp[1] = 0x14; u8Temp[2] = 0x1; u8Temp[3] = 0x2b;
+    qspiSendCMD(pLCD, 0x2a, u8Temp, 4); // CASET
+
+    u8Temp[0] = 0; u8Temp[1] = 0; u8Temp[2] = 1; u8Temp[3] = 0xc7;
+    qspiSendCMD(pLCD, 0x2b, u8Temp, 4); // PASET
+
+    qspiSendCMD(pLCD, 0x29, NULL, 0); // display on
+    u8Temp[0] = 0xd0; // display brightness (max = 0xff)
+    qspiSendCMD(pLCD, 0x51, u8Temp, 1);
+    u8Temp[0] = 0x0; // sunlight mode off
+    qspiSendCMD(pLCD, 0x58, u8Temp, 1);
+    delay(10);
+
+    qspiSendCMD(pLCD, 0x20, NULL, 0); // inversion off
+} /* ICNA3311Init() */
+
 void RM67162Init(SPILCD *pLCD)
 {
     uint8_t u8Temp[4];
@@ -4013,8 +4141,8 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
 {
     esp_err_t ret;
     
-//    pinMode(u8CS, OUTPUT);
-//    digitalWrite(u8CS, HIGH);
+    pinMode(u8CS, OUTPUT);
+    digitalWrite(u8CS, HIGH);
     if (u8LED != 0xff) {
 #if (ESP_IDF_VERSION_MAJOR > 4)
         ledcAttach(u8LED, 5000, 8); // attach pin to channel 0
@@ -4065,6 +4193,9 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
     ESP_ERROR_CHECK(ret);
     
     switch (iLCDType) {
+        case LCD_ICNA3311:
+            ICNA3311Init(pLCD);
+            break;
         case LCD_AXS15231B:
             AXS15231Init(pLCD);
             break;
@@ -4378,11 +4509,10 @@ int i, /*j, iLen, */ k, dx, dy, cx, cy, c, iBitOff;
 int tx, ty;
 uint8_t *s, bits, uc;
 GFXfont font;
-GFXglyph glyph, *pGlyph;
-#define TEMP_BUF_SIZE 64
-#define TEMP_HIGHWATER (TEMP_BUF_SIZE-8)
-uint16_t *d, u16Temp[TEMP_BUF_SIZE];
-
+GFXglyph *pGlyph;
+uint16_t *d;
+uint8_t ucBitmap[32]; // 256 pixels wide should be big enough?
+    
    if (pFont == NULL)
       return -1;
     if (x == -1)
@@ -4393,7 +4523,6 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
         return -1;
    // in case of running on AVR, get copy of data from FLASH
    memcpy_P(&font, pFont, sizeof(font));
-   pGlyph = &glyph;
    usFGColor = (usFGColor >> 8) | (usFGColor << 8); // swap h/l bytes
    usBGColor = (usBGColor >> 8) | (usBGColor << 8);
 
@@ -4404,7 +4533,7 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
       if (c < font.first || c > font.last) // undefined character
          continue; // skip it
       c -= font.first; // first char of font defined
-      memcpy_P(&glyph, &font.glyph[c], sizeof(glyph));
+      pGlyph = &font.glyph[c];
       // set up the destination window (rectangle) on the display
       dx = x + pGlyph->xOffset; // offset from character UL to start drawing
       dy = y + pGlyph->yOffset;
@@ -4437,6 +4566,7 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
          if (cx + x > pLCD->iCurrentWidth) {
             cx = pLCD->iCurrentWidth - x;
          }
+          Serial.println("Blank");
          spilcdSetPosition(pLCD, x, miny, cx, maxy-miny, iFlags);
             // blank out area above character
 //            cy = font.yAdvance - pGlyph->height;
@@ -4447,7 +4577,7 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
 //            } // for ty
             // character area (with possible padding on L+R)
             for (ty=0; ty<pGlyph->height && ty+miny < maxy; ty++) {
-               d = &u16Temp[0];
+               d = (uint16_t *)ucRXBuf;
                for (tx=0; tx<pGlyph->xOffset && tx < cx; tx++) { // left padding
                   *d++ = usBGColor;
                }
@@ -4465,21 +4595,22 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
                   uc <<= 1;
                } // for tx
                // right padding
-               k = pGlyph->xAdvance - (int)(d - u16Temp); // remaining amount
+               k = pGlyph->xAdvance - (int)(d - (uint16_t *)ucRXBuf); // remaining amount
                for (tx=0; tx<k && (tx+pGlyph->xOffset+pGlyph->width) < cx; tx++)
                   *d++ = usBGColor;
-               myspiWrite(pLCD, (uint8_t *)u16Temp, cx*sizeof(uint16_t), MODE_DATA, iFlags);
+               myspiWrite(pLCD, ucRXBuf, cx*sizeof(uint16_t), MODE_DATA, iFlags);
             } // for ty
             // padding below the current character
             ty = y + pGlyph->yOffset + pGlyph->height;
             for (; ty < maxy; ty++) {
                for (tx=0; tx<cx; tx++)
-                  u16Temp[tx] = usBGColor;
-               myspiWrite(pLCD, (uint8_t *)u16Temp, cx*sizeof(uint16_t), MODE_DATA, iFlags);
+                  ucRXBuf[tx] = usBGColor;
+               myspiWrite(pLCD, ucRXBuf, cx*sizeof(uint16_t), MODE_DATA, iFlags);
             } // for ty
       } else if (usFGColor == usBGColor) { // transparent
           int iCount; // opaque pixel count
-          d = u16Temp;
+          Serial.println("Transparent");
+          d = (uint16_t *)ucRXBuf;
           for (iCount=0; iCount < cx; iCount++)
               d[iCount] = usFGColor; // set up a line of solid color
           iCount = 0; // number of sequential opaque pixels
@@ -4497,8 +4628,8 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
                     } else { // any opaque pixels to write?
                         if (iCount) {
                             spilcdSetPosition(pLCD, dx+tx-iCount, dy+ty, iCount, 1, iFlags);
-                       d = &u16Temp[0]; // point to start of output buffer
-                            myspiWrite(pLCD, (uint8_t *)u16Temp, iCount*sizeof(uint16_t), MODE_DATA, iFlags);
+                       d = (uint16_t *)ucRXBuf; // point to start of output buffer
+                            myspiWrite(pLCD, ucRXBuf, iCount*sizeof(uint16_t), MODE_DATA, iFlags);
                             iCount = 0;
                         } // if opaque pixels to write
                     } // if transparent pixel hit
@@ -4510,7 +4641,7 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
        // quicker drawing
       } else { // just draw the current character box fast
          spilcdSetPosition(pLCD, dx, dy, cx, cy, iFlags);
-            d = &u16Temp[0]; // point to start of output buffer
+            d = (uint16_t *)ucRXBuf; // point to start of output buffer
             for (ty=0; ty<cy; ty++) {
             for (tx=0; tx<pGlyph->width; tx++) {
                if (bits == 0) { // need to read more font data
@@ -4518,10 +4649,10 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
                   bits = 8 - (iBitOff & 7); // we might not be on a byte boundary
                   iBitOff += bits; // because of a clipped line
                   uc <<= (8-bits);
-                  k = (int)(d-u16Temp); // number of words in output buffer
-                  if (k >= TEMP_HIGHWATER) { // time to write it
-                     myspiWrite(pLCD, (uint8_t *)u16Temp, k*sizeof(uint16_t), MODE_DATA, iFlags);
-                     d = &u16Temp[0];
+                  k = (int)(d-(uint16_t *)ucRXBuf); // number of words in output buffer
+                  if (k >= sizeof(ucRXBuf)/4) { // time to write it
+                     myspiWrite(pLCD, ucRXBuf, k*sizeof(uint16_t), MODE_DATA, iFlags);
+                     d = (uint16_t *)ucRXBuf;
                   }
                } // if we ran out of bits
                if (tx < cx) {
@@ -4531,9 +4662,9 @@ uint16_t *d, u16Temp[TEMP_BUF_SIZE];
                uc <<= 1;
             } // for tx
             } // for ty
-            k = (int)(d-u16Temp);
+            k = (int)(d-(uint16_t *)ucRXBuf);
             if (k) // write any remaining data
-               myspiWrite(pLCD, (uint8_t *)u16Temp, k*sizeof(uint16_t), MODE_DATA, iFlags);
+               myspiWrite(pLCD, ucRXBuf, k*sizeof(uint16_t), MODE_DATA, iFlags);
       } // quicker drawing
       x += pGlyph->xAdvance; // width of this character
    } // while drawing characters
@@ -5315,7 +5446,7 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
         } // for x1
         if (x != x1) // some data needs to be written
         {
-	    iLen = (x1-x+1);
+	    iLen = (x1-x);
 //#ifndef ESP32_DMA
             for (temp=0; temp<iLen; temp++) // prepare color data for max length line
                usTemp[temp] = us;
@@ -5367,7 +5498,7 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
         } // for y
         if (y != y1) // write the last byte we modified if it changed
         {
-	    iLen = y1-y+1;
+	    iLen = y1-y;
 //#ifndef ESP32_DMA
             for (i=0; i<iLen; i++) // prepare color data for max length line
                usTemp[i] = us;
@@ -6737,6 +6868,10 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_CYD_128:
             spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6, 1); // Cheap Yellow Display (ESP32-C3 1.28" round version)
             break;
+        case DISPLAY_CYD_24C:
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14, 0); // Cheap Yellow Display (2.4 w/capacitive touch)
+            setRotation(270);
+            break;
         case DISPLAY_CYD_24R:
             spilcdInit(&_lcd, LCD_ST7789, FLAGS_INVERT, 40000000, 15, 2, -1, 27, 12, 13, 14, 0); // Cheap Yellow Display (2.4 w/resistive touch)
             setRotation(270);
@@ -6845,6 +6980,9 @@ int BB_SPI_LCD::begin(int iDisplayType)
             pinMode(4, OUTPUT); // MOSFET power control
             digitalWrite(4, 1); // turn on the AMOLED display
             spilcdInit(&_lcd, LCD_JD9613, FLAGS_FLIPX, 40000000, 9, 7, 8, 10, -1, 6, 5, 1);
+            break;
+        case DISPLAY_T_QT_C6:
+            spilcdInit(&_lcd, LCD_GC9107, 0, 40000000, 14, 19, 20, 2, -1, 15, 18,1); 
             break;
         case DISPLAY_T_QT:
             spilcdInit(&_lcd, LCD_GC9107, 0, 50000000, 5, 6, 1, -1, -1, 2, 3,1);
@@ -6959,8 +7097,17 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_T_DISPLAY_S3_AMOLED: // 240x536 RM67162
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.bUseDMA = 1; // allows DMA access
-            // CS=12, SCK=17, D0=13, D1=18, D2=21, D3=14, RST=16, BL=1
+            // CS=6, SCK=47, D0=18, D1=7, D2=48, D3=5, RST=17, BL=-1
             qspiInit(&_lcd, LCD_RM67162, FLAGS_NONE, 40000000, 6,47,18,7,48,5,17,-1);
+            break;
+
+        case DISPLAY_T_DISPLAY_S3_AMOLED_164: // 280x456 ICNA3311 
+            memset(&_lcd, 0, sizeof(_lcd));
+            _lcd.bUseDMA = 1; // allows DMA access
+            pinMode(16, OUTPUT); // power enable for LCD
+            digitalWrite(16, 1);
+            // CS=10, SCK=12, D0=11, D1=13, D2=14, D3=15, RST=17, BL=-1
+            qspiInit(&_lcd, LCD_ICNA3311, FLAGS_NONE, 1000000, 10,12,11,13,14,15,17,-1);
             break;
 
         case DISPLAY_T_DISPLAY_S3:

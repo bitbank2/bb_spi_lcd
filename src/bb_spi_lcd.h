@@ -112,7 +112,7 @@ typedef struct {
   GFXglyph *glyph;  ///< Glyph array
   uint8_t first;    ///< ASCII extents (first char)
   uint8_t last;     ///< ASCII extents (last char)
-  uint16_t yAdvance; ///< Newline distance (y axis)
+  int16_t yAdvance; ///< Newline distance (y axis)
 } GFXfont;
 #endif // _ADAFRUIT_GFX_H
 
@@ -272,8 +272,10 @@ enum
     DISPLAY_T_DISPLAY_S3_PRO,
     DISPLAY_T_DISPLAY_S3_LONG,
     DISPLAY_T_DISPLAY_S3_AMOLED,
+    DISPLAY_T_DISPLAY_S3_AMOLED_164, // 1.64" version
     DISPLAY_T_DISPLAY,
     DISPLAY_T_QT,
+    DISPLAY_T_QT_C6,
     DISPLAY_T_TRACK,
     DISPLAY_TUFTY2040,
     DISPLAY_RP2040_C3, // 172x320 ST7789 8-bit parallel
@@ -287,6 +289,7 @@ enum
     DISPLAY_CYD_128, // GC9A01 240x240 LCD
     DISPLAY_CYD_28C,
     DISPLAY_CYD_24R,
+    DISPLAY_CYD_24C,
     DISPLAY_CYD_35, // ILI9488 320x480 LCD
     DISPLAY_CYD_22C, // ST7789 2.2" 320x240 parallel
     DISPLAY_CYD_543, // 480x270 ESP32-S3 QSPI
@@ -546,6 +549,7 @@ enum {
    LCD_ILI9488, // 320x480
    LCD_GC9A01, // 240x240 round
    LCD_GC9107, // 128x128 tiny (0.85")
+   LCD_GC9D01, // 160x160 round
    LCD_JD9613, // 294x126 AMOLED
    LCD_GDOD0139, // 454x454 1.39" AMOLED
    LCD_QUAD_SPI, // divider for LCDs with QSPI interface
@@ -553,6 +557,7 @@ enum {
    LCD_AXS15231B, // 180x640 3.4" QSPI
    LCD_NV3041A, // 480x272 4.3" QSPI
    LCD_ST77916, // 360x360 round 1.8" QSPI
+   LCD_ICNA3311, // 280x456 AMOLED 1.64" QSPI
    LCD_VIRTUAL_MEM, // memory-only display
    LCD_VALID_MAX
 };
