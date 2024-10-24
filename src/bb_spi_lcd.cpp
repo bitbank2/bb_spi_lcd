@@ -6853,9 +6853,9 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ILI9488, FLAGS_FLIPX | FLAGS_SWAP_RB, 80000000, 15, 2, -1, 27, 12, 13, 14, 1); // Cheap Yellow Display (ESP32 3.5" 320x480 version) 
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             _lcd.pSPI = NULL;
-            _lcd.iRTMOSI = 32;
-            _lcd.iRTMISO = 39; // pre-configure resistive touch
-            _lcd.iRTCLK = 25;
+            _lcd.iRTMOSI = 13;
+            _lcd.iRTMISO = 12; // pre-configure resistive touch
+            _lcd.iRTCLK = 14;
             _lcd.iRTCS = 33;
             _lcd.iRTOrientation = 0;
             _lcd.iRTThreshold = 6300; 
