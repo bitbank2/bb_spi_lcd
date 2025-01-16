@@ -167,9 +167,13 @@ static unsigned char ucRXBuf[512];
 // explicitly align the memory
 static unsigned char ucRXBuf[2048] __attribute__((aligned (16)));
 #else
-//static int iTXBufSize;
-//static unsigned char *ucTXBuf;
-static unsigned char ucRXBuf[1024];
+static uint8_t ucTXBuf[4096];
+static uint8_t ucRXBuf[1024];
+static int iTXBufSize = sizeof(ucTXBuf);;
+uint8_t *pDMA0 = ucTXBuf;
+uint8_t *pDMA1 = &ucTXBuf[2048]; // 2 ping-pong buffers 
+volatile uint8_t *pDMA = pDMA0;
+volatile bool transfer_is_done = true; // Done yet?
 #endif // AVR | RP2040
 #endif // !ESP32
 #define LCD_DELAY 0xff
@@ -904,8 +908,8 @@ static int16_t pgm_read_word(uint8_t *ptr)
 void spilcdSetTXBuffer(uint8_t *pBuf, int iSize)
 {
 #if !defined( ARDUINO_ARCH_ESP32 ) && !defined( __LINUX__ )
-  ucTXBuf = pBuf;
-  iTXBufSize = iSize;
+  //ucTXBuf = pBuf;
+  //iTXBufSize = iSize;
 #endif
 } /* spilcdSetTXBuffer() */
 
@@ -6506,6 +6510,7 @@ uint8_t ucTemp[4];
         pRXBuf[i] = ucIn; // store the received data
         } // for each byte
     } else { // shared SPI bus
+#ifdef ARDUINO_ARCH_ESP32
         spi_transaction_t t;
         memcpy(pRXBuf, ucTemp, iLen); // Arduino only allows duplex overwrite
         digitalWrite(pLCD->iRTCS, LOW);
@@ -6513,6 +6518,7 @@ uint8_t ucTemp[4];
         pLCD->pSPI->transfer(pRXBuf, iLen);
         pLCD->pSPI->endTransaction();
         digitalWrite(pLCD->iRTCS, HIGH);
+#endif // ESP32
     }
 #endif // !__LINUX__   
 } /* rtSPIXfer() */
@@ -6526,7 +6532,9 @@ uint8_t ucTemp[4];
     ucTemp[1] = (uint8_t)iLines;
 
     if (_lcd.iLCDType > LCD_QUAD_SPI) {
+#ifdef ARDUINO_ARCH_ESP32
        qspiSendCMD(&_lcd, 0x37, ucTemp, 2);
+#endif // ESP32
     } else { // SPI and parallel LCDs
         if (_lcd.iLCDType == LCD_SSD1351) {
             spilcdWriteCommand(&_lcd, 0xa1); // set scroll start line
@@ -6574,7 +6582,7 @@ uint8_t ucTemp[4];
    if (u8CS != 255) {
       _lcd.iRTCS = u8CS;
    }
-   Serial.printf("rtInit on pins %d, %d, %d, %d\n", _lcd.iRTMOSI, _lcd.iRTMISO, _lcd.iRTCLK, _lcd.iRTCS);
+   //Serial.printf("rtInit on pins %d, %d, %d, %d\n", _lcd.iRTMOSI, _lcd.iRTMISO, _lcd.iRTCLK, _lcd.iRTCS);
    if (_lcd.iRTMOSI != _lcd.iMOSIPin) { // use bit bang for the touch controller
        //Serial.println("Resistive touch bit bang");
        pinMode(_lcd.iRTMOSI, OUTPUT);
@@ -6878,6 +6886,9 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_CYD_128:
             spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6, 1); // Cheap Yellow Display (ESP32-C3 1.28" round version)
             break;
+        case DISPLAY_XIAO_ROUND:
+            spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, D1, D3, -1, -1, -1, D10, D8, 1); // Seeed Xiao 1.28" 240x240 round LCD
+            break;
         case DISPLAY_CYD_24C:
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14, 0); // Cheap Yellow Display (2.4 w/capacitive touch)
             setRotation(270);
@@ -6946,7 +6957,9 @@ int BB_SPI_LCD::begin(int iDisplayType)
             break;
         case DISPLAY_M5STACK_ATOMS3:
             spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 15, 33, 34, 16, -1, 21, 17, 1);
+#ifdef ARDUINO_ARCH_ESP32
             qspiSetBrightness(&_lcd, 255); // something wrong with the backlight LED; needs to be set bright
+#endif // ESP32
             break;
 #ifdef ARDUINO_M5Stick_C
         case DISPLAY_M5STACK_STICKC:
