@@ -2427,9 +2427,13 @@ start_of_init:
        break;
     case LCD_ILI9342:
 	{
-	s = (unsigned char *)uc320InitList;
-        memcpy_P(d, s, sizeof(uc320InitList));
+	s = (unsigned char *)uc240InitList;
+        memcpy_P(d, s, sizeof(uc240InitList));
         s = d;
+        if (pLCD->iLCDFlags & FLAGS_INVERT)
+            s[52] = 0x21; // invert pixels
+        else
+            s[52] = 0x20; // non-inverted
         pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
         pLCD->iCurrentWidth = pLCD->iWidth = 320;
         pLCD->iCurrentHeight = pLCD->iHeight = 240;
