@@ -3125,6 +3125,8 @@ uint16_t usColor;
             {
                 if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
                     usColor = (usColor1 >> 8) | (usColor1 << 8); // swap byte order
+                } else {
+                    usColor = usColor1;
                 }
                 memset16((uint16_t*)usTemp, usColor, w);
                 myspiWrite(pLCD, (unsigned char *)usTemp, w*2, MODE_DATA, iFlags);
@@ -3153,14 +3155,16 @@ uint16_t usColor;
 	{
         if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
             usColor = (usColor1 >> 8) | (usColor1 << 8); // swap byte order
+        } else {
+            usColor = usColor1;
         }
 		// draw top/bottom
-		spilcdSetPosition(pLCD, x, y, w, 1, iFlags);
+	spilcdSetPosition(pLCD, x, y, w, 1, iFlags);
         memset16((uint16_t*)usTemp, usColor, w);
         myspiWrite(pLCD, (unsigned char *)usTemp, w*2, MODE_DATA, iFlags);
-		spilcdSetPosition(pLCD, x, y + h-1, w, 1, iFlags);
+	spilcdSetPosition(pLCD, x, y + h-1, w, 1, iFlags);
         memset16((uint16_t*)usTemp, usColor, w);
-		myspiWrite(pLCD, (unsigned char *)usTemp, w*2, MODE_DATA, iFlags);
+	myspiWrite(pLCD, (unsigned char *)usTemp, w*2, MODE_DATA, iFlags);
 		// draw left/right
 		if (((ty + pLCD->iScrollOffset) % pLCD->iCurrentHeight) > pLCD->iCurrentHeight-th)
 		{
