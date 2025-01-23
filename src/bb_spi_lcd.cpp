@@ -110,6 +110,7 @@ SPIClassRP2040 *pSPI = &SPI;
 #include <bb_spi_lcd.h>
 
 #if defined( ESP_PLATFORM )
+#include "esp_cache.h"
 #include <rom/cache.h>
 //#define ESP32_SPI_HOST VSPI_HOST
 #ifdef VSPI_HOST
@@ -1735,6 +1736,9 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
 #if defined ARDUINO_ESP32S3_DEV
             Cache_WriteBack_Addr((uint32_t)&pLCD->pBackBuffer[pLCD->iOffset], iStrip*2);
 #endif
+#if defined ARDUINO_ESP32P4_DEV
+            esp_cache_msync(&pLCD->pBackBuffer[pLCD->iOffset], iStrip*2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+#endif
             pLCD->iOffset += iStrip*2; iOff += iStrip*2;
             i -= iStrip;
             pLCD->iCurrentX += iStrip;
@@ -2309,9 +2313,9 @@ start_of_init:
 	    pLCD->iCurrentHeight = pLCD->iHeight = 280;
             pLCD->iRowStart = pLCD->iMemoryY = 20;
 	} else if (pLCD->iLCDType == LCD_ST7789_172) {
-            pLCD->iCurrentWidth = pLCD->iWidth = 170;
+            pLCD->iCurrentWidth = pLCD->iWidth = 174;
             pLCD->iCurrentHeight = pLCD->iHeight = 320;
-            pLCD->iColStart = pLCD->iMemoryX = 35;
+            pLCD->iColStart = pLCD->iMemoryX = 33;
             pLCD->iRowStart = pLCD->iMemoryY = 0;
 	}
         pLCD->iLCDType = LCD_ST7789; // treat them the same from here on
@@ -2687,7 +2691,11 @@ void spilcdScroll(SPILCD *pLCD, int iLines, int iFillColor)
 	uint32_t *d;
 	uint32_t u32Fill;
 		// quickly prepare a full line's worth of the color
-		u32Fill = (iFillColor >> 8) | ((iFillColor & -1) << 8);
+                if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+	            u32Fill = (iFillColor >> 8) | ((iFillColor & -1) << 8);
+                } else {
+                    u32Fill = iFillColor;
+                }
 		u32Fill |= (u32Fill << 16);
 		d = (uint32_t *)&usTemp[0];
 		for (i=0; i<pLCD->iWidth/2; i++)
@@ -3070,7 +3078,9 @@ void spilcdDrawPattern(SPILCD *pLCD, uint8_t *pPattern, int iSrcPitch, int iDest
                 ulDestClr = (ulDestClr >> 5) & ulMask; // done!
                 ulDestClr = (ulDestClr >> 16) | (ulDestClr); // move green back into place
                 us = (uint16_t)ulDestClr;
-                us = (us >> 8) | (us << 8); // swap bytes for LCD
+                if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+                    us = (us >> 8) | (us << 8); // swap bytes for LCD
+                }
                 d[0] = us;
             }
             d += iDelta;
@@ -3113,7 +3123,9 @@ uint16_t usColor;
         spilcdSetPosition(pLCD, x, y, w, h, iFlags);
 	for (i=0; i<h; i++)
             {
-                usColor = (usColor1 >> 8) | (usColor1 << 8); // swap byte order
+                if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+                    usColor = (usColor1 >> 8) | (usColor1 << 8); // swap byte order
+                }
                 memset16((uint16_t*)usTemp, usColor, w);
                 myspiWrite(pLCD, (unsigned char *)usTemp, w*2, MODE_DATA, iFlags);
                 // Update the color components
@@ -3139,7 +3151,9 @@ uint16_t usColor;
 	}
 	else // outline
 	{
-        usColor = (usColor1 >> 8) | (usColor1 << 8); // swap byte order
+        if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+            usColor = (usColor1 >> 8) | (usColor1 << 8); // swap byte order
+        }
 		// draw top/bottom
 		spilcdSetPosition(pLCD, x, y, w, 1, iFlags);
         memset16((uint16_t*)usTemp, usColor, w);
@@ -4530,9 +4544,10 @@ uint8_t ucBitmap[32]; // 256 pixels wide should be big enough?
         return -1;
    // in case of running on AVR, get copy of data from FLASH
    memcpy_P(&font, pFont, sizeof(font));
-   usFGColor = (usFGColor >> 8) | (usFGColor << 8); // swap h/l bytes
-   usBGColor = (usBGColor >> 8) | (usBGColor << 8);
-
+   if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+       usFGColor = (usFGColor >> 8) | (usFGColor << 8); // swap h/l bytes
+       usBGColor = (usBGColor >> 8) | (usBGColor << 8);
+   }
    i = 0;
    while (szMsg[i] && x < pLCD->iCurrentWidth)
    {
@@ -4721,12 +4736,18 @@ int spilcdWriteStringFast(SPILCD *pLCD, int x, int y, char *szMsg, unsigned shor
 int i, j, k, iLen;
 int iStride;
 uint8_t *s;
-uint16_t usFG = (usFGColor >> 8) | ((usFGColor & -1)<< 8);
-uint16_t usBG = (usBGColor >> 8) | ((usBGColor & -1)<< 8);
+uint16_t usFG, usBG;
 uint16_t *usD;
 int cx;
 uint8_t *pFont;
 
+    if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+        usFG = (usFGColor >> 8) | ((usFGColor & -1)<< 8);
+        usBG = (usBGColor >> 8) | ((usBGColor & -1)<< 8);
+    } else {
+        usFG = usFGColor;
+        usBG = usBGColor;
+    }
     if (iFontSize != FONT_6x8 && iFontSize != FONT_8x8 && iFontSize != FONT_12x16)
         return -1; // invalid size
     if (x == -1)
@@ -4825,11 +4846,17 @@ int i, j, k, iLen;
 int l;
 #endif
 unsigned char *s;
-unsigned short usFG = (usFGColor >> 8) | (usFGColor << 8);
-unsigned short usBG = (usBGColor >> 8) | (usBGColor << 8);
+unsigned short usFG, usBG;
 uint16_t usPitch = pLCD->iScreenPitch/2;
 
 
+    if (pLCD->iLCDFlags & FLAGS_SWAP_COLOR) {
+        usFG = usFGColor;
+        usBG = usBGColor;
+    } else {
+        usFG = (usFGColor >> 8) | (usFGColor << 8);
+        usBG = (usBGColor >> 8) | (usBGColor << 8);
+    } 
     if (x == -1)
         x = pLCD->iCursorX;
     if (y == -1)
@@ -5165,7 +5192,11 @@ void spilcdEllipse(SPILCD *pLCD, int32_t iCenterX, int32_t iCenterY, int32_t iRa
     // set up a buffer with the widest possible run of pixels to dump in 1 shot
     if (bFilled)
     {
-        us = (usColor >> 8) | (usColor << 8); // swap byte order
+        if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+            us = (usColor >> 8) | (usColor << 8); // swap byte order
+        } else {
+            us = usColor;
+        }
         y = iRadius*2;
         if (y > 320) y = 320; // max size
 //#ifdef ESP32_DMA
@@ -5344,7 +5375,9 @@ uint16_t *u16Temp = (uint16_t *)pDMA;
 
     // make sure we're in landscape mode to use the correct coordinates
     spilcdScrollReset(pLCD);
-    usData = (usData >> 8) | (usData << 8); // swap hi/lo byte for LCD
+    if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+        usData = (usData >> 8) | (usData << 8); // swap hi/lo byte for LCD
+    }
     if (pLCD->iLCDFlags & FLAGS_MEM_RESTART) {
         // special case for parllel LCD using ESP32 LCD API
         for (x=0; x<pLCD->iCurrentWidth; x++)
@@ -5407,8 +5440,11 @@ void spilcdDrawLine(SPILCD *pLCD, int x1, int y1, int x2, int y2, unsigned short
 
     if (x1 < 0 || x2 < 0 || y1 < 0 || y2 < 0 || x1 >= pLCD->iCurrentWidth || x2 >= pLCD->iCurrentWidth || y1 >= pLCD->iCurrentHeight || y2 >= pLCD->iCurrentHeight)
         return;
-    us = (usColor >> 8) | (usColor << 8); // byte swap for LCD byte order
-
+    if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+        us = (usColor >> 8) | (usColor << 8); // byte swap for LCD byte order
+    } else {
+        us = usColor;
+    }
     if(abs(dx) > abs(dy)) {
         // X major case
         if(x2 < x1) {
@@ -5726,7 +5762,11 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
             g >>= 2;
             us |= (g << 5);
             us |= (b >> 3);
-            usPalette[x] = (us >> 8) | (us << 8); // swap byte order for writing to the display
+            if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+                usPalette[x] = (us >> 8) | (us << 8); // swap byte order for writing to the display
+            } else {
+                usPalette[x] = us;
+            }
         }
     }
     if (ucCompression) // need to do it differently for RLE compressed
@@ -5787,7 +5827,12 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
                             for (x=0; x<cx; x++)
                             {
                                 us = pus[x];
-                                d[0] = d[1] = (us >> 8) | (us << 8); // swap byte order
+                                if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+
+                                    d[0] = d[1] = (us >> 8) | (us << 8); // swap byte order
+                                } else {
+                                    d[0] = d[1] = us;
+                                }
                                 d += 2;
                             } // for x
                         }
@@ -5797,7 +5842,11 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
                             {
                                 us = pus[x];
                                 if (us != (uint16_t)iTransparent)
-                                    d[0] = d[1] = (us >> 8) | (us << 8); // swap byte order
+                                    if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+                                        d[0] = d[1] = (us >> 8) | (us << 8); // swap byte order
+                                    } else {
+                                        d[0] = d[1] = us;
+                                    }
                                 d += 2;
                             } // for x
                         }
@@ -5872,7 +5921,11 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
                         for (x=0; x<cx; x++)
                         {
                            us = *pus++;
-                           *d++ = (us >> 8) | (us << 8); // swap byte order
+                           if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+                               *d++ = (us >> 8) | (us << 8); // swap byte order
+                           } else {
+                               *d++ = us;
+                           }
                         }
                     }
                     else // skip transparent pixels
@@ -5881,7 +5934,11 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
                         {
                             us = *pus++;
                             if (us != (uint16_t)iTransparent)
-                             d[0] = (us >> 8) | (us << 8); // swap byte order
+                                if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+                                 d[0] = (us >> 8) | (us << 8); // swap byte order
+                                } else {
+                                  d[0] = us;
+                                }
                             d++;
                         }
                     }
@@ -6085,7 +6142,11 @@ uint16_t *d, us;
     iCount = (pLCD->iCurrentHeight - iAmount) * iPitch;
     memmove(pLCD->pBackBuffer, &pLCD->pBackBuffer[iPitch*iAmount], iCount);
     d = (uint16_t *)&pLCD->pBackBuffer[iCount];
-    us = (pLCD->iBG >> 8) | (pLCD->iBG << 8);
+    if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
+        us = (pLCD->iBG >> 8) | (pLCD->iBG << 8);
+    } else {
+        us = pLCD->iBG;
+    }
     for (i=0; i<iAmount * pLCD->iCurrentWidth; i++) {
         *d++ = us;
     }
@@ -6780,6 +6841,80 @@ int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD
     return spilcdInit(&_lcd, iType, iFlags, 0,0,0,0,0,0,0,0,0);
 } /* beginParallel() */
 
+#ifdef ARDUINO_ESP32P4_DEV
+#include "esp_lcd_panel_ops.h"
+#include "esp_lcd_mipi_dsi.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_ldo_regulator.h"
+#if SOC_MIPI_DSI_SUPPORTED
+#include "esp_lcd_panel_vendor.h"
+#include "esp_lcd_mipi_dsi.h"
+#include "esp_cache.h"
+#endif
+#include "esp_lcd_jd9165.h"
+#define LCD_RST 27
+#define LCD_LED 23
+#define MIPI_DPI_PX_FORMAT (LCD_COLOR_PIXEL_FORMAT_RGB565)
+#define LCD_BIT_PER_PIXEL (16)
+#define EXAMPLE_MIPI_DSI_PHY_PWR_LDO_CHAN 3 // LDO_VO3 连接至 VDD_MIPI_DPHY
+#define EXAMPLE_MIPI_DSI_PHY_PWR_LDO_VOLTAGE_MV 2500
+extern esp_lcd_panel_handle_t panel_handle;
+extern esp_lcd_panel_io_handle_t io_handle;
+
+void enable_dsi_phy_power(void)
+{
+    // 打开 MIPI DSI PHY 的电源，使其从“无电”状态进入“关机”状态
+    esp_ldo_channel_handle_t ldo_mipi_phy = NULL;
+#ifdef EXAMPLE_MIPI_DSI_PHY_PWR_LDO_CHAN
+    esp_ldo_channel_config_t ldo_mipi_phy_config = {
+        .chan_id = EXAMPLE_MIPI_DSI_PHY_PWR_LDO_CHAN,
+        .voltage_mv = EXAMPLE_MIPI_DSI_PHY_PWR_LDO_VOLTAGE_MV,
+    };
+    ESP_ERROR_CHECK(esp_ldo_acquire_channel(&ldo_mipi_phy_config, &ldo_mipi_phy));
+    ESP_LOGI("bb_spi_lcd", "MIPI DSI PHY Powered on");
+#endif
+} /* enable_dsi_phy_power() */
+
+uint16_t *jd9165_init(void)
+{
+    enable_dsi_phy_power();
+    pinMode(LCD_LED, OUTPUT);
+    digitalWrite(LCD_LED, HIGH); // turn on LCD backlight
+    // 首先创建 MIPI DSI 总线，它还将初始化 DSI PHY
+    esp_lcd_dsi_bus_handle_t mipi_dsi_bus;
+    esp_lcd_dsi_bus_config_t bus_config = JD9165_PANEL_BUS_DSI_2CH_CONFIG();
+    ESP_ERROR_CHECK(esp_lcd_new_dsi_bus(&bus_config, &mipi_dsi_bus));
+    
+    ESP_LOGI("bb_spi_lcd", "Install MIPI DSI LCD control panel");
+    // 我们使用DBI接口发送LCD命令和参数
+    esp_lcd_dbi_io_config_t dbi_config = JD9165_PANEL_IO_DBI_CONFIG();
+    
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_dbi(mipi_dsi_bus, &dbi_config, &io_handle));
+    // 创建JD9165控制面板
+    esp_lcd_dpi_panel_config_t dpi_config = JD9165_1024_600_PANEL_60HZ_DPI_CONFIG(MIPI_DPI_PX_FORMAT);
+    
+    jd9165_vendor_config_t vendor_config = {
+        .mipi_config = {
+            .dsi_bus = mipi_dsi_bus,
+            .dpi_config = &dpi_config,
+        },
+    };
+    const esp_lcd_panel_dev_config_t panel_config = {
+        .reset_gpio_num = LCD_RST,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+        .bits_per_pixel = LCD_BIT_PER_PIXEL,
+        .vendor_config = &vendor_config,
+    };
+    ESP_LOGI("bb_spi_lcd", "Create new panel for jd9165");
+    ESP_ERROR_CHECK(esp_lcd_new_panel_jd9165(io_handle, &panel_config, &panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
+    uint16_t *pFrameBuffer;
+    esp_lcd_dpi_panel_get_frame_buffer(panel_handle, 1, (void **)&pFrameBuffer, NULL, NULL);
+    return pFrameBuffer;
+} /* jd9165_init() */
+#endif // ARDUINO_ESP32P4_DEV
+
 int BB_SPI_LCD::begin(int iDisplayType)
 {
     int iCS=0, iDC=0, iMOSI=0, iSCK=0; // swap pins around for the different TinyPico boards
@@ -6890,9 +7025,12 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_CYD_128:
             spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6, 1); // Cheap Yellow Display (ESP32-C3 1.28" round version)
             break;
+#if defined(D1) && defined(D3) && defined(D10) && defined(d8)
+// These 'D' pins are not defined on all Arduino targets
         case DISPLAY_XIAO_ROUND:
             spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, D1, D3, -1, -1, -1, D10, D8, 1); // Seeed Xiao 1.28" 240x240 round LCD
             break;
+#endif
         case DISPLAY_CYD_24C:
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14, 0); // Cheap Yellow Display (2.4 w/capacitive touch)
             setRotation(270);
@@ -6932,6 +7070,19 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_800x480_7));
             break;
 
+#ifdef ARDUINO_ESP32P4_DEV
+        case DISPLAY_CYD_P4_1024x600:
+            memset(&_lcd, 0, sizeof(_lcd));
+            _lcd.iLCDFlags = FLAGS_SWAP_COLOR; // little endian byte order
+            _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
+            _lcd.iLEDPin = 23;
+            _lcd.iLCDType = LCD_VIRTUAL_MEM;
+            _lcd.iWidth = _lcd.iCurrentWidth = 1024;
+            _lcd.iHeight = _lcd.iCurrentHeight = 600;
+            spilcdSetBuffer(&_lcd, (uint8_t *)jd9165_init());
+            break;
+#endif // ESP32-P4
+            
         case DISPLAY_CYD_8048: // 4.3" and 5.5" 800x480 ESP32-S3
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
@@ -6958,6 +7109,10 @@ int BB_SPI_LCD::begin(int iDisplayType)
 // spilcdInit(&_lcd, LCD_ST7789_240, FLAGS_NONE, 40000000, iCS, iDC, iRST, iLED, -1, iMOSI, iSCK,1);
             spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 35, 36, 34, 33, -1, 38, 40, 1);
             //qspiSetBrightness(&_lcd, 255); // something wrong with the backlight LED; needs to be set bright
+            break;
+        case DISPLAY_STAMPS3_8PIN:
+            spilcdInit(&_lcd, LCD_ST7789_172, FLAGS_NONE, 40000000, 37, 34, 33, 38, -1, 35, 36, 1);
+            qspiSetBrightness(&_lcd, 255); // needs to be set bright
             break;
         case DISPLAY_M5STACK_ATOMS3:
             spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 15, 33, 34, 16, -1, 21, 17, 1);
@@ -7387,6 +7542,9 @@ void BB_SPI_LCD::setAddrWindow(int x, int y, int w, int h)
 void BB_SPI_LCD::setRotation(int iAngle)
 {
 int i;
+
+  if (_lcd.iLCDType == LCD_VIRTUAL_MEM) return; // not supported
+
   switch (iAngle) {
     default: return;
     case 0:
@@ -7599,7 +7757,9 @@ void BB_SPI_LCD::display(void)
 void BB_SPI_LCD::drawPixel(int16_t x, int16_t y, uint16_t color)
 {
   spilcdSetPosition(&_lcd, x, y, 1, 1, DRAW_TO_LCD);
-  color = __builtin_bswap16(color);
+  if (!(_lcd.iLCDFlags & FLAGS_SWAP_COLOR)) {
+  	color = __builtin_bswap16(color);
+  }
   spilcdWriteDataBlock(&_lcd, (uint8_t *)&color, 2, DRAW_TO_LCD | DRAW_TO_RAM);
 }
 
