@@ -24,6 +24,7 @@
 //#define SPI SPI1
 #ifndef __LINUX__
 #include <SPI.h>
+#include <Wire.h>
 #endif
 //#define SPI mySPI
 // MISO, SCK, MOSI
@@ -2435,9 +2436,9 @@ start_of_init:
         memcpy_P(d, s, sizeof(uc240InitList));
         s = d;
         if (pLCD->iLCDFlags & FLAGS_INVERT)
-            s[52] = 0x21; // invert pixels
+            s[52] = 0x20; // invert pixels
         else
-            s[52] = 0x20; // non-inverted
+            s[52] = 0x21; // non-inverted
         pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
         pLCD->iCurrentWidth = pLCD->iWidth = 320;
         pLCD->iCurrentHeight = pLCD->iHeight = 240;
@@ -6618,7 +6619,7 @@ uint16_t *d, us;
     }
 } /* obdScroll1Line() */
 
-#if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_Core2) || defined (ARDUINO_M5STACK_CORES3)
+#if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_CORE2) || defined (ARDUINO_M5STACK_CORES3)
 void Write1Byte( uint8_t Addr ,  uint8_t Data )
 {
     Wire1.beginTransmission(0x34);
@@ -6697,7 +6698,7 @@ const uint8_t u8InitList[] = {
 
 #endif // CORES3
 
-#if defined (ARDUINO_M5STACK_Core2)
+#if defined (ARDUINO_M5STACK_CORE2)
 typedef enum
 {
     kMBusModeOutput = 0,  // powered by USB or Battery
@@ -7292,6 +7293,13 @@ uint8_t ucTemp[16];
    //digitalWrite(pPanel->cs, HIGH);
 } /* spilcdWritePanelCommands() */
 
+int BB_SPI_LCD::beginQSPI(int iType, int iFlags, uint8_t CS_PIN, uint8_t CLK_PIN, uint8_t D0_PIN, uint8_t D1_PIN, uint8_t D2_PIN, uint8_t D3_PIN, uint8_t RST_PIN, uint32_t u32Freq)
+{
+    memset(&_lcd, 0, sizeof(_lcd));
+    _lcd.bUseDMA = 1; // allows DMA access
+    return qspiInit(&_lcd, iType, iFlags, u32Freq, CS_PIN, CLK_PIN, D0_PIN, D1_PIN, D2_PIN, D3_PIN, RST_PIN, -1);
+} /* beginQSPI() */
+
 int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq)
 {
     memset(&_lcd, 0, sizeof(_lcd));
@@ -7606,12 +7614,12 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 3, 35, -1, -1, -1, 37, 36,0);
             break; 
 #endif // ARDUINO_M5STACK_CORES3 
-#ifdef ARDUINO_M5STACK_Core2
+#ifdef ARDUINO_M5STACK_CORE2
         case DISPLAY_M5STACK_CORE2:
             Core2AxpPowerUp();
             spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 5, 15, -1, -1, 38, 23, 18,0);
             break;
-#endif // ARDUINO_M5STACK_Core2
+#endif // ARDUINO_M5STACK_CORE2
         case DISPLAY_RANKIN_COLORCOIN:
             spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 24000000, 4, 21, 22, 26, -1, 23, 18,1); // Mike's coin cell pin numbering
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
@@ -7734,7 +7742,12 @@ int BB_SPI_LCD::begin(int iDisplayType)
             // CS=12, SCK=11, D0=4, D1=5, D2=6, D3=7, RST=-1, BL=-1
             qspiInit(&_lcd, LCD_SH8601, FLAGS_NONE, 32000000, 12,11,4,5,6,7,-1,-1);
             break;
-
+        case DISPLAY_UM_AMOLED_18: // UnexpectedMaker 1.8 AMOLED
+            memset(&_lcd, 0, sizeof(_lcd));
+            _lcd.bUseDMA = 1; // allows DMA access
+            // CS=34, SCK=36, D0=35, D1=9, D2=8, D3=7, RST=6, BL=-1
+            qspiInit(&_lcd, LCD_SH8601, FLAGS_NONE, 32000000, 34, 36, 35, 9, 8, 7, 6, -1);
+            break;
         case DISPLAY_CYD_543: // 480x272  NV3041A
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.iRTMOSI = 11;
