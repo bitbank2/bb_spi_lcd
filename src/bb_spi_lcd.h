@@ -62,6 +62,7 @@ enum {
    CMD_TYPE_COUNT
 };
 // Drawing function render flags
+#define DRAW_NONE       0
 #define DRAW_TO_RAM     1
 #define DRAW_TO_LCD     2
 #define DRAW_WITH_DMA   4
@@ -154,6 +155,7 @@ typedef struct tagSPILCD
    int iScrollOffset, bScroll;
    int iWidth, iHeight; // native direction size
    int iCurrentWidth, iCurrentHeight; // rotated size
+   int iWriteFlags; // flags specifically for printing (write)
    int iCSPin, iCLKPin, iMOSIPin, iDCPin, iResetPin, iLEDPin;
 #ifndef __LINUX__
    SPIClass *pSPI;
@@ -192,9 +194,9 @@ class BB_SPI_LCD : public Print
     void setRotation(int iAngle);
     void setWordwrap(int bWrap);
     uint8_t getRotation(void);
-    void fillScreen(int iColor);
-    void drawPixel(int16_t x, int16_t y, uint16_t color);
-    void fillRect(int x, int y, int w, int h, int iColor);
+    void fillScreen(int iColor, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void drawPixel(int16_t x, int16_t y, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void fillRect(int x, int y, int w, int h, int iColor, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void setTextColor(int iFG, int iBG = -1);
     void setCursor(int x, int y);
     void setAddrWindow(int x, int y, int w, int h);
@@ -218,22 +220,24 @@ class BB_SPI_LCD : public Print
     int16_t height(void);
     int16_t width(void);
     void display(void);
+    void setPrintFlags(int iFlags);
     void backlight(bool bOn);
-    void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD);
+    void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void pushPixels(uint16_t *pixels, int count, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
-    void drawString(const char *pText, int x, int y, int size=-1);
-    void drawString(String text, int x, int y, int size=-1);
-    void drawStringFast(const char *szText, int x, int y, int size = -1);
-    int drawBMP(const uint8_t *pBMP, int iDestX, int iDestY, int bStretch = 0, int iTransparent = -1, int iFlags = DRAW_TO_LCD);
-    void drawLine(int x1, int y1, int x2, int y2, int iColor);
-    void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
-    void drawRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color, int iFlags = DRAW_TO_LCD);
-    void fillRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color, int iFlags = DRAW_TO_LCD);
-    void drawCircle(int32_t x, int32_t y, int32_t r, uint32_t color);
-    void fillCircle(int32_t x, int32_t y, int32_t r, uint32_t color);
-    void drawEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color);
-    void fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color);
+    void drawString(const char *pText, int x, int y, int size=-1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void drawString(String text, int x, int y, int size=-1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void drawStringFast(const char *szText, int x, int y, int size = -1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    int drawBMP(const uint8_t *pBMP, int iDestX, int iDestY, int bStretch = 0, int iTransparent = -1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void drawLine(int x1, int y1, int x2, int y2, int iColor, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void drawRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void fillRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void drawCircle(int32_t x, int32_t y, int32_t r, uint32_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void fillCircle(int32_t x, int32_t y, int32_t r, uint32_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void drawEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY, int iCX, int iCY, uint16_t usColor, int iTranslucency);
+    int drawSprite(int x, int y, BB_SPI_LCD *pSprite, int iTransparent, int iFlags = DRAW_TO_LCD);
     using Print::write;
     virtual size_t write(uint8_t);
     // Resistive Touch methods

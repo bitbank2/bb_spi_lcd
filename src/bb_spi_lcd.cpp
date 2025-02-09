@@ -7734,7 +7734,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.bUseDMA = 1; // allows DMA access
             // CS=21, SCK=40, D0=46, D1=45, D2=42, D3=41, RST=-1, BL=-1 
-            qspiInit(&_lcd, LCD_SPD2010, FLAGS_NONE, 20000000, 21,40,46,45,42,41,-1,-1);
+            qspiInit(&_lcd, LCD_SPD2010, FLAGS_NONE, 40000000, 21,40,46,45,42,41,-1,-1);
             break;
         case DISPLAY_WS_AMOLED_18: // Waveshare 1.8" 368x448 AMOLED
             memset(&_lcd, 0, sizeof(_lcd));
@@ -7897,7 +7897,11 @@ int BB_SPI_LCD::createVirtual(int iWidth, int iHeight, void *p)
     _lcd.iLCDType = LCD_VIRTUAL_MEM;
     _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
     if (p == NULL) {
-       p = malloc(iWidth * iHeight * 2);
+        p = malloc(iWidth * iHeight * 2);
+#ifdef ARDUINO_ARCH_ESP32
+        // Try to use PSRAM
+        p = ps_malloc(iWidth * iHeight * 2);
+#endif
        if (!p) return 0;
     }
     _lcd.iCurrentWidth = _lcd.iWidth = iWidth;
@@ -8058,16 +8062,16 @@ int i;
   spilcdSetOrientation(&_lcd, i);
 } /* setRotation() */
 
-void BB_SPI_LCD::fillScreen(int iColor)
+void BB_SPI_LCD::fillScreen(int iColor, int iFlags)
 {
-    spilcdFill(&_lcd, iColor, (_lcd.iLCDType == LCD_VIRTUAL_MEM) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
+    spilcdFill(&_lcd, iColor, iFlags);
     _lcd.iCursorX = 0;
     _lcd.iCursorY = 0;
 } /* fillScreen() */
 
-void BB_SPI_LCD::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
+void BB_SPI_LCD::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color, int iFlags)
 {
-  spilcdRectangle(&_lcd, x, y, w, h, color, color, 0, DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdRectangle(&_lcd, x, y, w, h, color, color, 0, iFlags);
 } /* drawRect() */
 
 void BB_SPI_LCD::fillRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color, int iFlags)
@@ -8098,9 +8102,9 @@ void BB_SPI_LCD::drawRoundRect(int16_t x, int16_t y, int16_t w, int16_t h,
     spilcdEllipse(&_lcd, x+r, y+h-r-1, r, r, 8, color, 0, iFlags);
 } /* drawRoundRect() */
 
-void BB_SPI_LCD::fillRect(int x, int y, int w, int h, int iColor)
+void BB_SPI_LCD::fillRect(int x, int y, int w, int h, int iColor, int iFlags)
 {
-  spilcdRectangle(&_lcd, x, y, w, h, iColor, iColor, 1, DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdRectangle(&_lcd, x, y, w, h, iColor, iColor, 1, iFlags);
 } /* fillRect() */
 
 void BB_SPI_LCD::setTextColor(int iFG, int iBG)
@@ -8137,14 +8141,20 @@ int BB_SPI_LCD::drawBMP(const uint8_t *pBMP, int iDestX, int iDestY, int bStretc
     return spilcdDrawBMP(&_lcd, (uint8_t *)pBMP, iDestX, iDestY, bStretch, iTransparent, iFlags);
 } /* drawBMP() */
 
-void BB_SPI_LCD::drawStringFast(const char *szText, int x, int y, int size)
+void BB_SPI_LCD::drawStringFast(const char *szText, int x, int y, int size, int iFlags)
 {
+    _lcd.iWriteFlags = iFlags;
     if (size == -1) size = _lcd.iFont;
-    spilcdWriteStringFast(&_lcd, x, y, (char *)szText, _lcd.iFG, _lcd.iBG, size, DRAW_TO_LCD | DRAW_TO_RAM);
+    spilcdWriteStringFast(&_lcd, x, y, (char *)szText, _lcd.iFG, _lcd.iBG, size, iFlags);
 } /* drawStringFast() */
 
-void BB_SPI_LCD::drawString(const char *pText, int x, int y, int size)
+void BB_SPI_LCD::setPrintFlags(int iFlags)
 {
+    _lcd.iWriteFlags = iFlags;
+}
+void BB_SPI_LCD::drawString(const char *pText, int x, int y, int size, int iFlags)
+{
+    _lcd.iWriteFlags = iFlags;
    if (size == 1) setFont(FONT_6x8);
    else if (size == 2) setFont(FONT_12x16);
    setCursor(x,y);
@@ -8152,14 +8162,14 @@ void BB_SPI_LCD::drawString(const char *pText, int x, int y, int size)
       write(pText[i]);
    } 
 } /* drawString() */
-void BB_SPI_LCD::drawString(String text, int x, int y, int size)
+void BB_SPI_LCD::drawString(String text, int x, int y, int size, int iFlags)
 {
-    drawString(text.c_str(), x, y, size);
+    drawString(text.c_str(), x, y, size, iFlags);
 } /* drawString() */
 
-void BB_SPI_LCD::drawLine(int x1, int y1, int x2, int y2, int iColor)
+void BB_SPI_LCD::drawLine(int x1, int y1, int x2, int y2, int iColor, int iFlags)
 {
-  spilcdDrawLine(&_lcd, x1, y1, x2, y2, iColor, DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdDrawLine(&_lcd, x1, y1, x2, y2, iColor, iFlags);
 } /* drawLine() */
 inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
 #ifdef __AVR__
@@ -8174,12 +8184,68 @@ inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
 }
 
 //
+// Draw a sprite (another instance of the BB_SPI_LCD class) with optional transparency
+// allows negative offsets, the sprite will be clipped properly
+//
+int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, int iTransparentColor, int iFlags)
+{
+    int tx, ty, cx, cy;
+    uint16_t *s, *d;
+    if (pSprite == NULL || pSprite->_lcd.iLCDType != LCD_VIRTUAL_MEM) return BB_ERROR_INV_PARAM; // invalid parameters
+    cx = pSprite->_lcd.iCurrentWidth;
+    cy = pSprite->_lcd.iCurrentHeight;
+    s = (uint16_t *)pSprite->_lcd.pBackBuffer;
+    if (x <= -cx || y <= - cy) return BB_ERROR_SUCCESS; // nothing to draw
+    if (x >= _lcd.iCurrentWidth || y >= _lcd.iCurrentHeight) return BB_ERROR_SUCCESS; // nothing to draw
+    if (x < 0) {
+        cx += x; // reduce width because of clipping
+        s -= x; // start at the visible part
+    }
+    if (y < 0) {
+        cy += y; // reduce height because of clipping
+        s -= (y * pSprite->_lcd.iCurrentWidth); // start at the visible part
+    }
+    if (x + pSprite->_lcd.iCurrentWidth > _lcd.iCurrentWidth) { // clipped at right edge?
+        cx = _lcd.iCurrentWidth - x;
+        if (cx < 1) return BB_ERROR_INV_PARAM;
+    }
+    if (y + pSprite->_lcd.iCurrentHeight > _lcd.iCurrentHeight) { // clipped at bottom edge?
+        cy = _lcd.iCurrentHeight - y;
+        if (cy < 1) return BB_ERROR_INV_PARAM;
+    }
+    if (_lcd.iLCDType == LCD_VIRTUAL_MEM) iFlags = DRAW_TO_RAM; // only one possibility (no physical LCD)
+    if (iFlags & DRAW_TO_LCD) {
+        // send the sprite to the physical display; transparency is not possible
+        spilcdSetPosition(&_lcd, x, y, cx, cy, DRAW_TO_LCD);
+        for (ty = 0; ty < cy; ty++) { // write it a line at a time
+            myspiWrite(&_lcd, (uint8_t *)s, cx*2, MODE_DATA, iFlags);
+            s += pSprite->_lcd.iCurrentWidth; // source pitch can be different from amount written to the LCD
+        }
+    } else if (iFlags & DRAW_TO_RAM) { // only RAM, it can have a transparent color
+        uint16_t u16Trans = (uint16_t)iTransparentColor;
+        d = (uint16_t *)&_lcd.pBackBuffer[(x*2) + (y*2*_lcd.iCurrentWidth)];
+        for (ty = 0; ty < cy; ty++) {
+            if (iTransparentColor != -1) { // slower to check each pixel
+                for (tx = 0; tx<cx; tx++) {
+                    if (s[tx] != u16Trans) d[tx] = s[tx];
+                }
+            } else { // overwrite
+                memcpy(d, s, cx*2);
+            }
+            s += pSprite->_lcd.iCurrentWidth;
+            d += _lcd.iCurrentWidth;
+        }
+    }
+    return BB_ERROR_SUCCESS;
+} /* drawSprite() */
+//
 // write (Print friend class)
 //
 size_t BB_SPI_LCD::write(uint8_t c) {
 char szTemp[2]; // used to draw 1 character at a time to the C methods
 int w, h;
 
+  if (_lcd.iWriteFlags == 0) _lcd.iWriteFlags = DRAW_TO_LCD; // default write mode
   szTemp[0] = c; szTemp[1] = 0;
   if (_lcd.pFont == NULL) { // use built-in fonts
       if (_lcd.iFont == FONT_8x8 || _lcd.iFont == FONT_6x8) {
@@ -8196,7 +8262,7 @@ int w, h;
         // should we scroll the screen up 1 line?
         if ((_lcd.iCursorY + (h-1)) >= _lcd.iCurrentHeight && _lcd.pBackBuffer && _lcd.bScroll) {
             spilcdScroll1Line(&_lcd, h);
-            spilcdShowBuffer(&_lcd, 0, 0, _lcd.iCurrentWidth, _lcd.iCurrentHeight, DRAW_TO_LCD);
+            spilcdShowBuffer(&_lcd, 0, 0, _lcd.iCurrentWidth, _lcd.iCurrentHeight, _lcd.iWriteFlags);
             _lcd.iCursorY -= h;
         }
     } else if (c != '\r') {       // Ignore carriage returns
@@ -8206,11 +8272,11 @@ int w, h;
           // should we scroll the screen up 1 line?
           if ((_lcd.iCursorY + (h-1)) >= _lcd.iCurrentHeight && _lcd.pBackBuffer && _lcd.bScroll) {
               spilcdScroll1Line(&_lcd, h);
-              spilcdShowBuffer(&_lcd, 0, 0, _lcd.iCurrentWidth, _lcd.iCurrentHeight, DRAW_TO_LCD);
+              spilcdShowBuffer(&_lcd, 0, 0, _lcd.iCurrentWidth, _lcd.iCurrentHeight, _lcd.iWriteFlags);
               _lcd.iCursorY -= h;
           }
       }
-      spilcdWriteString(&_lcd, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, _lcd.iFont, (_lcd.iLCDType == LCD_VIRTUAL_MEM) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
+      spilcdWriteString(&_lcd, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, _lcd.iFont, _lcd.iWriteFlags);
     }
   } else { // Custom font
     if (c == '\n') {
@@ -8232,9 +8298,9 @@ int w, h;
             _lcd.iCursorY += h;
           }
           if (_lcd.iAntialias)
-            spilcdWriteStringAntialias(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, 0, (_lcd.iLCDType == LCD_VIRTUAL_MEM) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
-          else 
-            spilcdWriteStringCustom(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, 0, (_lcd.iLCDType == LCD_VIRTUAL_MEM) ? DRAW_TO_RAM : DRAW_TO_LCD | DRAW_TO_RAM);
+            spilcdWriteStringAntialias(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, 0, _lcd.iWriteFlags);
+          else
+            spilcdWriteStringCustom(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, 0, _lcd.iWriteFlags);
         }
       }
     }
@@ -8246,13 +8312,13 @@ void BB_SPI_LCD::display(void)
 {
     spilcdShowBuffer(&_lcd, 0, 0, _lcd.iCurrentWidth, _lcd.iCurrentHeight, DRAW_TO_LCD);
 }
-void BB_SPI_LCD::drawPixel(int16_t x, int16_t y, uint16_t color)
+void BB_SPI_LCD::drawPixel(int16_t x, int16_t y, uint16_t color, int iFlags)
 {
-  spilcdSetPosition(&_lcd, x, y, 1, 1, DRAW_TO_LCD);
+  spilcdSetPosition(&_lcd, x, y, 1, 1, iFlags);
   if (!(_lcd.iLCDFlags & FLAGS_SWAP_COLOR)) {
   	color = __builtin_bswap16(color);
   }
-  spilcdWriteDataBlock(&_lcd, (uint8_t *)&color, 2, DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdWriteDataBlock(&_lcd, (uint8_t *)&color, 2, iFlags);
 }
 
 void BB_SPI_LCD::setWordwrap(int bWrap)
@@ -8283,21 +8349,21 @@ int16_t BB_SPI_LCD::height(void)
 {
    return _lcd.iCurrentHeight;
 }
-void BB_SPI_LCD::drawCircle(int32_t x, int32_t y, int32_t r, uint32_t color)
+void BB_SPI_LCD::drawCircle(int32_t x, int32_t y, int32_t r, uint32_t color, int iFlags)
 {
-  spilcdEllipse(&_lcd, x, y, r, r, 0xf, (uint16_t)color, 0, DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdEllipse(&_lcd, x, y, r, r, 0xf, (uint16_t)color, 0, iFlags);
 }
-void BB_SPI_LCD::fillCircle(int32_t x, int32_t y, int32_t r, uint32_t color)
+void BB_SPI_LCD::fillCircle(int32_t x, int32_t y, int32_t r, uint32_t color, int iFlags)
 {
-  spilcdEllipse(&_lcd, x, y, r, r, 0xf, (uint16_t)color, 1, DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdEllipse(&_lcd, x, y, r, r, 0xf, (uint16_t)color, 1, iFlags);
 }
-void BB_SPI_LCD::drawEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color)
+void BB_SPI_LCD::drawEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color, int iFlags)
 {
-  spilcdEllipse(&_lcd, x, y, rx, ry, 0xf, (uint16_t)color, 0, DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdEllipse(&_lcd, x, y, rx, ry, 0xf, (uint16_t)color, 0, iFlags);
 }
-void BB_SPI_LCD::fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color)
+void BB_SPI_LCD::fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color, int iFlags)
 {
-  spilcdEllipse(&_lcd, x, y, rx, ry, 0xf, (uint16_t)color, 1, DRAW_TO_LCD | DRAW_TO_RAM);
+  spilcdEllipse(&_lcd, x, y, rx, ry, 0xf, (uint16_t)color, 1, iFlags);
 }
 
 void BB_SPI_LCD::pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags)
