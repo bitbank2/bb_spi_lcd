@@ -447,7 +447,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
         digitalWrite(RD_PIN, HIGH); // RD deactivated
     }
 // Linux and Teensy 4.x use parallel GPIO for now
-#if defined ( __LINUX__ ) || defined( ARDUINO_TEENSY41 )
+#if defined ( __LINUX__ ) // || defined( ARDUINO_TEENSY41 )
     pinMode(u8WR, OUTPUT);
     pinMode(u8CS, OUTPUT);
     pinMode(u8DC, OUTPUT);

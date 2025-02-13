@@ -220,8 +220,10 @@ class BB_SPI_LCD : public Print
     int16_t height(void);
     int16_t width(void);
     void display(void);
+    void display(int x, int y, int w, int h);
     void setPrintFlags(int iFlags);
     void backlight(bool bOn);
+    int rotateSprite(BB_SPI_LCD *pDstSprite, int iCenterX, int iCenterY, int iAngle);
     void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void pushPixels(uint16_t *pixels, int count, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawString(const char *pText, int x, int y, int size=-1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
@@ -238,6 +240,7 @@ class BB_SPI_LCD : public Print
     void fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY, int iCX, int iCY, uint16_t usColor, int iTranslucency);
     int drawSprite(int x, int y, BB_SPI_LCD *pSprite, int iTransparent, int iFlags = DRAW_TO_LCD);
+    int drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int iTransparent, int iFlags = DRAW_TO_LCD);
     using Print::write;
     virtual size_t write(uint8_t);
     // Resistive Touch methods

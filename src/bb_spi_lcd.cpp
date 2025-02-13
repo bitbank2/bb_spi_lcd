@@ -6532,7 +6532,6 @@ void spilcdFreeBackbuffer(SPILCD *pLCD)
 void spilcdRotateBitmap(uint8_t *pSrc, uint8_t *pDest, int iBpp, int iWidth, int iHeight, int iPitch, int iCenterX, int iCenterY, int iAngle)
 {
 int32_t i, x, y;
-int16_t pre_sin[512], pre_cos[512], *pSin, *pCos;
 int32_t tx, ty, sa, ca;
 uint8_t *s, *d, uc, ucMask;
 uint16_t *uss, *usd;
@@ -6549,16 +6548,10 @@ uint16_t *uss, *usd;
     // Create a quicker lookup table for sin/cos pre-multiplied at the given angle
     sa = (int32_t)i16SineTable[iAngle]; // sine of given angle
     ca = (int32_t)i16SineTable[iAngle+90]; // cosine of given angle
-    for (i=-256; i<256; i++) // create the pre-calc tables
-    {
-        pre_sin[i+256] = (sa * i) >> 15; // sin * x
-        pre_cos[i+256] = (ca * i) >> 15;
-    }
-    pSin = &pre_sin[256]; pCos = &pre_cos[256]; // point to 0 points in tables
     for (y=0; y<iHeight; y++)
     {
-        int16_t siny = pSin[y-iCenterY];
-        int16_t cosy = pCos[y-iCenterY];
+        int32_t siny = (sa * (y-iCenterY));
+        int32_t cosy = (ca * (y-iCenterY));
         d = &pDest[y * iPitch];
         usd = (uint16_t *)d;
         ucMask = 0x80;
@@ -6567,8 +6560,8 @@ uint16_t *uss, *usd;
         {
             // Rotate from the destination pixel back to the source to not have gaps
             // x' = cos*x - sin*y, y' = sin*x + cos*y
-            tx = iCenterX + pCos[x-iCenterX] - siny;
-            ty = iCenterY + pSin[x-iCenterX] + cosy;
+            tx = iCenterX + (((ca * (x-iCenterX)) - siny) >> 15);
+            ty = iCenterY + (((sa * (x-iCenterX)) + cosy) >> 15);
             if (iBpp == 1)
             {
                 if (tx > 0 && ty > 0 && tx < iWidth && ty < iHeight) // check source pixel
@@ -6587,11 +6580,12 @@ uint16_t *uss, *usd;
             }
             else // 16-bpp
             {
-                if (tx > 0 && ty > 0 && tx < iWidth && ty < iHeight) // check source pixel
+                if (tx >= 0 && ty >= 0 && tx < iWidth && ty < iHeight) // check source pixel
                 {
                     uss = (uint16_t *)&pSrc[(ty*iPitch)+(tx*2)];
-                    *usd++ = uss[0]; // copy the pixel
+                    *usd = uss[0]; // copy the pixel
                 }
+                usd++;
             }
         }
         if (iBpp == 1 && ucMask != 0x80) // store partial byte
@@ -7297,7 +7291,9 @@ int BB_SPI_LCD::beginQSPI(int iType, int iFlags, uint8_t CS_PIN, uint8_t CLK_PIN
 {
     memset(&_lcd, 0, sizeof(_lcd));
     _lcd.bUseDMA = 1; // allows DMA access
+#ifdef ARDUINO_ARCH_ESP32
     return qspiInit(&_lcd, iType, iFlags, u32Freq, CS_PIN, CLK_PIN, D0_PIN, D1_PIN, D2_PIN, D3_PIN, RST_PIN, -1);
+#endif
 } /* beginQSPI() */
 
 int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq)
@@ -7586,7 +7582,9 @@ int BB_SPI_LCD::begin(int iDisplayType)
             break;
         case DISPLAY_STAMPS3_8PIN:
             spilcdInit(&_lcd, LCD_ST7789_172, FLAGS_NONE, 40000000, 37, 34, 33, 38, -1, 35, 36, 1);
+#ifdef ARDUINO_ARCH_ESP32
             qspiSetBrightness(&_lcd, 255); // needs to be set bright
+#endif
             break;
         case DISPLAY_M5STACK_ATOMS3:
             spilcdInit(&_lcd, LCD_GC9107, FLAGS_NONE, 40000000, 15, 33, 34, 16, -1, 21, 17, 1);
@@ -8184,6 +8182,82 @@ inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
 }
 
 //
+// Draw a sprite (another instance of the BB_SPI_LCD class) with scaling and optional transparency
+// allows negative offsets, the sprite will be clipped properly
+//
+int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int iTransparentColor, int iFlags)
+{
+    int tx, ty, cx, cy;
+    uint16_t u16, *s, *d, *s16;
+    uint32_t u32Frac, u32XAcc, u32YAcc; // integer fraction vars
+
+    if (pSprite == NULL || pSprite->_lcd.iLCDType != LCD_VIRTUAL_MEM) return BB_ERROR_INV_PARAM; // invalid parameters
+    // Calculate scaled destination size
+    cx = (int)(fScale * (float)pSprite->_lcd.iCurrentWidth);
+    cy = (int)(fScale * (float)pSprite->_lcd.iCurrentHeight);
+    s = (uint16_t *)pSprite->_lcd.pBackBuffer;
+    if (x <= -cx || y <= - cy) return BB_ERROR_SUCCESS; // nothing to draw
+    if (x >= _lcd.iCurrentWidth || y >= _lcd.iCurrentHeight) return BB_ERROR_SUCCESS; // nothing to draw
+    if (x < 0) {
+        cx += x; // reduce width because of clipping
+        s -= x; // start at the visible part
+    }
+    if (y < 0) {
+        cy += y; // reduce height because of clipping
+        s -= (y * pSprite->_lcd.iCurrentWidth); // start at the visible part
+    }
+    if (x + pSprite->_lcd.iCurrentWidth > _lcd.iCurrentWidth) { // clipped at right edge?
+        cx = _lcd.iCurrentWidth - x;
+        if (cx < 1) return BB_ERROR_INV_PARAM;
+    }
+    if (y + pSprite->_lcd.iCurrentHeight > _lcd.iCurrentHeight) { // clipped at bottom edge?
+        cy = _lcd.iCurrentHeight - y;
+        if (cy < 1) return BB_ERROR_INV_PARAM;
+    }
+    u32Frac = (uint32_t)(65536.0f / fScale); // calculate the fraction to advance the destination x/y
+
+    if (_lcd.iLCDType == LCD_VIRTUAL_MEM) iFlags = DRAW_TO_RAM; // only one possibility (no physical LCD)
+    if (iFlags & DRAW_TO_LCD) {
+        // send the sprite to the physical display; transparency is not possible
+        spilcdSetPosition(&_lcd, x, y, cx, cy, DRAW_TO_LCD);
+        u32YAcc = 0;
+        for (ty = 0; ty < cy; ty++) { // write it a line at a time
+            u32XAcc = 0;
+            s16 = &s[(u32YAcc >> 16) * pSprite->_lcd.iWidth];
+            d = (uint16_t *)ucTXBuf;
+            for (tx = 0; tx < cx; tx++) {
+                // scale the source pixels to the destination (cx) width
+                *d++ = s16[(u32XAcc >> 16)];
+                u32XAcc += u32Frac;
+            }
+            myspiWrite(&_lcd, ucTXBuf, cx*2, MODE_DATA, iFlags);
+            u32YAcc += u32Frac;
+        }
+    } else if (iFlags & DRAW_TO_RAM) { // only RAM, it can have a transparent color
+        uint16_t u16Trans = (uint16_t)iTransparentColor;
+        d = (uint16_t *)&_lcd.pBackBuffer[(x*2) + (y*2*_lcd.iCurrentWidth)];
+        u32YAcc = 0;
+        for (ty = 0; ty < cy; ty++) {
+            u32XAcc = 0;
+            s16 = &s[(u32YAcc >> 16) * pSprite->_lcd.iWidth];
+            if (iTransparentColor != -1) { // slower to check each pixel
+                for (tx = 0; tx<cx; tx++) {
+                    u16 = s16[(u32XAcc >> 16)];
+                    if (u16 != u16Trans) d[tx] = u16;
+                    u32XAcc += u32Frac;
+                }
+            } else { // overwrite
+                d[tx] = s16[(u32XAcc >> 16)];
+                u32XAcc += u32Frac;
+            }
+            u32YAcc += u32Frac;
+            d += _lcd.iCurrentWidth;
+        }
+    }
+    return BB_ERROR_SUCCESS;
+} /* drawSprite() */
+
+//
 // Draw a sprite (another instance of the BB_SPI_LCD class) with optional transparency
 // allows negative offsets, the sprite will be clipped properly
 //
@@ -8312,6 +8386,21 @@ void BB_SPI_LCD::display(void)
 {
     spilcdShowBuffer(&_lcd, 0, 0, _lcd.iCurrentWidth, _lcd.iCurrentHeight, DRAW_TO_LCD);
 }
+void BB_SPI_LCD::display(int x, int y, int w, int h)
+{
+    spilcdShowBuffer(&_lcd, x, y, w, h, DRAW_TO_LCD);
+}
+
+int BB_SPI_LCD::rotateSprite(BB_SPI_LCD *pDstSprite, int iCenterX, int iCenterY, int iAngle)
+{
+    if (!pDstSprite || iAngle < 0 || iAngle > 359) return BB_ERROR_INV_PARAM;
+    if (!_lcd.pBackBuffer || !pDstSprite->_lcd.pBackBuffer) return BB_ERROR_INV_PARAM;
+
+    spilcdRotateBitmap(_lcd.pBackBuffer, pDstSprite->_lcd.pBackBuffer, 16,
+       _lcd.iWidth, _lcd.iHeight, _lcd.iWidth*2, iCenterX, iCenterY, iAngle);
+    return BB_ERROR_SUCCESS;
+} /* rotateSprite() */
+
 void BB_SPI_LCD::drawPixel(int16_t x, int16_t y, uint16_t color, int iFlags)
 {
   spilcdSetPosition(&_lcd, x, y, 1, 1, iFlags);
