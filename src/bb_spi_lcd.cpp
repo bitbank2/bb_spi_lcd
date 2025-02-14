@@ -8206,11 +8206,11 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
         cy += y; // reduce height because of clipping
         s -= (y * pSprite->_lcd.iCurrentWidth); // start at the visible part
     }
-    if (x + pSprite->_lcd.iCurrentWidth > _lcd.iCurrentWidth) { // clipped at right edge?
+    if (x + cx > _lcd.iCurrentWidth) { // clipped at right edge?
         cx = _lcd.iCurrentWidth - x;
         if (cx < 1) return BB_ERROR_INV_PARAM;
     }
-    if (y + pSprite->_lcd.iCurrentHeight > _lcd.iCurrentHeight) { // clipped at bottom edge?
+    if (y + cy > _lcd.iCurrentHeight) { // clipped at bottom edge?
         cy = _lcd.iCurrentHeight - y;
         if (cy < 1) return BB_ERROR_INV_PARAM;
     }

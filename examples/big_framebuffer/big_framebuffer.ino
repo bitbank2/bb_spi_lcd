@@ -16,7 +16,8 @@
 
 #include <bb_spi_lcd.h>
 #include "Roboto_Black_40.h"
-BB_SPI_LCD lcd, sprite;
+#include "bart_head.h"
+BB_SPI_LCD lcd, sprite, sprite2;
 #define SPRITE_SIZE 128
 #define BALL_COUNT 10
 typedef struct ballstruct
@@ -40,7 +41,8 @@ void setup()
   // so that the default value is what most people will want, but it can be
   // overridden by specifying a different value
   //
-  lcd.begin(/*DISPLAY_CYD_543*/DISPLAY_WS_AMOLED_18); // initialize the display
+//  lcd.begin(LCD_ILI9341, 0, 40000000, 10, 9, -1, -1, -1, MOSI, SCK);
+  lcd.begin(DISPLAY_CYD_543/*DISPLAY_WS_AMOLED_18*/); // initialize the display
   lcd.fillScreen(TFT_BLACK);
   if (!lcd.allocBuffer()) { // unable to allocate a buffer
     lcd.setTextColor(TFT_RED);
@@ -74,20 +76,23 @@ void setup()
   lcd.printf("time = %d ms\n", (int)lTime);
   lcd.display(); // copy the buffer to the LCD
   delay(3000);
+
+  sprite.createVirtual(150, 150); // create a sprite
+  sprite.drawBMP(bart_head, 0, 0, 0, -1, DRAW_TO_RAM);
+  // draw it directly to the LCD with scaling
+  lcd.fillScreen(TFT_BLACK);
+  float f = 0.5f;
+  for (int i=0; i<400; i++) {
+    lcd.drawSprite(0, 0, &sprite, f, -1, DRAW_TO_LCD);
+    f += 0.01f;
+  }
+  delay(3000);
+  sprite.freeVirtual(); // start over
   // Create a sprite that's smaller than the display
   sprite.createVirtual(SPRITE_SIZE, SPRITE_SIZE);
   sprite.fillScreen(TFT_BLACK);
   sprite.fillCircle(SPRITE_SIZE/2, SPRITE_SIZE/2, SPRITE_SIZE/2 - 1, TFT_BLUE); // make a solid circle within a circle
   sprite.fillCircle(SPRITE_SIZE/2, SPRITE_SIZE/2, SPRITE_SIZE/4, TFT_RED);
-  // "stamp" it in various locations on our framebuffer
-  lcd.fillScreen(TFT_BLACK, DRAW_TO_RAM);
-  for (int i=0; i<20; i++) {
-    x = rand() % (lcd.width() - SPRITE_SIZE/2);
-    y = rand() % (lcd.height() - SPRITE_SIZE/2);
-    lcd.drawSprite(x, y, &sprite, TFT_BLACK, DRAW_TO_RAM); // draw with black as the transparent color
-  }
-  lcd.display();
-  delay(3000);
   // How fast can this work for animation?
   for (int i=0; i<BALL_COUNT; i++) {
     // create random starting positions and directions
@@ -99,7 +104,7 @@ void setup()
       balls[i].dy = (rand() % 3) - 1;
     }
   }
-  for (int j=0; j<30; j++) {
+  for (int j=0; j<90; j++) {
     lcd.fillScreen(TFT_BLACK, DRAW_TO_RAM);
     for (int i=0; i<BALL_COUNT; i++) {
       lcd.drawSprite(balls[i].x, balls[i].y, &sprite, TFT_BLACK, DRAW_TO_RAM);
@@ -123,6 +128,28 @@ void setup()
     lcd.print("Text");
   }
   lcd.display();
+  delay(3000);
+  // Sprite rotation example
+  sprite.fillScreen(TFT_BLACK);
+  sprite.setFreeFont(&Roboto_Black_40);
+  sprite.setTextColor(TFT_GREEN, TFT_BLACK);
+  sprite.setCursor(10, 56);
+  sprite.print("A");
+  sprite.setTextColor(TFT_RED, -1);
+  sprite.setCursor(40, 76);
+  sprite.print("B");
+  sprite.setTextColor(TFT_BLUE, -1);
+  sprite.setCursor(70, 96);
+  sprite.print("C");
+  sprite2.createVirtual(SPRITE_SIZE, SPRITE_SIZE);
+  lcd.fillScreen(TFT_BLACK, DRAW_TO_LCD);
+  for (int j=0; j<15; j++) {
+    for (int iAngle=0; iAngle<360; iAngle++) {
+      sprite2.fillScreen(TFT_BLACK); // erase any old edge pixels
+      sprite.rotateSprite(&sprite2, SPRITE_SIZE/2, SPRITE_SIZE/2, iAngle);
+      lcd.drawSprite((lcd.width()-SPRITE_SIZE)/2, (lcd.height() - SPRITE_SIZE)/2, &sprite2, -1);
+    }
+  }
 } /* setup() */
 
 void loop()
