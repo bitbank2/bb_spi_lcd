@@ -167,13 +167,18 @@ static unsigned char ucRXBuf[512];
 #elif defined( ARDUINO_ARCH_RP2040 )
 // RP2040 somehow allocates this on an odd byte boundary if we don't
 // explicitly align the memory
+static uint8_t ucTXBuf[8192];
+static bool transfer_is_done = true; // not used the same way with RP2040
 static unsigned char ucRXBuf[2048] __attribute__((aligned (16)));
+uint8_t *pDMA0 = ucTXBuf;
+uint8_t *pDMA1 = &ucTXBuf[sizeof(ucTXBuf)/2]; // 2 ping-pong buffers
+volatile uint8_t *pDMA = pDMA0;
 #else
 static uint8_t ucTXBuf[4096];
 static uint8_t ucRXBuf[1024];
 static int iTXBufSize = sizeof(ucTXBuf);;
 uint8_t *pDMA0 = ucTXBuf;
-uint8_t *pDMA1 = &ucTXBuf[2048]; // 2 ping-pong buffers 
+uint8_t *pDMA1 = &ucTXBuf[sizeof(ucTXBuf)/2]; // 2 ping-pong buffers
 volatile uint8_t *pDMA = pDMA0;
 volatile bool transfer_is_done = true; // Done yet?
 #endif // AVR | RP2040
@@ -2140,7 +2145,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
     buscfg.miso_io_num = iMISOPin;
     buscfg.mosi_io_num = iMOSIPin;
     buscfg.sclk_io_num = iCLKPin;
-    buscfg.max_transfer_sz=320*240*2;
+    buscfg.max_transfer_sz=4096;
     buscfg.quadwp_io_num=-1;
     buscfg.quadhd_io_num=-1;
     //Initialize the SPI bus
@@ -3600,22 +3605,24 @@ uint8_t * spilcdGetDMABuffer(void)
 //
 void qspiSendCMD(SPILCD *pLCD, uint8_t u8CMD, uint8_t *pParams, int iLen)
 {
-    spi_transaction_t t;
-    memset(&t, 0, sizeof(t));
+//    spi_transaction_t t;
+//    memset(&t, 0, sizeof(t));
     
     spilcdWaitDMA();
-    t.flags = (SPI_TRANS_MULTILINE_CMD | SPI_TRANS_MULTILINE_ADDR);
-    t.cmd = 0x02;
-    t.addr = u8CMD << 8;
+    trans[0].flags = (SPI_TRANS_MULTILINE_CMD | SPI_TRANS_MULTILINE_ADDR);
+    trans[0].cmd = 0x02;
+    trans[0].addr = u8CMD << 8;
     if (iLen) {
-        t.tx_buffer = pParams;
-        t.length = 8 * iLen; // length in bits
+        trans[0].tx_buffer = pParams;
+        trans[0].length = 8 * iLen; // length in bits
     }
-    spi_device_polling_transmit(spi, &t);
+    spi_device_polling_transmit(spi, &trans[0]);
 } /* qspiSendCMD() */
 
 void qspiSendDATA(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags)
 {
+esp_err_t ret;
+
     spilcdWaitDMA();
     memset(&trans[0], 0, sizeof(trans[0]));
     
@@ -3631,7 +3638,8 @@ void qspiSendDATA(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags)
     trans[0].length = iLen*8;
     if (iFlags & DRAW_WITH_DMA) {
         transfer_is_done = false;
-        spi_device_queue_trans(spi, &trans[0], portMAX_DELAY);
+        ret = spi_device_queue_trans(spi, &trans[0], portMAX_DELAY);
+        assert (ret==ESP_OK);
     } else { // use polling
         spi_device_polling_transmit(spi, &trans[0]);
     }
@@ -4653,7 +4661,7 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
         .sclk_io_num = u8CLK,
         .data2_io_num = u8D2,
         .data3_io_num = u8D3,
-        .max_transfer_sz = (14400 * 16) + 8,
+        .max_transfer_sz = 8192, //(14400 * 16) + 8,
         .flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_GPIO_PINS /* |
                  SPICOMMON_BUSFLAG_QUAD */
         ,
@@ -4749,6 +4757,7 @@ esp_err_t ret;
     trans[0].length = iLen * 8; // Length in bits
     trans[0].rxlength = 0; // defaults to the same length as tx length
     
+//    spi_device_polling_end(spi, portMAX_DELAY); // make sure it's ready
     // Queue the transaction
 //    ret = spi_device_polling_transmit(spi, &t);
     transfer_is_done = false;
@@ -6865,6 +6874,7 @@ void SetDCDC3(bool bPower)
 }
 void Core2AxpPowerUp()
 {
+    Wire1.end();
     Wire1.begin(21, 22);
     Wire1.setClock(400000);
 
@@ -6928,7 +6938,6 @@ void Core2AxpPowerUp()
         // if not, enable M-Bus 5V output
         SetBusPowerMode(kMBusModeOutput);
     }
-
 } /* Core2AxpPowerUp() */
 #endif // Core2
 
@@ -7294,6 +7303,7 @@ int BB_SPI_LCD::beginQSPI(int iType, int iFlags, uint8_t CS_PIN, uint8_t CLK_PIN
 #ifdef ARDUINO_ARCH_ESP32
     return qspiInit(&_lcd, iType, iFlags, u32Freq, CS_PIN, CLK_PIN, D0_PIN, D1_PIN, D2_PIN, D3_PIN, RST_PIN, -1);
 #endif
+    return 0;
 } /* beginQSPI() */
 
 int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq)
@@ -7609,7 +7619,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
 #ifdef ARDUINO_M5STACK_CORES3
         case DISPLAY_M5STACK_CORES3:
             CoreS3AxpPowerUp(); // D/C is shared with MISO
-            spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 3, 35, -1, -1, -1, 37, 36,0);
+            spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 3, 35, -1, -1, -1, 37, 36,1);
             break; 
 #endif // ARDUINO_M5STACK_CORES3 
 #ifdef ARDUINO_M5STACK_CORE2
