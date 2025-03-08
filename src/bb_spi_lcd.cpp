@@ -4110,10 +4110,6 @@ void AXS15231Init(SPILCD *pLCD, int iSubType)
         pLCD->iCurrentHeight = pLCD->iHeight = 480;
     }
     if (iSubType == 1) {
-        int iCount = 1;
-        uint8_t *s = (uint8_t *)axs15231_init;
-        qspiSendCMD(pLCD, 0x01, NULL, 0); // soft reset
-        delay(120);
         // exit sleep mode first
         qspiSendCMD(pLCD, 0x11, u8Temp, 0);
         delay(200);
@@ -5091,7 +5087,7 @@ uint8_t ucBitmap[32]; // 256 pixels wide should be big enough?
          if (cx + x > pLCD->iCurrentWidth) {
             cx = pLCD->iCurrentWidth - x;
          }
-          Serial.println("Blank");
+         // Serial.println("Blank");
          spilcdSetPosition(pLCD, x, miny, cx, maxy-miny, iFlags);
             // blank out area above character
 //            cy = font.yAdvance - pGlyph->height;
@@ -5134,7 +5130,7 @@ uint8_t ucBitmap[32]; // 256 pixels wide should be big enough?
             } // for ty
       } else if (usFGColor == usBGColor) { // transparent
           int iCount; // opaque pixel count
-          Serial.println("Transparent");
+          //Serial.println("Transparent");
           d = (uint16_t *)ucRXBuf;
           for (iCount=0; iCount < cx; iCount++)
               d[iCount] = usFGColor; // set up a line of solid color
@@ -6272,8 +6268,8 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
             }
         }
     }
-    if (ucCompression) // need to do it differently for RLE compressed
-    { 
+    if (ucCompression == 2) // need to do it differently for RLE compressed
+    {
     uint16_t *d;
     int y, iStartY, iEndY, iDeltaY;
         
@@ -7941,7 +7937,8 @@ int BB_SPI_LCD::createVirtual(int iWidth, int iHeight, void *p)
         p = malloc(iWidth * iHeight * 2);
 #ifdef ARDUINO_ARCH_ESP32
         // Try to use PSRAM
-        p = ps_malloc(iWidth * iHeight * 2);
+        p = heap_caps_aligned_alloc(16, (iWidth * iHeight * 2), MALLOC_CAP_8BIT);
+        //p = ps_malloc(iWidth * iHeight * 2);
 #endif
        if (!p) return 0;
     }
@@ -8223,7 +8220,38 @@ inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
   return gfxFont->glyph + c;
 #endif //__AVR__
 }
-
+//
+// Alpha blend a foreground and background sprite and store the result
+// in a destination sprite
+//
+void BB_SPI_LCD::blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SPI_LCD *pDestSprite, uint8_t u8Alpha)
+{
+#ifdef ARDUINO_ESP32S3_DEV
+    const uint16_t u16Masks[] = {0x001f, 0x07e0, 0x07c0,0xf800}; // B, G, R bit masks
+    s3_alpha_blend_be((uint16_t *)pFGSprite->_lcd.pBackBuffer, (uint16_t *)pBGSprite->_lcd.pBackBuffer, (uint16_t *)pDestSprite->_lcd.pBackBuffer, pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight, u8Alpha, u16Masks);
+#else
+    int i, iCount = pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight;
+    uint16_t u16, *pFG, *pBG, *pD;
+    uint32_t u32FG, u32BG, u32D;
+    uint32_t u8BGAlpha = 32 - u8Alpha;
+    const uint32_t u32Mask = 0x07e0f81f;
+    pFG = (uint16_t *)pFGSprite->_lcd.pBackBuffer;
+    pBG = (uint16_t *)pBGSprite->_lcd.pBackBuffer;
+    pD = (uint16_t *)pDestSprite->_lcd.pBackBuffer;
+    for (i = 0; i < iCount; i++) {
+        u16 = __builtin_bswap16(*pFG++);
+        u32FG = u16 | (u16 << 16);
+        u16 = __builtin_bswap16(*pBG++);
+        u32BG = u16 | (u16 << 16);
+        u32FG &= u32Mask;
+        u32BG &= u32Mask;
+        u32D = (u32FG * u8Alpha) + (u32BG * u8BGAlpha);
+        u32D = (u32D >> 5) & u32Mask;
+        u32D |= (u32D >> 16);
+        *pD++ = __builtin_bswap16((uint16_t)u32D);
+    }
+#endif
+} /* blendSprite() */
 //
 // Draw a sprite (another instance of the BB_SPI_LCD class) with scaling and optional transparency
 // allows negative offsets, the sprite will be clipped properly

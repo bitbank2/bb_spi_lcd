@@ -17,6 +17,20 @@
 // limitations under the License.
 //===========================================================================
 //
+#if defined (ARDUINO_ARCH_ESP32) && !defined(NO_SIMD)
+#if __has_include ("dsps_fft2r_platform.h")
+#include "dsps_fft2r_platform.h"
+#if (dsps_fft2r_sc16_aes3_enabled == 1)
+#define ESP32S3_SIMD
+extern "C" {
+
+void s3_alpha_blend_be(uint16_t *pFG, uint16_t *pBG, uint16_t *pDest, uint32_t count, uint8_t alpha, const uint16_t *pMasks);
+
+}
+#endif // S3 SIMD
+#endif // __has_include
+#endif // ESP32
+
 // these are defined the same in the OLED library
 #ifndef __LINUX__
 #include <Arduino.h>
@@ -224,6 +238,7 @@ class BB_SPI_LCD : public Print
     void setPrintFlags(int iFlags);
     void backlight(bool bOn);
     int rotateSprite(BB_SPI_LCD *pDstSprite, int iCenterX, int iCenterY, int iAngle);
+    void blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SPI_LCD *pDestSprite, uint8_t u8Alpha);
     void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void pushPixels(uint16_t *pixels, int count, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawString(const char *pText, int x, int y, int size=-1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
@@ -337,6 +352,10 @@ uint16_t * RGBInit(BB_RGB *pRGB);
 #if defined(__LINUX__) && defined(__cplusplus)
 extern "C" {
 #endif
+
+#ifdef ARDUINO_ARCH_ESP32S3
+void s3_alpha_blend_be(uint16_t *pFG, uint16_t *pBG, uint16_t *pDest, uint32_t count, uint8_t alpha);
+#endif // ARDUINO_ARCH_ESP32S3
 
 // Sets the D/C pin to data or command mode
 void spilcdSetMode(SPILCD *pLCD, int iMode);
