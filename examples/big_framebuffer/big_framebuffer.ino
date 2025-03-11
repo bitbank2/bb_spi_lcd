@@ -33,6 +33,8 @@ void setup()
   long lTime;
   int x, y;
   char szTemp[32];
+  Serial.begin(115200);
+  delay(3000);
   //
   // The default flags for all operations is DRAW_TO_LCD | DRAW_TO_RAM
   // This means that all drawing will be sent to the physical LCD and
@@ -42,13 +44,13 @@ void setup()
   // overridden by specifying a different value
   //
 //  lcd.begin(LCD_ILI9341, 0, 40000000, 10, 9, -1, -1, -1, MOSI, SCK);
-  lcd.begin(DISPLAY_CYD_543/*DISPLAY_WS_AMOLED_18*/); // initialize the display
+  lcd.begin(DISPLAY_CYD_4848/*DISPLAY_WS_AMOLED_18*/); // initialize the display
   lcd.fillScreen(TFT_BLACK);
-  if (!lcd.allocBuffer()) { // unable to allocate a buffer
-    lcd.setTextColor(TFT_RED);
-    lcd.print("allocBuffer() failed!");
-    while (1) {}; // stop
-  }
+//  if (!lcd.allocBuffer()) { // unable to allocate a buffer
+//    lcd.setTextColor(TFT_RED);
+//    lcd.print("allocBuffer() failed!");
+//    while (1) {}; // stop
+//  }
   lcd.setFont(FONT_12x16);
   // A good example of how direct memory manipulation can save time in preparing graphics
   // Let's do a bunch of lines to the display and then into memory

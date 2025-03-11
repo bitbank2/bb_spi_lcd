@@ -240,6 +240,7 @@ class BB_SPI_LCD : public Print
     int rotateSprite(BB_SPI_LCD *pDstSprite, int iCenterX, int iCenterY, int iAngle);
     void blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SPI_LCD *pDestSprite, uint8_t u8Alpha);
     void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void readImage(int x, int y, int w, int h, uint16_t *pixels);
     void pushPixels(uint16_t *pixels, int count, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawString(const char *pText, int x, int y, int size=-1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawString(String text, int x, int y, int size=-1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);

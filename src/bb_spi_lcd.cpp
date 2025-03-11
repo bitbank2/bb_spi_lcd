@@ -8531,4 +8531,18 @@ void BB_SPI_LCD::pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFl
   spilcdSetPosition(&_lcd, x, y, w, h, DRAW_TO_LCD);
   spilcdWriteDataBlock(&_lcd, (uint8_t *)pixels, w*h*2, iFlags);
 }
+void BB_SPI_LCD::readImage(int x, int y, int w, int h, uint16_t *pixels)
+{
+uint16_t *s;
+int ty;
+
+  if (!pixels || !_lcd.pBackBuffer || x < 0 || y < 0 || w < 0 || h < 0) return;
+  if (x+w > _lcd.iCurrentWidth || y+h > _lcd.iCurrentHeight) return;
+  s = (uint16_t *)&_lcd.pBackBuffer[(y * _lcd.iScreenPitch) + (x*2)];
+  for (ty=0; ty < h; ty++) {
+      memcpy(pixels, s, w*2);
+      pixels += w;
+      s += _lcd.iScreenPitch / 2;
+  } // for ty   
+}
 #endif // __cplusplus
