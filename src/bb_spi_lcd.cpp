@@ -8221,6 +8221,48 @@ inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
 #endif //__AVR__
 }
 //
+// Use a mask to alpha blend a tint color
+// color 0 = don't affect, color 0xffff = affect
+// Source sprite is blended with the tint color and the given alpha for mask pixels that are 0xFFFF (WHITE)
+// Destination pixels are written starting at the x,y of the instance calling this method
+//
+void BB_SPI_LCD::maskedTint(BB_SPI_LCD *pSrc, BB_SPI_LCD *pMask, int x, int y, uint16_t u16Tint, uint8_t u8Alpha)
+{
+    int w, h, tx, ty, iPitch;
+    uint16_t u16, *s, *d, *m;
+    uint32_t u32Tint, u32Dest;
+    uint32_t u8BGAlpha = 32 - u8Alpha;
+    const uint32_t u32Mask = 0x07e0f81f;
+    
+    if (!_lcd.pBackBuffer || !pSrc || !pMask || !pSrc->_lcd.pBackBuffer || !pMask->_lcd.pBackBuffer) return; // no valid memory planes
+
+    w = pMask->_lcd.iCurrentWidth;
+    h = pMask->_lcd.iCurrentHeight;
+    iPitch = _lcd.iScreenPitch / 2; // in terms of u16's
+    u32Tint = u16Tint | (u16Tint << 16); // prepare tint color
+    u32Tint &= u32Mask;
+    d = (uint16_t *)&_lcd.pBackBuffer[(y * _lcd.iScreenPitch)  + (x * 2)];
+    s = (uint16_t *)pSrc->_lcd.pBackBuffer;
+    m = (uint16_t *)pMask->_lcd.pBackBuffer;
+    for (ty = 0; ty < h; ty++) {
+        for (tx = 0; tx < w; tx++) {
+            if (m[0]) { // N.B. Should check for 0xffff instead of just non-zero
+                u16 = __builtin_bswap16(s[0]);
+                u32Dest = u16 | (u16 << 16);
+                u32Dest &= u32Mask;
+                u32Dest = (u32Dest * u8BGAlpha) + (u32Tint * u8Alpha);
+                u32Dest = (u32Dest >> 5) & u32Mask;
+                u32Dest |= (u32Dest >> 16);
+                d[tx] = __builtin_bswap16((uint16_t)u32Dest);
+            } else { // copy source to dest
+                d[tx] = s[0];
+            }
+            s++; m++;
+        } // for tx
+        d += iPitch;
+    } // for ty
+} /* maskedTint() */
+//
 // Alpha blend a foreground and background sprite and store the result
 // in a destination sprite
 //
@@ -8318,8 +8360,10 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
                     u32XAcc += u32Frac;
                 }
             } else { // overwrite
-                d[tx] = s16[(u32XAcc >> 16)];
-                u32XAcc += u32Frac;
+                for (tx = 0; tx<cx; tx++) {
+                    d[tx] = s16[(u32XAcc >> 16)];
+                    u32XAcc += u32Frac;
+                }
             }
             u32YAcc += u32Frac;
             d += _lcd.iCurrentWidth;
