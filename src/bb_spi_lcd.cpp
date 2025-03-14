@@ -8220,6 +8220,9 @@ inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
   return gfxFont->glyph + c;
 #endif //__AVR__
 }
+#ifdef ARDUINO_ESP32S3_DEV
+    const uint16_t u16RGBMasks[] = {0x001f, 0x07e0, 0x07c0, 0xf800}; // B, G, R bitmasks for SIMD code 
+#endif
 //
 // Use a mask to alpha blend a tint color
 // color 0 = don't affect, color 0xffff = affect
@@ -8235,6 +8238,14 @@ void BB_SPI_LCD::maskedTint(BB_SPI_LCD *pSrc, BB_SPI_LCD *pMask, int x, int y, u
     const uint32_t u32Mask = 0x07e0f81f;
     
     if (!_lcd.pBackBuffer || !pSrc || !pMask || !pSrc->_lcd.pBackBuffer || !pMask->_lcd.pBackBuffer) return; // no valid memory planes
+
+#ifdef ARDUINO_ESP32S3_DEV
+// If the source and destination are the same size, use SIMD code
+    if (_lcd.iCurrentWidth == pSrc->_lcd.iCurrentWidth && _lcd.iCurrentHeight == pSrc->_lcd.iCurrentHeight) { // use SIMD code
+        s3_masked_tint_be((uint16_t *)_lcd.pBackBuffer, (uint16_t *)pSrc->_lcd.pBackBuffer, (uint16_t *)pMask->_lcd.pBackBuffer, u16Tint, pSrc->_lcd.iCurrentWidth * pSrc->_lcd.iCurrentHeight, u8Alpha, u16RGBMasks);
+        return;
+    }
+#endif
 
     w = pMask->_lcd.iCurrentWidth;
     h = pMask->_lcd.iCurrentHeight;
@@ -8269,8 +8280,7 @@ void BB_SPI_LCD::maskedTint(BB_SPI_LCD *pSrc, BB_SPI_LCD *pMask, int x, int y, u
 void BB_SPI_LCD::blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SPI_LCD *pDestSprite, uint8_t u8Alpha)
 {
 #ifdef ARDUINO_ESP32S3_DEV
-    const uint16_t u16Masks[] = {0x001f, 0x07e0, 0x07c0,0xf800}; // B, G, R bit masks
-    s3_alpha_blend_be((uint16_t *)pFGSprite->_lcd.pBackBuffer, (uint16_t *)pBGSprite->_lcd.pBackBuffer, (uint16_t *)pDestSprite->_lcd.pBackBuffer, pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight, u8Alpha, u16Masks);
+    s3_alpha_blend_be((uint16_t *)pFGSprite->_lcd.pBackBuffer, (uint16_t *)pBGSprite->_lcd.pBackBuffer, (uint16_t *)pDestSprite->_lcd.pBackBuffer, pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight, u8Alpha, u16RGBMasks);
 #else
     int i, iCount = pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight;
     uint16_t u16, *pFG, *pBG, *pD;

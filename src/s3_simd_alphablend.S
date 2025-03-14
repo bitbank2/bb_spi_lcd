@@ -10,8 +10,6 @@
 #if (dsps_fft2r_sc16_aes3_enabled == 1)
 	.text
 	.align 4
-    .literal_position
-    .literal    .LMask, 0x07e0f81f
 
     .type   s3_alpha_blend_be, @function
     .align 4

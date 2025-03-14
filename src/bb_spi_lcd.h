@@ -25,7 +25,7 @@
 extern "C" {
 
 void s3_alpha_blend_be(uint16_t *pFG, uint16_t *pBG, uint16_t *pDest, uint32_t count, uint8_t alpha, const uint16_t *pMasks);
-
+void s3_masked_tint_be(uint16_t *pDest, uint16_t *Src, uint16_t *pMask, uint16_t tintColor, uint32_t count, uint8_t alpha, const uint16_t *pMasks);
 }
 #endif // S3 SIMD
 #endif // __has_include
