@@ -276,6 +276,19 @@ const BB_RGB rgbpanel_480x480 = {
     480, 480,
     16000000 // speed
 };
+
+const BB_RGB rgbpanel_UM_480x480 = {
+	38 /* CS */, 47 /* SCK */, 48 /* SDA */,
+	41 /* DE */, 42 /* VSYNC */, 43 /* HSYNC */, 39 /* PCLK */,
+	8 /* R0 */, 7 /* R1 */, 6 /* R2 */, 5 /* R3 */, 4 /* R4 */,
+	14 /* G0 */, 13 /* G1 */, 12 /* G2 */, 11 /* G3 */, 10 /* G4 */, 9 /* G5 */,
+	21 /* B0 */, 18 /* B1 */, 17 /* B2 */, 16 /* B3 */, 15 /* B4 */,
+	10 /* hsync_back_porch */, 50 /* hsync_front_porch */, 8 /* hsync_pulse_width */,
+	8 /* vsync_back_porch */, 8 /* vsync_front_porch */, 3 /* vsync_pulse_width */,
+	1 /* hsync_polarity */, 1 /* vsync_polarity */,
+	480, 480,
+	16000000 // speed
+};
 // 16-bit RGB panel 800x480 for JC8048W700 (7.0" 800x480)
 const BB_RGB rgbpanel_800x480_7 = { 
     -1 /* CS */, -1 /* SCK */, -1 /* SDA */,
@@ -3006,6 +3019,35 @@ int spilcdDrawTile150(SPILCD *pLCD, int x, int y, int iTileWidth, int iTileHeigh
     myspiWrite(pLCD, (uint8_t *)pDMA, (iTileWidth*iTileHeight*9)/2, MODE_DATA, iFlags);
     return 0;
 } /* spilcdDrawTile150() */
+
+//
+// Special case for copying a block of pixels that will be clipped
+void spilcdCopyClipped(SPILCD *pLCD, int x, int y, int w, int h, uint16_t *pixels)
+{
+    int ty;
+    int dw, dh; // destination width/height
+    uint16_t *d;
+
+    dw = w; dh = h;
+    if (y < 0) { // clipped at top
+        pixels -= (w * y);
+        dh += y;
+        y = 0;
+    }
+    if (x < 0) { // clipped at left
+        pixels -= x;
+        dw += x;
+        x = 0;
+    }
+    if (x + dw > pLCD->iCurrentWidth) dw = pLCD->iCurrentWidth - x;
+    if (y + dh > pLCD->iCurrentHeight) dh = pLCD->iCurrentHeight - y;
+    d = (uint16_t *)&pLCD->pBackBuffer[(y * pLCD->iScreenPitch) + x * 2];
+    for (ty = 0; ty < dh; ty++) {
+        memcpy(d, pixels, dw * 2);
+        d += pLCD->iScreenPitch / 2;
+        pixels += w;
+    }
+} /* spilcdCopyClipped() */
 
 //
 // Draw a 1-bpp pattern with the given color and translucency
@@ -7551,6 +7593,15 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14, 1); // Cheap Yellow Display (2.4 and 2.8 w/cap touch)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
+        case DISPLAY_UM_480x480: // UnexpectedMaker 4" 480x480
+            memset(&_lcd, 0, sizeof(_lcd));
+            _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
+            _lcd.iLEDPin = -1; 
+            _lcd.iLCDType = LCD_VIRTUAL_MEM;
+            _lcd.iWidth = _lcd.iCurrentWidth = 480; 
+            _lcd.iHeight = _lcd.iCurrentHeight = 480;
+            spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_UM_480x480));      
+            break;
         case DISPLAY_CYD_4848: // 4.0" 480x480 ESP32-S3
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
@@ -7773,12 +7824,6 @@ int BB_SPI_LCD::begin(int iDisplayType)
             // CS=12, SCK=11, D0=4, D1=5, D2=6, D3=7, RST=-1, BL=-1
             qspiInit(&_lcd, LCD_SH8601, FLAGS_NONE, 32000000, 12,11,4,5,6,7,-1,-1);
             break;
-        case DISPLAY_UM_AMOLED_18: // UnexpectedMaker 1.8 AMOLED
-            memset(&_lcd, 0, sizeof(_lcd));
-            _lcd.bUseDMA = 1; // allows DMA access
-            // CS=34, SCK=36, D0=35, D1=9, D2=8, D3=7, RST=6, BL=-1
-            qspiInit(&_lcd, LCD_SH8601, FLAGS_NONE, 32000000, 34, 36, 35, 9, 8, 7, 6, -1);
-            break;
         case DISPLAY_CYD_535: // 320x480 AXS15321
             // CS=45, SCK=47, D0=21, D1=48, D2=40, D3=39, RST=-1, BL=1
             memset(&_lcd, 0, sizeof(_lcd));
@@ -7934,11 +7979,12 @@ int BB_SPI_LCD::createVirtual(int iWidth, int iHeight, void *p)
     _lcd.iLCDType = LCD_VIRTUAL_MEM;
     _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
     if (p == NULL) {
-        p = malloc(iWidth * iHeight * 2);
 #ifdef ARDUINO_ARCH_ESP32
         // Try to use PSRAM
         p = heap_caps_aligned_alloc(16, (iWidth * iHeight * 2), MALLOC_CAP_8BIT);
         //p = ps_malloc(iWidth * iHeight * 2);
+#else
+        p = malloc(iWidth * iHeight * 2);
 #endif
        if (!p) return 0;
     }
@@ -8535,6 +8581,13 @@ void BB_SPI_LCD::drawPixel(int16_t x, int16_t y, uint16_t color, int iFlags)
   spilcdWriteDataBlock(&_lcd, (uint8_t *)&color, 2, iFlags);
 }
 
+uint16_t BB_SPI_LCD::readPixel(int16_t x, int16_t y)
+{
+   if (!_lcd.pBackBuffer || x < 0 || y < 0 || x >= _lcd.iCurrentWidth || y >= _lcd.iCurrentHeight) return 0;
+
+    return __builtin_bswap16(*(uint16_t *)&_lcd.pBackBuffer[(y * _lcd.iScreenPitch) + x * 2]);
+} /* readPixel() */
+
 void BB_SPI_LCD::setWordwrap(int bWrap)
 {
   _lcd.iWrap = bWrap;
@@ -8582,6 +8635,11 @@ void BB_SPI_LCD::fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint1
 
 void BB_SPI_LCD::pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags)
 {
+  if (_lcd.iLCDType == LCD_VIRTUAL_MEM && (x < 0 || y < 0 || x + w > _lcd.iCurrentWidth || x+h > _lcd.iCurrentHeight)) { // Special case for clipping of RAM buffers
+      spilcdCopyClipped(&_lcd, x, y, w, h, pixels);
+      return;
+  }
+
   spilcdSetPosition(&_lcd, x, y, w, h, DRAW_TO_LCD);
   spilcdWriteDataBlock(&_lcd, (uint8_t *)pixels, w*h*2, iFlags);
 }

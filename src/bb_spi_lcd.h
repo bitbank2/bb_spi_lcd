@@ -210,6 +210,7 @@ class BB_SPI_LCD : public Print
     uint8_t getRotation(void);
     void fillScreen(int iColor, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawPixel(int16_t x, int16_t y, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    uint16_t readPixel(int16_t x, int16_t y);
     void fillRect(int x, int y, int w, int h, int iColor, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void setTextColor(int iFG, int iBG = -1);
     void setCursor(int x, int y);
@@ -328,7 +329,7 @@ enum
     DISPLAY_STAMPS3_8PIN, // 8-pin 0.5mm FFC connector LCDs
     DISPLAY_WS_AMOLED_18, // Waveshare 368x448 1.8" AMOLED
     DISPLAY_WS_AMOLED_146, // Waveshare 412x412 1.46" round AMOLED
-    DISPLAY_UM_AMOLED_18, // Unexpected Maker 1.8" AMOLED
+    DISPLAY_UM_480x480, // Unexpected Maker 480x480 RGB panel
     DISPLAY_COUNT
 };
 #if !defined(BITBANK_LCD_MODES)
