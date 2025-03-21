@@ -8267,7 +8267,8 @@ inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
 #endif //__AVR__
 }
 #ifdef ARDUINO_ESP32S3_DEV
-    const uint16_t u16RGBMasks[] = {0x001f, 0x07e0, 0x07c0, 0xf800}; // B, G, R bitmasks for SIMD code 
+    const uint16_t u16RGBMasks[4] = {0x001f, 0x07e0, 0x07c0, 0xf800}; // B, G, R bitmasks for SIMD code
+    const uint32_t u32BlurMasks[2] = {0x07e0f81f, 0x01004008};
 #endif
 //
 // Use a mask to alpha blend a tint color
@@ -8319,6 +8320,92 @@ void BB_SPI_LCD::maskedTint(BB_SPI_LCD *pSrc, BB_SPI_LCD *pMask, int x, int y, u
         d += iPitch;
     } // for ty
 } /* maskedTint() */
+//
+// Apply a 3x3 Gaussian blur filter to a sprite
+//
+void BB_SPI_LCD::blurSprite(BB_SPI_LCD *pDestSprite)
+{
+    int x, y, w, h;
+    uint16_t *s, *d;
+    uint16_t *pOut, *pBitmap;
+    uint32_t u32, u32Sum;
+    const uint32_t u32Mask = u32BlurMasks[0], u32Round = u32BlurMasks[1];
+
+    if (!_lcd.pBackBuffer || !pDestSprite || _lcd.iCurrentWidth != pDestSprite->_lcd.iCurrentWidth ||
+        _lcd.iCurrentHeight != pDestSprite->_lcd.iCurrentHeight) return;
+
+    w = _lcd.iCurrentWidth;
+    h = _lcd.iCurrentHeight;
+    pOut = (uint16_t *)pDestSprite->_lcd.pBackBuffer;
+    pBitmap = (uint16_t *)_lcd.pBackBuffer;
+    memcpy(pOut, pBitmap, w * 2); // first and last line are unchanged
+    memcpy(&pOut[(h-1) * w], &pBitmap[(h-1) * w], w * 2);
+    for (y=1; y<h-1; y++) {
+        d = &pOut[y * w];
+        s = &pBitmap[y * w];
+        d[0] = s[-1]; // copy first pixel unchanged
+        d[w-1] = s[w]; // copy last pixel unchanged
+#ifdef ARDUINO_ESP32S3_DEV
+        s3_blur_be(s, &d[1], (w & 0xfffc), w*2, u32BlurMasks); // width must be a multiple of 4
+#else // C Version
+        for (x=1; x<w-1; x++) {
+            // top left
+            u32Sum = __builtin_bswap16(s[-w]);
+            u32Sum |= (u32Sum << 16);
+            u32Sum &= u32Mask; // top left
+            
+            u32 = __builtin_bswap16(s[-w + 1]);
+            u32 |= (u32 << 16);
+            u32 &= u32Mask; // top center
+            u32Sum += (u32 * 2);
+            
+            u32 = __builtin_bswap16(s[-w + 2]); // top right
+            u32 |= (u32 << 16);
+            u32 &= u32Mask;
+            u32Sum += u32;
+
+            // middle row
+            u32= __builtin_bswap16(s[0]);
+            u32 |= (u32 << 16);
+            u32 &= u32Mask;
+            u32Sum += (u32 * 2);
+            
+            u32 = __builtin_bswap16(s[1]);
+            u32 |= (u32 << 16);
+            u32 &= u32Mask;
+            u32Sum += (u32 * 4);
+
+            u32 = __builtin_bswap16(s[2]);
+            u32 |= (u32 << 16);
+            u32 &= u32Mask;
+            u32Sum += (u32 * 2);
+            
+            // bottom row
+            u32 = __builtin_bswap16(s[w]);
+            u32 |= (u32 << 16);
+            u32 &= u32Mask;
+            u32Sum += u32;
+            
+            u32 = __builtin_bswap16(s[w+1]);
+            u32 |= (u32 << 16);
+            u32 &= u32Mask;
+            u32Sum += (u32 * 2);
+            
+            u32 = __builtin_bswap16(s[w+2]);
+            u32 |= (u32 << 16);
+            u32 &= u32Mask;
+            u32Sum += u32;
+            
+            u32Sum = (u32Sum + u32Round) >> 4;
+            u32Sum &= u32Mask;
+            u32Sum |= (u32Sum >> 16);
+            d[x] = __builtin_bswap16((uint16_t)u32Sum);
+            s++;
+        } // for x
+#endif
+    } // for y
+} /* blurSprite() */
+
 //
 // Alpha blend a foreground and background sprite and store the result
 // in a destination sprite
