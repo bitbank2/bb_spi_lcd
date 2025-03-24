@@ -8268,8 +8268,8 @@ inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
 }
 #ifdef ARDUINO_ESP32S3_DEV
     const uint16_t u16RGBMasks[4] = {0x001f, 0x07e0, 0x07c0, 0xf800}; // B, G, R bitmasks for SIMD code
-    const uint32_t u32BlurMasks[2] = {0x07e0f81f, 0x01004008};
 #endif
+const uint32_t u32BlurMasks[2] = {0x07e0f81f, 0x01004008};
 //
 // Use a mask to alpha blend a tint color
 // color 0 = don't affect, color 0xffff = affect
