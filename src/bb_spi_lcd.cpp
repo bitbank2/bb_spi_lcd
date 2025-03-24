@@ -8321,27 +8321,23 @@ void BB_SPI_LCD::maskedTint(BB_SPI_LCD *pSrc, BB_SPI_LCD *pMask, int x, int y, u
     } // for ty
 } /* maskedTint() */
 //
-// Apply a 3x3 Gaussian blur filter to a sprite
+// Apply a 3x3 Gaussian blur filter to a sprite/framebuffer
 //
-void BB_SPI_LCD::blurSprite(BB_SPI_LCD *pDestSprite)
+void BB_SPI_LCD::blurGaussian(void)
 {
     int x, y, w, h;
     uint16_t *s, *d;
     uint16_t *pOut, *pBitmap;
-    uint32_t u32, u32Sum;
+    uint32_t u32, u32Sum, u32Offset = 0;
     const uint32_t u32Mask = u32BlurMasks[0], u32Round = u32BlurMasks[1];
 
-    if (!_lcd.pBackBuffer || !pDestSprite || _lcd.iCurrentWidth != pDestSprite->_lcd.iCurrentWidth ||
-        _lcd.iCurrentHeight != pDestSprite->_lcd.iCurrentHeight) return;
+    if (!_lcd.pBackBuffer) return;
 
     w = _lcd.iCurrentWidth;
     h = _lcd.iCurrentHeight;
-    pOut = (uint16_t *)pDestSprite->_lcd.pBackBuffer;
     pBitmap = (uint16_t *)_lcd.pBackBuffer;
-    memcpy(pOut, pBitmap, w * 2); // first and last line are unchanged
-    memcpy(&pOut[(h-1) * w], &pBitmap[(h-1) * w], w * 2);
     for (y=1; y<h-1; y++) {
-        d = &pOut[y * w];
+        d = (uint16_t *)&ucTXBuf[u32Offset];
         s = &pBitmap[y * w];
         d[0] = s[-1]; // copy first pixel unchanged
         d[w-1] = s[w]; // copy last pixel unchanged
@@ -8403,8 +8399,13 @@ void BB_SPI_LCD::blurSprite(BB_SPI_LCD *pDestSprite)
             s++;
         } // for x
 #endif
+        u32Offset ^= (w * 2); // toggle between 2 output lines
+        if (y > 1) { // copy the blurred pixels back to the source image after we no longer need them
+            memcpy(&pBitmap[(y-1) * w], &ucTXBuf[u32Offset], w*2);
+        }
     } // for y
-} /* blurSprite() */
+    memcpy(&pBitmap[(h-2) * w], &ucTXBuf[u32Offset ^ (w * 2)], w*2); // copy last line
+} /* blurGaussian() */
 
 //
 // Alpha blend a foreground and background sprite and store the result
@@ -8509,6 +8510,12 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
                 }
             }
             u32YAcc += u32Frac;
+#if defined ARDUINO_ESP32S3_DEV
+            Cache_WriteBack_Addr((uint32_t)d, cx*2);
+#endif
+#if defined ARDUINO_ESP32P4_DEV
+            esp_cache_msync(d, cx*2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+#endif
             d += _lcd.iCurrentWidth;
         }
     }

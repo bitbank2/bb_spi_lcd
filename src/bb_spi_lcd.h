@@ -242,7 +242,7 @@ class BB_SPI_LCD : public Print
     int rotateSprite(BB_SPI_LCD *pDstSprite, int iCenterX, int iCenterY, int iAngle);
     void maskedTint(BB_SPI_LCD *pSrc, BB_SPI_LCD *pMask, int x, int y, uint16_t u16Tint, uint8_t u8Alpha); 
     void blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SPI_LCD *pDestSprite, uint8_t u8Alpha);
-    void blurSprite(BB_SPI_LCD *pDestSprite);
+    void blurGaussian(void);
     void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void readImage(int x, int y, int w, int h, uint16_t *pixels);
     void pushPixels(uint16_t *pixels, int count, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);

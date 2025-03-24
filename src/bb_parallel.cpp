@@ -383,7 +383,7 @@ esp_lcd_rgb_panel_config_t panel_config;
    memset(&panel_config, 0, sizeof(panel_config));
    panel_config.num_fbs = 1; // single framebuffer
    panel_config.psram_trans_align = 64;
-   panel_config.sram_trans_align = 8;
+//   panel_config.sram_trans_align = 8;
    panel_config.data_width = 16;
    panel_config.bits_per_pixel = 16;
    panel_config.clk_src = LCD_CLK_SRC_PLL160M;
