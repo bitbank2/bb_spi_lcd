@@ -26,9 +26,8 @@
 #include <SPI.h>
 #include <Wire.h>
 #endif
-//#define SPI mySPI
-// MISO, SCK, MOSI
-//#endif
+// This macro allows the SIMD optimized code to fall back to using C
+#define C_SIMD_FALLBACK
 
 #if defined(__SAMD51__)
 #define ARDUINO_SAMD_ZERO
@@ -5189,9 +5188,8 @@ uint8_t ucBitmap[32]; // 256 pixels wide should be big enough?
                     if (uc & 0x80) {
                         iCount++; // one more opaque pixel
                     } else { // any opaque pixels to write?
-                        if (iCount) {
+                        if (iCount) { // send this line segment to the display
                             spilcdSetPosition(pLCD, dx+tx-iCount, dy+ty, iCount, 1, iFlags);
-                       d = (uint16_t *)ucRXBuf; // point to start of output buffer
                             myspiWrite(pLCD, ucRXBuf, iCount*sizeof(uint16_t), MODE_DATA, iFlags);
                             iCount = 0;
                         } // if opaque pixels to write
@@ -5200,6 +5198,11 @@ uint8_t ucBitmap[32]; // 256 pixels wide should be big enough?
                 bits--; // next bit
                 uc <<= 1;
              } // for tx
+                 if (iCount) { // draw any visible pixels left on the line
+                     spilcdSetPosition(pLCD, dx+tx-iCount, dy+ty, iCount, 1, iFlags);
+                     myspiWrite(pLCD, ucRXBuf, iCount*sizeof(uint16_t), MODE_DATA, iFlags);
+                     iCount = 0;
+                 }
              } // for ty
        // quicker drawing
       } else { // just draw the current character box fast
@@ -7979,12 +7982,13 @@ int BB_SPI_LCD::createVirtual(int iWidth, int iHeight, void *p)
     _lcd.iLCDType = LCD_VIRTUAL_MEM;
     _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
     if (p == NULL) {
+        int iCount = iWidth * iHeight * 2;
+	iCount = (iCount + 15) & 0xffffff0; // make sure 16-byte aligned
 #ifdef ARDUINO_ARCH_ESP32
         // Try to use PSRAM
-        p = heap_caps_aligned_alloc(16, (iWidth * iHeight * 2), MALLOC_CAP_8BIT);
-        //p = ps_malloc(iWidth * iHeight * 2);
+        p = heap_caps_aligned_alloc(16, iCount, MALLOC_CAP_8BIT);
 #else
-        p = malloc(iWidth * iHeight * 2);
+        p = malloc(iCount);
 #endif
        if (!p) return 0;
     }
@@ -8341,10 +8345,20 @@ void BB_SPI_LCD::blurGaussian(void)
         s = &pBitmap[y * w];
         d[0] = s[-1]; // copy first pixel unchanged
         d[w-1] = s[w]; // copy last pixel unchanged
+        x = 1;
 #ifdef ARDUINO_ESP32S3_DEV
-        s3_blur_be(s, &d[1], (w & 0xfffc), w*2, u32BlurMasks); // width must be a multiple of 4
-#else // C Version
-        for (x=1; x<w-1; x++) {
+        if ((w & 3) == 0) { // must be 8-byte aligned pitch
+            s3_blur_be(s, &d[1], w, w*2, u32BlurMasks); // width must be a multiple of 4
+            x = w-1; // fall through loop below
+        } else {
+// The user has chosen no fallback, so set the pixels to magenta and leave
+#ifndef C_SIMD_FALLBACK
+            memset16((uint16_t *)_lcd.pBackBuffer, __builtin_bswap16(TFT_MAGENTA), _lcd.iCurrentWidth * _lcd.iCurrentHeight);
+            return;
+#endif
+        }
+#endif
+        for (; x<w-1; x++) {
             // top left
             u32Sum = __builtin_bswap16(s[-w]);
             u32Sum |= (u32Sum << 16);
@@ -8398,7 +8412,6 @@ void BB_SPI_LCD::blurGaussian(void)
             d[x] = __builtin_bswap16((uint16_t)u32Sum);
             s++;
         } // for x
-#endif
         u32Offset ^= (w * 2); // toggle between 2 output lines
         if (y > 1) { // copy the blurred pixels back to the source image after we no longer need them
             memcpy(&pBitmap[(y-1) * w], &ucTXBuf[u32Offset], w*2);
@@ -8413,7 +8426,7 @@ void BB_SPI_LCD::blurGaussian(void)
 //
 void BB_SPI_LCD::blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SPI_LCD *pDestSprite, uint8_t u8Alpha)
 {
-#ifdef ARDUINO_ESP32S3_DEV
+#ifdef AA_ARDUINO_ESP32S3_DEV
     s3_alpha_blend_be((uint16_t *)pFGSprite->_lcd.pBackBuffer, (uint16_t *)pBGSprite->_lcd.pBackBuffer, (uint16_t *)pDestSprite->_lcd.pBackBuffer, pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight, u8Alpha, u16RGBMasks);
 #else
     int i, iCount = pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight;
