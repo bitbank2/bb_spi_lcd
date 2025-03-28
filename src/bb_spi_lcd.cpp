@@ -58,6 +58,15 @@ SPIClass mySPI(
   PAD_SPI3_TX,  // TX pad (MOSI, SCK pads)
   PAD_SPI3_RX); // RX pad (MISO pad)
 #else
+#ifdef ARDUINO_PYBADGE_M4
+SPIClass mySPI(
+  &PERIPH_SPI1,      // -> Sercom peripheral
+  PIN_SPI1_MISO,     // MISO pin (also digital pin 12)
+  PIN_SPI1_SCK,      // SCK pin  (also digital pin 13)
+  PIN_SPI1_MOSI,     // MOSI pin (also digital pin 11)
+  PAD_SPI1_TX,       // TX pad (MOSI, SCK pads)
+  PAD_SPI1_RX);      // RX pad (MISO pad)
+#else
 SPIClass mySPI(
   &PERIPH_SPI,      // -> Sercom peripheral
   PIN_SPI_MISO,     // MISO pin (also digital pin 12)
@@ -65,6 +74,7 @@ SPIClass mySPI(
   PIN_SPI_MOSI,     // MOSI pin (also digital pin 11)
   PAD_SPI_TX,       // TX pad (MOSI, SCK pads)
   PAD_SPI_RX);      // RX pad (MISO pad)
+#endif // PYBADGE_M4
 #endif // WIO
 #endif // ARDUINO_SAMD_ZERO
 
@@ -111,6 +121,7 @@ SPIClassRP2040 *pSPI = &SPI;
 
 #if defined( ESP_PLATFORM )
 #include "esp_cache.h"
+#include <esp_psram.h>
 #include <rom/cache.h>
 //#define ESP32_SPI_HOST VSPI_HOST
 #ifdef VSPI_HOST
@@ -137,6 +148,7 @@ void qspiSetBrightness(SPILCD *pLCD, uint8_t u8Brightness);
 static void spi_pre_transfer_callback(spi_transaction_t *t);
 static spi_device_interface_config_t devcfg;
 static spi_bus_config_t buscfg;
+volatile bool transfer_is_done = true;
 static void spi_post_transfer_callback(spi_transaction_t *t);
 // ODROID-GO
 //const gpio_num_t SPI_PIN_NUM_MISO = GPIO_NUM_19;
@@ -188,7 +200,7 @@ volatile uint8_t *outDC, *outCS; // port registers for fast I/O
 uint8_t bitDC, bitCS; // bit mask for the chosen pins
 #endif
 #ifdef HAS_DMA
-volatile bool transfer_is_done = true; // Done yet?
+//volatile bool transfer_is_done = true; // Done yet?
 void spilcdWaitDMA(void);
 void spilcdWriteDataDMA(SPILCD *pLCD, uint8_t *pBuf, int iLen);
 #endif
@@ -277,8 +289,8 @@ const BB_RGB rgbpanel_480x480 = {
 };
 
 const BB_RGB rgbpanel_UM_480x480 = {
-	38 /* CS */, 47 /* SCK */, 48 /* SDA */,
-	41 /* DE */, 42 /* VSYNC */, 43 /* HSYNC */, 39 /* PCLK */,
+	-1 /* CS */, -1 /* SCK */, -1 /* SDA */,
+	38 /* DE */, 47 /* VSYNC */, 48 /* HSYNC */, 39 /* PCLK */,
 	8 /* R0 */, 7 /* R1 */, 6 /* R2 */, 5 /* R3 */, 4 /* R4 */,
 	14 /* G0 */, 13 /* G1 */, 12 /* G2 */, 11 /* G3 */, 10 /* G4 */, 9 /* G5 */,
 	21 /* B0 */, 18 /* B1 */, 17 /* B2 */, 16 /* B3 */, 15 /* B4 */,
@@ -286,7 +298,7 @@ const BB_RGB rgbpanel_UM_480x480 = {
 	8 /* vsync_back_porch */, 8 /* vsync_front_porch */, 3 /* vsync_pulse_width */,
 	1 /* hsync_polarity */, 1 /* vsync_polarity */,
 	480, 480,
-	16000000 // speed
+	12000000 // speed
 };
 // 16-bit RGB panel 800x480 for JC8048W700 (7.0" 800x480)
 const BB_RGB rgbpanel_800x480_7 = { 
@@ -6260,7 +6272,7 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
     uint8_t ucCompression;
     int16_t cx, cy, bpp, y; // offset to bitmap data
     int j, x;
-    uint16_t *pus, us, *d, *usTemp = (uint16_t *)pDMA; // process a line at a time
+    uint16_t *pus, us, *d; // process a line at a time
     uint8_t bFlipped = false;
     
     if (pBMP[0] != 'B' || pBMP[1] != 'M') // must start with 'BM'
@@ -6361,7 +6373,7 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
                 for (j=0; j<2; j++) // for systems without half-duplex, we need to prepare the data for each write
                 {
                     if (iFlags & DRAW_TO_LCD)
-                        d = usTemp;
+                        d = (uint16_t *)pDMA;
                     else
                         d = (uint16_t *)&pLCD->pBackBuffer[pLCD->iOffset + (y*pLCD->iScreenPitch)];
                     if (bpp == 16)
@@ -6444,7 +6456,7 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
                         }
                     }
                     if (iFlags & DRAW_TO_LCD)
-                        spilcdWriteDataBlock(pLCD, (uint8_t *)usTemp, cx*4, iFlags); // write the same line twice
+                        spilcdWriteDataBlock(pLCD, (uint8_t *)pDMA, cx*4, iFlags); // write the same line twice
                 } // for j
             } // for y
         } // 2:1
@@ -6457,7 +6469,7 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
                 if (bpp == 16)
                 {
                     if (iFlags & DRAW_TO_LCD)
-                        d = usTemp;
+                        d = (uint16_t *)pDMA;
                     else
                         d = (uint16_t *)&pLCD->pBackBuffer[pLCD->iOffset + (y * pLCD->iScreenPitch)];
                     if (iTransparent == -1) // no transparency
@@ -6491,7 +6503,7 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
                 {
                     uint8_t uc, *s = (uint8_t *)pus;
                     if (iFlags & DRAW_TO_LCD)
-                        d = usTemp;
+                        d = (uint16_t *)pDMA;
                     else
                         d = (uint16_t *)&pLCD->pBackBuffer[pLCD->iOffset + (y*pLCD->iScreenPitch)];
                     if (iTransparent == -1) // no transparency
@@ -7651,6 +7663,11 @@ int BB_SPI_LCD::begin(int iDisplayType)
             _lcd.iHeight = _lcd.iCurrentHeight = 480;
             spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_800x480));
             break;
+        case DISPLAY_PYBADGE_M4:
+            spilcdInit(&_lcd, LCD_ST7735R, FLAGS_NONE, 50000000, 44, 45, 46, 47, 43, 41, 42, 1);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            _lcd.pSPI = NULL;
+            break;
         case DISPLAY_CYD:
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 21, 12, 13, 14, 1); // Cheap Yellow Display (common versions w/resistive touch)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
@@ -7815,11 +7832,33 @@ int BB_SPI_LCD::begin(int iDisplayType)
             qspiInit(&_lcd, LCD_ST77916, FLAGS_NONE, 40000000, 10,9,11,12,13,14,47,15);       
            break;
 
-        case DISPLAY_WS_AMOLED_146: // Waveshare 1.46" 412x412 round AMOLED
+        case DISPLAY_WS_ROUND_146: // Waveshare 1.46" 412x412 round IPS
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.bUseDMA = 1; // allows DMA access
-            // CS=21, SCK=40, D0=46, D1=45, D2=42, D3=41, RST=-1, BL=-1 
-            qspiInit(&_lcd, LCD_SPD2010, FLAGS_NONE, 40000000, 21,40,46,45,42,41,-1,-1);
+            // CS=21, SCK=40, D0=46, D1=45, D2=42, D3=41, RST=-1, BL=5 
+       // need to release the RESET line which is controlled by an
+       // I/O expander (TCA9554)
+       Wire.end();
+       Wire.begin(11,10);
+       Wire.beginTransmission(0x20);
+       Wire.write(1); // output port register
+       Wire.write(2); // set P2 output to 0 (reset chip)
+       Wire.write(0); // polarity inversion all disabled
+       Wire.write(~6); // enable P1+P2 as an output (connected to RESET)
+       Wire.endTransmission();
+       delay(10);
+       Wire.beginTransmission(0x20);
+       Wire.write(1); // output port register
+       Wire.write(6); // set P1+P2 outputs to 1 (release from reset)
+       Wire.endTransmission();
+//       delay(50);
+//       Wire.beginTransmission(0x38);
+//       Wire.write(0xa5); // power mode
+//       Wire.write(0); // active
+//       Wire.endTransmission();
+       Wire.end();
+
+            qspiInit(&_lcd, LCD_SPD2010, FLAGS_NONE, 40000000, 21,40,46,45,42,41,-1,5);
             break;
         case DISPLAY_WS_AMOLED_18: // Waveshare 1.8" 368x448 AMOLED
             memset(&_lcd, 0, sizeof(_lcd));
@@ -7976,7 +8015,7 @@ int x, y, sx, sy, dx, dy, cx, cy;
     return 1;
 } /* captureArea() */
 
-int BB_SPI_LCD::createVirtual(int iWidth, int iHeight, void *p)
+int BB_SPI_LCD::createVirtual(int iWidth, int iHeight, void *p, bool bUsePSRAM)
 {
     memset(&_lcd, 0, sizeof(_lcd));
     _lcd.iLCDType = LCD_VIRTUAL_MEM;
@@ -7985,8 +8024,12 @@ int BB_SPI_LCD::createVirtual(int iWidth, int iHeight, void *p)
         int iCount = iWidth * iHeight * 2;
 	iCount = (iCount + 15) & 0xffffff0; // make sure 16-byte aligned
 #ifdef ARDUINO_ARCH_ESP32
-        // Try to use PSRAM
-        p = heap_caps_aligned_alloc(16, iCount, MALLOC_CAP_8BIT);
+        // Try to use PSRAM (if present)
+        if (esp_psram_get_size() > 0 && bUsePSRAM) {
+            p = heap_caps_aligned_alloc(16, iCount, MALLOC_CAP_SPIRAM);
+        } else { // allocate it on the heap
+            p = heap_caps_aligned_alloc(16, iCount, MALLOC_CAP_8BIT);
+        }
 #else
         p = malloc(iCount);
 #endif

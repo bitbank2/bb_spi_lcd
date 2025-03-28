@@ -197,7 +197,7 @@ class BB_SPI_LCD : public Print
 {
   public:
     BB_SPI_LCD() {memset(&_lcd, 0, sizeof(_lcd));}
-    int createVirtual(int iWidth, int iHeight, void *pBuffer = NULL);
+    int createVirtual(int iWidth, int iHeight, void *pBuffer = NULL, bool bUsePSRAM = false);
     int freeVirtual(void);
     int captureArea(int dst_x, int dst_y, int src_x, int src_y, int src_w, int src_h, uint16_t *pPixels, int bSwap565 = 1);
     int merge(uint16_t *pSrc, uint16_t usTrans, int bSwap565);
@@ -281,8 +281,9 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode);
 
 enum
 {
-    DISPLAY_TINYPICO_IPS_SHIELD=1,
+    DISPLAY_TINYPICO_IPS_SHIELD=1, 
     DISPLAY_TINYPICO_EXPLORER_SHIELD,
+    DISPLAY_PYBADGE_M4,
     DISPLAY_WIO_TERMINAL,
     DISPLAY_TEENSY_ILI9341,
     DISPLAY_LOLIN_S3_MINI_PRO,
@@ -330,7 +331,7 @@ enum
     DISPLAY_CYD_P4_1024x600, // ESP32-P4 MIPI DSI 1024x600
     DISPLAY_STAMPS3_8PIN, // 8-pin 0.5mm FFC connector LCDs
     DISPLAY_WS_AMOLED_18, // Waveshare 368x448 1.8" AMOLED
-    DISPLAY_WS_AMOLED_146, // Waveshare 412x412 1.46" round AMOLED
+    DISPLAY_WS_ROUND_146, // Waveshare 412x412 1.46" round IPS
     DISPLAY_UM_480x480, // Unexpected Maker 480x480 RGB panel
     DISPLAY_COUNT
 };
