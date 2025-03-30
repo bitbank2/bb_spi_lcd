@@ -38,7 +38,7 @@ volatile uint32_t *gpio_port, *set_reg, *clr_reg;
 #define PAGE_SIZE 4096
 #endif // __LINUX__
 //#define USE_ESP32_GPIO
-#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV) && !defined(ARDUINO_ESP32C6_DEV)
+#if defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C6)
 #if __has_include (<esp_lcd_panel_io.h>)
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
@@ -319,7 +319,7 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 //  } // for i
 //  gpio_put(10, 1); // deactivate CS
 #endif // ARDUINO_ARCH_RP2040
-#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV) && !defined(ARDUINO_ESP32C6_DEV)
+#if defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C6)
 #ifdef FUTURE
     uint8_t c, old = pData[0] -1;
         
@@ -536,7 +536,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
       channel_config_set_dreq(&config, pio_get_dreq(parallel_pio, parallel_sm, true));
       dma_channel_configure(parallel_dma, &config, &parallel_pio->txf[parallel_sm], NULL, 0, false);
 #endif // ARDUINO_ARCH_RP2040
-#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV) && !defined(ARDUINO_ESP32C6_DEV)
+#if defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C6)
     if (iFlags & FLAGS_SWAP_COLOR) {
         s3_io_config.flags.swap_color_bytes = 1;
     }
@@ -578,7 +578,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
 
 void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
 {
-#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV) && !defined(ARDUINO_ESP32C6_DEV)
+#if defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C6)
 #ifdef USE_ESP32_GPIO
     esp32_gpio_clear(u8DC); // clear DC
     spilcdParallelData(&ucCMD, 1);
@@ -598,7 +598,7 @@ void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
 
 void spilcdParallelData(uint8_t *pData, int iLen)
 {
-#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV) && !defined(ARDUINO_ESP32C6_DEV)
+#if defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C6)
 #ifdef USE_ESP32_GPIO
     uint8_t c, old = pData[0] -1;
         
