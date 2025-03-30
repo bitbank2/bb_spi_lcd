@@ -4687,12 +4687,8 @@ void SPD2010Init(SPILCD *pLCD)
     }
     u8Temp[0] = 0x55;
     qspiSendCMD(pLCD, 0x3a, u8Temp, 1); // pixel format
-    u8Temp[0] = 1; // display brightness dark (max = 0xff)
-    qspiSendCMD(pLCD, 0x51, u8Temp, 1);
     qspiSendCMD(pLCD, 0x29, NULL, 0); // display on
     delay(200);
-    u8Temp[0] = 0xd0; // display brightness (max = 0xff)
-    qspiSendCMD(pLCD, 0x51, u8Temp, 1);
 
 } /* SPD2010Init() */
 
@@ -8317,6 +8313,42 @@ inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
     const uint16_t u16RGBMasks[4] = {0x001f, 0x07e0, 0x07c0, 0xf800}; // B, G, R bitmasks for SIMD code
 #endif
 const uint32_t u32BlurMasks[2] = {0x07e0f81f, 0x01004008};
+//
+// Swap the byte order of 16-bit pixels
+// Optimized with SIMD on the ESP32-S3
+// Source and destination can point to the same buffer
+//
+void BB_SPI_LCD::byteSwap(uint16_t *pSrc, uint16_t *pDest, int iPixelCount)
+{
+#ifdef ARDUINO_ESP32S3_DEV
+    // work with the unaligned pixels in C and the 16-byte aligned pixels in SIMD
+    if (iPixelCount >= 16 && (((intptr_t)pSrc & 15) == ((intptr_t)pDest & 15))) { // only worth doing if a large group
+        int i, iAlign = (intptr_t)pSrc;
+        iAlign &= 15;
+        if (iAlign > 0) {
+            for (i=0; i<iAlign; i+=2) {
+               *pDest++ = __builtin_bswap16(*pSrc++);
+            }
+            iPixelCount -= iAlign;
+        }
+        if (iPixelCount >= 16) {
+            s3_byteswap(pSrc,  pDest, (iPixelCount & 0xffff0)); // make sure it's a multiple of 16
+            if (iPixelCount & 15) { // odd pixels on the tail end
+                pSrc += (iPixelCount & 0xffff0);
+                pDest += (iPixelCount & 0xffff0);
+                iPixelCount &= 15;
+                for (i=0; i<iPixelCount; i+=2) {
+                    *pDest++ = __builtin_bswap16(*pSrc++);
+                }
+            }
+            return;
+        }
+    }
+#endif
+    for (int i=0; i<iPixelCount; i++) {
+        *pDest++ = __builtin_bswap16(*pSrc++);
+    }
+}
 //
 // Use a mask to alpha blend a tint color
 // color 0 = don't affect, color 0xffff = affect
