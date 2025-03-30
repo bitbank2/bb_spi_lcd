@@ -1,0 +1,39 @@
+name: CI
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  release:
+    types: [ published, created, edited ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ["esp32:esp32:esp32"]
+        example: ["examples/atoms3_gif", "examples/callback_demo", "examples/parallel_shield_demo", "examples/spi_lcd_demo", "examples/spi_touch_test", "examples/spilcd_prop_font", "examples/UNO_shield_demo", "examples/wio_dma_gif_demo"]
+        exclude:
+          - platform: "esp32:esp32:esp32"
+            example: "examples/callback_demo"
+          - platform: "esp32:esp32:esp32"
+            example: "examples/wio_dma_gif_demo"
+        # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/compile-sketches@v1
+        with:
+          fqbn: ${{ matrix.platform }}
+          platforms: |
+            - name: "esp32:esp32"
+          libraries: |
+            - source-path: ./
+            - name: AnimatedGIF
+            - name: bb_captouch
+          sketch-paths: ${{ matrix.example }}
