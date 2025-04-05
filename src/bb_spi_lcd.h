@@ -28,6 +28,7 @@ void s3_alpha_blend_be(uint16_t *pFG, uint16_t *pBG, uint16_t *pDest, uint32_t c
 void s3_masked_tint_be(uint16_t *pDest, uint16_t *Src, uint16_t *pMask, uint16_t tintColor, uint32_t count, uint8_t alpha, const uint16_t *pMasks);
 void s3_blur_be(uint16_t *pSrc, uint16_t *pDest, uint32_t count, uint32_t pitch, const uint32_t *pMasks);
 void s3_byteswap(uint16_t *pSrc, uint16_t *pDest, int iPixelCount);
+void s3_alphatrans_be(uint16_t *pFG, uint16_t *pBG, uint16_t *pDest, uint32_t count, uint8_t alpha, uint16_t *transparent, const uint16_t *pMasks);
 }
 #endif // S3 SIMD
 #endif // __has_include
@@ -244,6 +245,7 @@ class BB_SPI_LCD : public Print
     void maskedTint(BB_SPI_LCD *pSrc, BB_SPI_LCD *pMask, int x, int y, uint16_t u16Tint, uint8_t u8Alpha); 
     void byteSwap(uint16_t *pSrc, uint16_t *pDest, int iPixelCount);
     void blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SPI_LCD *pDestSprite, uint8_t u8Alpha);
+    void blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SPI_LCD *pDestSprite, uint8_t u8Alpha, uint16_t u16Transparent);
     void blurGaussian(void);
     void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void readImage(int x, int y, int w, int h, uint16_t *pixels);
@@ -335,6 +337,9 @@ enum
     DISPLAY_WS_AMOLED_18, // Waveshare 368x448 1.8" AMOLED
     DISPLAY_WS_ROUND_146, // Waveshare 412x412 1.46" round IPS
     DISPLAY_UM_480x480, // Unexpected Maker 480x480 RGB panel
+    DISPLAY_WS_AMOLED_241, // 2.41" 450x600
+    DISPLAY_WS_LCD_169, // 1.69" 240x280
+    DISPLAY_LILYGO_T4_S3, // 2.41" 600x450 AMOLED
     DISPLAY_COUNT
 };
 #if !defined(BITBANK_LCD_MODES)
@@ -360,10 +365,6 @@ uint16_t * RGBInit(BB_RGB *pRGB);
 #if defined(__LINUX__) && defined(__cplusplus)
 extern "C" {
 #endif
-
-#ifdef ARDUINO_ARCH_ESP32S3
-void s3_alpha_blend_be(uint16_t *pFG, uint16_t *pBG, uint16_t *pDest, uint32_t count, uint8_t alpha);
-#endif // ARDUINO_ARCH_ESP32S3
 
 // Sets the D/C pin to data or command mode
 void spilcdSetMode(SPILCD *pLCD, int iMode);
@@ -602,6 +603,7 @@ enum {
    LCD_ICNA3311, // 280x456 AMOLED 1.64" QSPI
    LCD_SH8601, // 368x448 AMOLED 1.8" QSPI
    LCD_SPD2010, // 412x412 AMOLED 1.46" QSPI
+   LCD_RM690B0, // 450x600 AMOLED 2.41" QSPI
    LCD_VIRTUAL_MEM, // memory-only display
    LCD_VALID_MAX
 };
