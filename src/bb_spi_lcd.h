@@ -215,7 +215,7 @@ class BB_SPI_LCD : public Print
     void drawPixel(int16_t x, int16_t y, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     uint16_t readPixel(int16_t x, int16_t y);
     void fillRect(int x, int y, int w, int h, int iColor, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
-    void setTextColor(int iFG, int iBG = -1);
+    void setTextColor(int iFG, int iBG = -2);
     void setCursor(int x, int y);
     void setAddrWindow(int x, int y, int w, int h);
     void getTextBounds(const char *string, int16_t x, int16_t y, int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
@@ -241,6 +241,7 @@ class BB_SPI_LCD : public Print
     void display(int x, int y, int w, int h);
     void setPrintFlags(int iFlags);
     void backlight(bool bOn);
+    void sleep(bool bTrue);
     int rotateSprite(BB_SPI_LCD *pDstSprite, int iCenterX, int iCenterY, int iAngle);
     void maskedTint(BB_SPI_LCD *pSrc, BB_SPI_LCD *pMask, int x, int y, uint16_t u16Tint, uint8_t u8Alpha); 
     void byteSwap(uint16_t *pSrc, uint16_t *pDest, int iPixelCount);
@@ -263,8 +264,7 @@ class BB_SPI_LCD : public Print
     void drawEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY, int iCX, int iCY, uint16_t usColor, int iTranslucency);
-    int drawSprite(int x, int y, BB_SPI_LCD *pSprite, int iTransparent, int iFlags = DRAW_TO_LCD);
-    int drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int iTransparent, int iFlags = DRAW_TO_LCD);
+    int drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale = 1.0f, int iTransparent = -1, int iFlags = DRAW_TO_LCD);
     using Print::write;
     virtual size_t write(uint8_t);
     // Resistive Touch methods
@@ -340,6 +340,7 @@ enum
     DISPLAY_WS_AMOLED_241, // 2.41" 450x600
     DISPLAY_WS_LCD_169, // 1.69" 240x280
     DISPLAY_LILYGO_T4_S3, // 2.41" 600x450 AMOLED
+    DISPLAY_VIEWE_2432, // 2.4" transflective 240x320
     DISPLAY_COUNT
 };
 #if !defined(BITBANK_LCD_MODES)

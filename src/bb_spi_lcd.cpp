@@ -285,7 +285,7 @@ const BB_RGB rgbpanel_480x480 = {
     20 /* vsync_back_porch */, 10 /* vsync_front_porch */, 8 /* vsync_pulse_width */,
     1 /* hsync_polarity */, 1 /* vsync_polarity */,
     480, 480,
-    16000000 // speed
+    12000000 // speed
 };
 
 const BB_RGB rgbpanel_UM_480x480 = {
@@ -5029,9 +5029,9 @@ static void Scale2Gray(uint8_t *source, int width, int iPitch)
 //
 // Draw a string of characters in a custom font antialiased
 // at 1/2 its original size
-// A back buffer must be defined
+// A back buffer must be defined to use a transparent color for the background color
 //
-int spilcdWriteStringAntialias(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, uint16_t usBGColor, int iFlags)
+int spilcdWriteStringAntialias(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, int iFGColor, int iBGColor, int iFlags)
 {
 int i, end_y, cx, dx, dy, tx, ty, c, iBitOff;
 uint8_t *s, *d, bits, /*ucMask,*/ ucClr, uc;
@@ -5051,8 +5051,8 @@ uint16_t usTemp[128];
     if (x < 0)
         return -1;
     // Prepare the foreground and background colors for alpha calculations
-    ulFG = usFGColor | ((uint32_t)usFGColor << 16);
-    ulBG = usBGColor | ((uint32_t)usBGColor << 16);
+    ulFG = iFGColor | ((uint32_t)iFGColor << 16);
+    ulBG = iBGColor | ((uint32_t)iBGColor << 16);
     ulFG &= ulClrMask; ulBG &= ulClrMask;
    // in case of running on Harvard CPU, get copy of data from FLASH
    memcpy_P(&font, pFont, sizeof(font));
@@ -5081,7 +5081,9 @@ uint16_t usTemp[128];
 //          iBitOff += (pGlyph->width * (-dy));
 //          dy = 0;
 //      }
-       spilcdSetPosition(pLCD, dx, dy, cx, end_y-dy, iFlags);
+       if (iBGColor != -1) {
+           spilcdSetPosition(pLCD, dx, dy, cx, end_y-dy, iFlags);
+       }
        memset(ucTemp, 0, sizeof(ucTemp));
        for (ty=0; ty<pGlyph->height; ty++) {
          d = &ucTemp[(ty & 1) * (sizeof(ucTemp)/2)]; // internal buffer dest
@@ -5099,7 +5101,7 @@ uint16_t usTemp[128];
          } // for x
            if ((ty & 1) || ty == pGlyph->height-1) {
                uint8_t *pg; // pointer to gray source pixels
-               uint16_t *pus = usTemp;
+               uint16_t *pus;
                uint32_t ulAlpha, ulPixel;
                //int j;
                const uint8_t ucClrConvert[4] = {0,5,11,16};
@@ -5108,17 +5110,36 @@ uint16_t usTemp[128];
                // the Scale2Gray code writes the bits horizontally; crop and convert them for the internal memory format
                pg = ucTemp;
                ucClr = *pg++;
-               for (tx=0; tx<cx; tx++) {
-                   ulAlpha = ucClrConvert[((ucClr & 0xc0) >> 6)]; // 0-3 scaled from 0 to 100% in thirds
-                   ulPixel = ((ulFG * ulAlpha) + (ulBG * (16-ulAlpha))) >> 4;
-                   ulPixel &= ulClrMask; // separate the RGBs
-                   ulPixel |= (ulPixel >> 16); // bring G back to RB
-                   *pus++ = __builtin_bswap16(ulPixel); // final pixel
-                   ucClr <<= 2;
-                   if ((tx & 3) == 3)
-                       ucClr = *pg++; // get 4 more pixels
+               if (iBGColor == -1) { // transparent
+                   pus = (uint16_t *)&pLCD->pBackBuffer[((dy+(ty/2)) * pLCD->iScreenPitch) + (dx*2)];
+                   for (tx=0; tx<cx; tx++) {
+                       ulAlpha = ucClrConvert[((ucClr & 0xc0) >> 6)]; // 0-3 scaled from 0 to 100% in thirds
+                       ulBG = __builtin_bswap16(pus[0]); // read dest color
+                       ulBG = ulBG | (ulBG << 16);
+                       ulBG &= ulClrMask;
+                       // combine font color with background color
+                       ulPixel = ((ulFG * ulAlpha) + (ulBG * (16-ulAlpha))) >> 4;
+                       ulPixel &= ulClrMask; // separate the RGBs
+                       ulPixel |= (ulPixel >> 16); // bring G back to RB
+                       *pus++ = __builtin_bswap16(ulPixel); // final pixel
+                       ucClr <<= 2;
+                       if ((tx & 3) == 3)
+                           ucClr = *pg++; // get 4 more pixels
+                   } // for tx
+               } else { // draw to the display
+                   pus = usTemp;
+                   for (tx=0; tx<cx; tx++) {
+                       ulAlpha = ucClrConvert[((ucClr & 0xc0) >> 6)]; // 0-3 scaled from 0 to 100% in thirds
+                       ulPixel = ((ulFG * ulAlpha) + (ulBG * (16-ulAlpha))) >> 4;
+                       ulPixel &= ulClrMask; // separate the RGBs
+                       ulPixel |= (ulPixel >> 16); // bring G back to RB
+                       *pus++ = __builtin_bswap16(ulPixel); // final pixel
+                       ucClr <<= 2;
+                       if ((tx & 3) == 3)
+                           ucClr = *pg++; // get 4 more pixels
+                   } // for tx
+                   myspiWrite(pLCD, (uint8_t *)usTemp, cx*sizeof(uint16_t), MODE_DATA, iFlags);
                }
-               myspiWrite(pLCD, (uint8_t *)usTemp, cx*sizeof(uint16_t), MODE_DATA, iFlags);
                memset(ucTemp, 0, sizeof(ucTemp));
            }
       } // for y
@@ -5131,7 +5152,7 @@ uint16_t usTemp[128];
 //
 // Draw a string in a proportional font you supply
 //
-int spilcdWriteStringCustom(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, uint16_t usBGColor, int bBlank, int iFlags)
+int spilcdWriteStringCustom(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, int usBGColor, int bBlank, int iFlags)
 {
 int i, /*j, iLen, */ k, dx, dy, cx, cy, c, iBitOff;
 int tx, ty;
@@ -5153,7 +5174,9 @@ uint8_t ucBitmap[32]; // 256 pixels wide should be big enough?
    memcpy_P(&font, pFont, sizeof(font));
    if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
        usFGColor = (usFGColor >> 8) | (usFGColor << 8); // swap h/l bytes
-       usBGColor = (usBGColor >> 8) | (usBGColor << 8);
+       if (usBGColor != -1) {
+           usBGColor = (usBGColor >> 8) | (usBGColor << 8);
+       }
    }
    i = 0;
    while (szMsg[i] && x < pLCD->iCurrentWidth)
@@ -5236,7 +5259,7 @@ uint8_t ucBitmap[32]; // 256 pixels wide should be big enough?
                   ucRXBuf[tx] = usBGColor;
                myspiWrite(pLCD, ucRXBuf, cx*sizeof(uint16_t), MODE_DATA, iFlags);
             } // for ty
-      } else if (usFGColor == usBGColor) { // transparent
+      } else if (usFGColor == usBGColor || usBGColor == -1) { // transparent
           int iCount; // opaque pixel count
           //Serial.println("Transparent");
           d = (uint16_t *)ucRXBuf;
@@ -6380,7 +6403,8 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
             }
         }
     }
-    if (ucCompression == 2) // need to do it differently for RLE compressed
+    // BI_RLE4 = 2, BI_RLE8 = 1
+    if (ucCompression == 1 || ucCompression == 2) // need to do it differently for RLE compressed
     {
     uint16_t *d;
     int y, iStartY, iEndY, iDeltaY;
@@ -7629,6 +7653,19 @@ int BB_SPI_LCD::begin(int iDisplayType)
             beginParallel(LCD_ST7796, FLAGS_INVERT | FLAGS_FLIPX | FLAGS_SWAP_RB | FLAGS_MEM_RESTART, 4, -1, 47, -1, 0, 8, (uint8_t *)u8_WT32_Pins, 12000000);
             setRotation(270);
             break;
+
+        case DISPLAY_VIEWE_2432: // VIEWE 2.4" ST7789 transflective
+            memset(&_lcd, 0, sizeof(_lcd));
+            // normally the LCD interface mode is hard wired, but not here
+            pinMode(47, OUTPUT); // IM0
+            pinMode(48, OUTPUT); // IM1
+            digitalWrite(47, 0); // set SPI 1-bit mode
+            digitalWrite(48, 1);
+            // CS, DC, RST, BL, MISO, MOSI, CLK
+            begin(LCD_ST7789, FLAGS_INVERT, 40000000, 42, 41, -1, 13, -1, 45, 40);
+            setRotation(270);
+            break;
+
         case DISPLAY_CYD_22C: // 2.2" ST7789 8-bit parallel
             memset(&_lcd, 0, sizeof(_lcd));
             pinMode(0, OUTPUT); // backlight
@@ -7774,7 +7811,8 @@ int BB_SPI_LCD::begin(int iDisplayType)
 #ifdef ARDUINO_M5STACK_CORE2
         case DISPLAY_M5STACK_CORE2:
             Core2AxpPowerUp();
-            spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 5, 15, -1, -1, 38, 23, 18,0);
+//int spilcdInit(SPILCD *pLCD, int iType, int iFlags, int32_t iSPIFreq, int iCS, int iDC, int iReset, int iLED, int iMISOPin, int iMOSIPin, int iCLKPin, int bUseDMA)
+            spilcdInit(&_lcd, LCD_ILI9342, FLAGS_NONE, 40000000, 5, 15, -1, -1, 38, 23, 18, 0);
             break;
 #endif // ARDUINO_M5STACK_CORE2
         case DISPLAY_RANKIN_COLORCOIN:
@@ -8317,7 +8355,7 @@ void BB_SPI_LCD::fillRect(int x, int y, int w, int h, int iColor, int iFlags)
 void BB_SPI_LCD::setTextColor(int iFG, int iBG)
 {
   _lcd.iFG = iFG;
-  _lcd.iBG = (iBG == -1) ? iFG : iBG;
+  _lcd.iBG = (iBG == -2) ? iFG : iBG;
 } /* setTextColor() */
 
 void BB_SPI_LCD::setCursor(int x, int y)
@@ -8331,6 +8369,16 @@ void BB_SPI_LCD::setFont(int iFont)
   _lcd.iFont = iFont;
   _lcd.pFont = NULL;
 } /* setFont() */
+//
+// Sleep the LCD controller
+// (true to set in sleep mode, false to wake)
+//
+void BB_SPI_LCD::sleep(bool bSleep)
+{
+uint8_t ucCMD = (bSleep) ? 0x10 : 0x11;
+
+    spilcdWriteCommand(&_lcd, ucCMD);
+} /* sleep() */
 
 void BB_SPI_LCD::backlight(bool bOn)
 {
@@ -8643,24 +8691,29 @@ void BB_SPI_LCD::blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SP
 //
 int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int iTransparentColor, int iFlags)
 {
-    int tx, ty, cx, cy;
+    int tx, ty, cx, cy, iSrcWidth;
     uint16_t u16, *s, *d, *s16;
     uint32_t u32Frac, u32XAcc, u32YAcc; // integer fraction vars
-
+    
     if (pSprite == NULL || pSprite->_lcd.iLCDType != LCD_VIRTUAL_MEM) return BB_ERROR_INV_PARAM; // invalid parameters
     // Calculate scaled destination size
-    cx = (int)(fScale * (float)pSprite->_lcd.iCurrentWidth);
+    iSrcWidth = pSprite->_lcd.iCurrentWidth;
+    cx = (int)(fScale * (float)iSrcWidth);
     cy = (int)(fScale * (float)pSprite->_lcd.iCurrentHeight);
+    if (cx < 1 || cy < 1) return BB_ERROR_SUCCESS; // too small to be visible
     s = (uint16_t *)pSprite->_lcd.pBackBuffer;
-    if (x <= -cx || y <= - cy) return BB_ERROR_SUCCESS; // nothing to draw
     if (x >= _lcd.iCurrentWidth || y >= _lcd.iCurrentHeight) return BB_ERROR_SUCCESS; // nothing to draw
     if (x < 0) {
         cx += x; // reduce width because of clipping
         s -= x; // start at the visible part
+        x = 0;
+        if (cx < 1) return BB_ERROR_SUCCESS; // not visible
     }
     if (y < 0) {
         cy += y; // reduce height because of clipping
-        s -= (y * pSprite->_lcd.iCurrentWidth); // start at the visible part
+        s -= (y * iSrcWidth); // start at the visible part
+        y = 0;
+        if (cy < 1) return BB_ERROR_SUCCESS; // not visible
     }
     if (x + cx > _lcd.iCurrentWidth) { // clipped at right edge?
         cx = _lcd.iCurrentWidth - x;
@@ -8679,12 +8732,16 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
         u32YAcc = 0;
         for (ty = 0; ty < cy; ty++) { // write it a line at a time
             u32XAcc = 0;
-            s16 = &s[(u32YAcc >> 16) * pSprite->_lcd.iWidth];
+            s16 = &s[(u32YAcc >> 16) * iSrcWidth];
             d = (uint16_t *)ucTXBuf;
-            for (tx = 0; tx < cx; tx++) {
-                // scale the source pixels to the destination (cx) width
-                *d++ = s16[(u32XAcc >> 16)];
-                u32XAcc += u32Frac;
+            if (u32Frac == 0xffff) { // 1:1
+                memcpy(d, s16, cx * 2);
+            } else { // draw it scaled
+                for (tx = 0; tx < cx; tx++) {
+                    // scale the source pixels to the destination (cx) width
+                    *d++ = s16[(u32XAcc >> 16)];
+                    u32XAcc += u32Frac;
+                }
             }
             myspiWrite(&_lcd, ucTXBuf, cx*2, MODE_DATA, iFlags);
             u32YAcc += u32Frac;
@@ -8695,7 +8752,7 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
         u32YAcc = 0;
         for (ty = 0; ty < cy; ty++) {
             u32XAcc = 0;
-            s16 = &s[(u32YAcc >> 16) * pSprite->_lcd.iWidth];
+            s16 = &s[(u32YAcc >> 16) * iSrcWidth];
             if (iTransparentColor != -1) { // slower to check each pixel
                 for (tx = 0; tx<cx; tx++) {
                     u16 = s16[(u32XAcc >> 16)];
@@ -8703,9 +8760,13 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
                     u32XAcc += u32Frac;
                 }
             } else { // overwrite
-                for (tx = 0; tx<cx; tx++) {
-                    d[tx] = s16[(u32XAcc >> 16)];
-                    u32XAcc += u32Frac;
+                if (u32Frac == 0xffff) { // 1:1
+                    memcpy(d, s16, cx * 2);
+                } else { // draw it scaled
+                    for (tx = 0; tx<cx; tx++) {
+                        d[tx] = s16[(u32XAcc >> 16)];
+                        u32XAcc += u32Frac;
+                    }
                 }
             }
             u32YAcc += u32Frac;
@@ -8716,63 +8777,7 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
             esp_cache_msync(d, cx*2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 #endif
             d += _lcd.iCurrentWidth;
-        }
-    }
-    return BB_ERROR_SUCCESS;
-} /* drawSprite() */
-
-//
-// Draw a sprite (another instance of the BB_SPI_LCD class) with optional transparency
-// allows negative offsets, the sprite will be clipped properly
-//
-int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, int iTransparentColor, int iFlags)
-{
-    int tx, ty, cx, cy;
-    uint16_t *s, *d;
-    if (pSprite == NULL || pSprite->_lcd.iLCDType != LCD_VIRTUAL_MEM) return BB_ERROR_INV_PARAM; // invalid parameters
-    cx = pSprite->_lcd.iCurrentWidth;
-    cy = pSprite->_lcd.iCurrentHeight;
-    s = (uint16_t *)pSprite->_lcd.pBackBuffer;
-    if (x <= -cx || y <= - cy) return BB_ERROR_SUCCESS; // nothing to draw
-    if (x >= _lcd.iCurrentWidth || y >= _lcd.iCurrentHeight) return BB_ERROR_SUCCESS; // nothing to draw
-    if (x < 0) {
-        cx += x; // reduce width because of clipping
-        s -= x; // start at the visible part
-    }
-    if (y < 0) {
-        cy += y; // reduce height because of clipping
-        s -= (y * pSprite->_lcd.iCurrentWidth); // start at the visible part
-    }
-    if (x + pSprite->_lcd.iCurrentWidth > _lcd.iCurrentWidth) { // clipped at right edge?
-        cx = _lcd.iCurrentWidth - x;
-        if (cx < 1) return BB_ERROR_INV_PARAM;
-    }
-    if (y + pSprite->_lcd.iCurrentHeight > _lcd.iCurrentHeight) { // clipped at bottom edge?
-        cy = _lcd.iCurrentHeight - y;
-        if (cy < 1) return BB_ERROR_INV_PARAM;
-    }
-    if (_lcd.iLCDType == LCD_VIRTUAL_MEM) iFlags = DRAW_TO_RAM; // only one possibility (no physical LCD)
-    if (iFlags & DRAW_TO_LCD) {
-        // send the sprite to the physical display; transparency is not possible
-        spilcdSetPosition(&_lcd, x, y, cx, cy, DRAW_TO_LCD);
-        for (ty = 0; ty < cy; ty++) { // write it a line at a time
-            myspiWrite(&_lcd, (uint8_t *)s, cx*2, MODE_DATA, iFlags);
-            s += pSprite->_lcd.iCurrentWidth; // source pitch can be different from amount written to the LCD
-        }
-    } else if (iFlags & DRAW_TO_RAM) { // only RAM, it can have a transparent color
-        uint16_t u16Trans = (uint16_t)iTransparentColor;
-        d = (uint16_t *)&_lcd.pBackBuffer[(x*2) + (y*2*_lcd.iCurrentWidth)];
-        for (ty = 0; ty < cy; ty++) {
-            if (iTransparentColor != -1) { // slower to check each pixel
-                for (tx = 0; tx<cx; tx++) {
-                    if (s[tx] != u16Trans) d[tx] = s[tx];
-                }
-            } else { // overwrite
-                memcpy(d, s, cx*2);
-            }
-            s += pSprite->_lcd.iCurrentWidth;
-            d += _lcd.iCurrentWidth;
-        }
+        } // for ty
     }
     return BB_ERROR_SUCCESS;
 } /* drawSprite() */
@@ -8836,7 +8841,7 @@ int w, h;
             _lcd.iCursorY += h;
           }
           if (_lcd.iAntialias)
-            spilcdWriteStringAntialias(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, 0, _lcd.iWriteFlags);
+            spilcdWriteStringAntialias(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, _lcd.iWriteFlags);
           else
             spilcdWriteStringCustom(&_lcd, _lcd.pFont, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, 0, _lcd.iWriteFlags);
         }
@@ -8933,8 +8938,18 @@ void BB_SPI_LCD::pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFl
       return;
   }
 
-  spilcdSetPosition(&_lcd, x, y, w, h, DRAW_TO_LCD);
-  spilcdWriteDataBlock(&_lcd, (uint8_t *)pixels, w*h*2, iFlags);
+  if (x >= 0 && y < 0 && y + h > 0) { // only clips in Y
+      h += y;
+      pixels -= (w * y);
+      y = 0;
+  } else if (y >= 0 && y + h > _lcd.iCurrentHeight) {
+     // clips off bottom
+     h = _lcd.iCurrentHeight - y;
+  }
+  if (h > 0 && w > 0) {
+      spilcdSetPosition(&_lcd, x, y, w, h, DRAW_TO_LCD);
+      spilcdWriteDataBlock(&_lcd, (uint8_t *)pixels, w*h*2, iFlags);
+  }
 }
 void BB_SPI_LCD::readImage(int x, int y, int w, int h, uint16_t *pixels)
 {
