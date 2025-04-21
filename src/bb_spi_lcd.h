@@ -215,6 +215,8 @@ class BB_SPI_LCD : public Print
     void drawPixel(int16_t x, int16_t y, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     uint16_t readPixel(int16_t x, int16_t y);
     void fillRect(int x, int y, int w, int h, int iColor, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void drawTriangle(int x1, int y1, int x2, int y2, int x3, int y3, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    void fillTriangle(int x1, int y1, int x2, int y2, int x3, int y3, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void setTextColor(int iFG, int iBG = -2);
     void setCursor(int x, int y);
     void setAddrWindow(int x, int y, int w, int h);

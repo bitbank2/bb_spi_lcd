@@ -120,7 +120,7 @@ SPIClassRP2040 *pSPI = &SPI;
 #include <bb_spi_lcd.h>
 
 #if defined( ESP_PLATFORM )
-#include "esp_cache.h"
+//#include "esp_cache.h"
 #include <esp_psram.h>
 #include <rom/cache.h>
 //#define ESP32_SPI_HOST VSPI_HOST
@@ -3697,6 +3697,10 @@ int iCount;
         trans[0].length = iCount*8;
         if (iFlags & DRAW_WITH_DMA && iCount == iLen) {
             transfer_is_done = false;
+            if (pData != pDMA0 && pData != pDMA1) {
+                memcpy(pDMA0, pData, iCount); // must come from a DMA buffer
+                trans[0].tx_buffer = pDMA0;
+            }
             ret = spi_device_queue_trans(spi, &trans[0], portMAX_DELAY);
             assert (ret==ESP_OK);
         } else { // use polling
@@ -8313,6 +8317,119 @@ void BB_SPI_LCD::fillScreen(int iColor, int iFlags)
     _lcd.iCursorX = 0;
     _lcd.iCursorY = 0;
 } /* fillScreen() */
+
+void BB_SPI_LCD::drawTriangle(int x1, int y1, int x2, int y2, int x3, int y3, uint16_t color, int iFlags)
+{
+    spilcdDrawLine(&_lcd, x1, y1, x2, y2, color, iFlags);
+    spilcdDrawLine(&_lcd, x2, y2, x3, y3, color, iFlags);
+    spilcdDrawLine(&_lcd, x3, y3, x1, y1, color, iFlags);
+} /* drawTriangle() */
+
+void BB_SPI_LCD::fillTriangle(int x1, int y1, int x2, int y2, int x3, int y3, uint16_t color, int iFlags)
+{
+    int a, b, t, y, last;
+
+    // Sort coordinates by Y order (y2 >= y1 >= y0)
+    if (y1 > y2) {
+        a = y1;
+        y1 = y2;
+        y2 = a;
+        a = x1;
+        x1 = x2;
+        x2 = a;
+    }
+    if (y2 > y3) {
+        a = y2;
+        y2 = y3;
+        y3 = a;
+        a = x2;
+        x2 = x3;
+        x3 = a;
+    }
+    if (y1 > y2) {
+        a = y1;
+        y1 = y2;
+        y2 = a;
+        a = x1;
+        x1 = x2;
+        x2 = a;
+    }
+
+    if (y1 == y3) { // Handle awkward all-on-same-line case as its own thing
+      a = b = x1;
+      if (x2 < a)
+        a = x2;
+      else if (x2 > b)
+        b = x2;
+      if (x3 < a)
+        a = x3;
+      else if (x3 > b)
+        b = x3;
+      spilcdDrawLine(&_lcd, a, y1, b, y1, color, iFlags);
+      return;
+    }
+
+    int16_t
+        dx01 = x2 - x1,
+        dy01 = y2 - y1,
+        dx02 = x3 - x1,
+        dy02 = y3 - y1,
+        dx12 = x3 - x2,
+        dy12 = y3 - y2;
+    int32_t
+        sa = 0,
+        sb = 0;
+
+    // For upper part of triangle, find scanline crossings for segments
+    // 0-1 and 0-2.  If y1=y2 (flat-bottomed triangle), the scanline y1
+    // is included here (and second loop will be skipped, avoiding a /0
+    // error there), otherwise scanline y1 is skipped here and handled
+    // in the second loop...which also avoids a /0 error here if y0=y1
+    // (flat-topped triangle).
+    if (y2 == y3) {
+      last = y2; // Include y1 scanline
+    } else {
+      last = y2 - 1; // Skip it
+    }
+
+    for (y = y1; y <= last; y++) {
+      a = x1 + sa / dy01;
+      b = x1 + sb / dy02;
+      sa += dx01;
+      sb += dx02;
+      /* longhand:
+      a = x0 + (x1 - x0) * (y - y0) / (y1 - y0);
+      b = x0 + (x2 - x0) * (y - y0) / (y2 - y0);
+      */
+      if (a > b) {
+          t = a;
+          a = b;
+          b = t;
+      }
+        spilcdDrawLine(&_lcd, a, y, b, y, color, iFlags);
+    }
+
+    // For lower part of triangle, find scanline crossings for segments
+    // 0-2 and 1-2.  This loop is skipped if y1=y2.
+    sa = (int32_t)dx12 * (y - y2);
+    sb = (int32_t)dx02 * (y - y1);
+    for (; y <= y3; y++) {
+      a = x2 + sa / dy12;
+      b = x1 + sb / dy02;
+      sa += dx12;
+      sb += dx02;
+      /* longhand:
+      a = x1 + (x2 - x1) * (y - y1) / (y2 - y1);
+      b = x0 + (x2 - x0) * (y - y0) / (y2 - y0);
+      */
+      if (a > b) {
+          t = a;
+          a = b;
+          b = t;
+      }
+        spilcdDrawLine(&_lcd, a, y, b, y, color, iFlags);
+    }
+} /* fillTriangle() */
 
 void BB_SPI_LCD::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color, int iFlags)
 {
