@@ -365,6 +365,8 @@ typedef enum
 #define FLAGS_CS_EACHBYTE 64
 
 uint16_t * RGBInit(BB_RGB *pRGB);
+void RGBChangeFreq(uint32_t u32Freq);
+
 #if defined(__LINUX__) && defined(__cplusplus)
 extern "C" {
 #endif

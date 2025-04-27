@@ -8614,6 +8614,12 @@ void BB_SPI_LCD::maskedTint(BB_SPI_LCD *pSrc, BB_SPI_LCD *pMask, int x, int y, u
 // If the source and destination are the same size, use SIMD code
     if (_lcd.iCurrentWidth == pSrc->_lcd.iCurrentWidth && _lcd.iCurrentHeight == pSrc->_lcd.iCurrentHeight) { // use SIMD code
         s3_masked_tint_be((uint16_t *)_lcd.pBackBuffer, (uint16_t *)pSrc->_lcd.pBackBuffer, (uint16_t *)pMask->_lcd.pBackBuffer, u16Tint, pSrc->_lcd.iCurrentWidth * pSrc->_lcd.iCurrentHeight, u8Alpha, u16RGBMasks);
+#if defined ARDUINO_ESP32S3_DEV
+            Cache_WriteBack_Addr((uint32_t)pSrc->_lcd.pBackBuffer, pSrc->_lcd.iCurrentWidth * pSrc->_lcd.iCurrentHeight*2);
+#endif
+#if defined ARDUINO_ESP32P4_DEV
+            esp_cache_msync(pSrc->_lcd.pBackBuffer, pSrc->_lcd.iCurrentWidth * pSrc->_lcd.iCurrentHeight*2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+#endif
         return;
     }
 #endif
@@ -8779,6 +8785,7 @@ void BB_SPI_LCD::blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SP
 {
 #ifdef ARDUINO_ESP32S3_DEV
     s3_alpha_blend_be((uint16_t *)pFGSprite->_lcd.pBackBuffer, (uint16_t *)pBGSprite->_lcd.pBackBuffer, (uint16_t *)pDestSprite->_lcd.pBackBuffer, pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight, u8Alpha, u16RGBMasks);
+        Cache_WriteBack_Addr((uint32_t)pDestSprite->_lcd.pBackBuffer, pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight*2);
 #else
     int i, iCount = pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight;
     uint16_t u16, *pFG, *pBG, *pD;

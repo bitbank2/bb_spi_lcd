@@ -373,6 +373,16 @@ static void *mmap_bcm_register(off_t register_offset) {
 } /* mmap_bcm_register() */
 #endif // __LINUX__
 //
+// Update the RGB panel frequency after creating it
+//
+void RGBChangeFreq(uint32_t u32Freq)
+{
+   esp_lcd_rgb_panel_set_pclk(panel_handle, u32Freq);
+   vTaskDelay(2); // wait 1 frame time for the update to occur
+
+} /* RGBChange() */
+
+//
 // Initialize a RGB parallel panel (needs continuous pixels)
 //
 uint16_t * RGBInit(BB_RGB *pRGB)
