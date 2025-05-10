@@ -461,11 +461,11 @@ int spilcdWriteStringFast(SPILCD *pLCD, int x, int y, char *szText, unsigned sho
 //
 // Draw a string in a proportional font you supply
 //
-int spilcdWriteStringCustom(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, uint16_t usBGColor, int bBlank, int iFlags);
+int spilcdWriteStringCustom(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, int usFGColor, int usBGColor, int bBlank, int iFlags);
 //
 // Draw a string in a proportional font with antialiasing
 //
-int spilcdWriteStringAntialias(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, uint16_t usBGColor, int iFlags);
+int spilcdWriteStringAntialias(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, int usFGColor, int usBGColor, int iFlags);
 //
 // Get the width and upper/lower bounds of text in a custom font
 //

@@ -377,9 +377,10 @@ static void *mmap_bcm_register(off_t register_offset) {
 //
 void RGBChangeFreq(uint32_t u32Freq)
 {
+#if defined ARDUINO_ESP32S3_DEV
    esp_lcd_rgb_panel_set_pclk(panel_handle, u32Freq);
    vTaskDelay(2); // wait 1 frame time for the update to occur
-
+#endif
 } /* RGBChange() */
 
 //

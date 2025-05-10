@@ -95,9 +95,9 @@ SPIClass mySPI(
 #endif
 struct gpiod_chip *chip = NULL;
 struct gpiod_line *lines[64];
-uint8_t ucTXBuf[4096];
-volatile uint8_t *pDMA = ucTXBuf;
-static uint8_t transfer_is_done = 1;
+//uint8_t ucTXBuf[4096];
+//volatile uint8_t *pDMA = ucTXBuf;
+//static uint8_t transfer_is_done = 1;
 static int spi_fd; // SPI handle
 #else // Arduino
 // Use the default (non DMA) SPI library for boards we don't currently support
@@ -187,10 +187,10 @@ volatile uint8_t *pDMA = pDMA0;
 #else
 static uint8_t ucTXBuf[4096];
 static uint8_t ucRXBuf[1024];
-static int iTXBufSize = sizeof(ucTXBuf);;
+//static int iTXBufSize = sizeof(ucTXBuf);
 uint8_t *pDMA0 = ucTXBuf;
 uint8_t *pDMA1 = &ucTXBuf[sizeof(ucTXBuf)/2]; // 2 ping-pong buffers
-volatile uint8_t *pDMA = pDMA0;
+volatile uint8_t *pDMA;
 volatile bool transfer_is_done = true; // Done yet?
 #endif // AVR | RP2040
 #endif // !ESP32
@@ -2096,6 +2096,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
     if (pLCD->pFont != NULL && iSPIFreq != 0) { // the structure is probably not initialized
         memset(pLCD, 0, sizeof(SPILCD));
     }   
+    pDMA = pDMA0;
     pLCD->bUseDMA = bUseDMA;
     pLCD->iColStart = pLCD->iRowStart = pLCD->iMemoryX = pLCD->iMemoryY = 0;
     pLCD->iOrientation = 0;
@@ -5156,7 +5157,7 @@ uint16_t usTemp[128];
 //
 // Draw a string in a proportional font you supply
 //
-int spilcdWriteStringCustom(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, uint16_t usFGColor, int usBGColor, int bBlank, int iFlags)
+int spilcdWriteStringCustom(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, int usFGColor, int usBGColor, int bBlank, int iFlags)
 {
 int i, /*j, iLen, */ k, dx, dy, cx, cy, c, iBitOff;
 int tx, ty;
@@ -5164,7 +5165,6 @@ uint8_t *s, bits, uc;
 GFXfont font;
 GFXglyph *pGlyph;
 uint16_t *d;
-uint8_t ucBitmap[32]; // 256 pixels wide should be big enough?
     
    if (pFont == NULL)
       return -1;
@@ -6480,12 +6480,13 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
                             for (x=0; x<cx; x++)
                             {
                                 us = pus[x];
-                                if (us != (uint16_t)iTransparent)
+                                if (us != (uint16_t)iTransparent) {
                                     if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
                                         d[0] = d[1] = (us >> 8) | (us << 8); // swap byte order
                                     } else {
                                         d[0] = d[1] = us;
                                     }
+				}
                                 d += 2;
                             } // for x
                         }
@@ -6572,12 +6573,13 @@ int spilcdDrawBMP(SPILCD *pLCD, uint8_t *pBMP, int iDestX, int iDestY, int bStre
                         for (x=0; x<cx; x++)
                         {
                             us = *pus++;
-                            if (us != (uint16_t)iTransparent)
+                            if (us != (uint16_t)iTransparent) {
                                 if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
                                  d[0] = (us >> 8) | (us << 8); // swap byte order
                                 } else {
                                   d[0] = us;
                                 }
+			    }
                             d++;
                         }
                     }
@@ -6703,7 +6705,7 @@ void spilcdFreeBackbuffer(SPILCD *pLCD)
 //
 void spilcdRotateBitmap(uint8_t *pSrc, uint8_t *pDest, int iBpp, int iWidth, int iHeight, int iPitch, int iCenterX, int iCenterY, int iAngle)
 {
-int32_t i, x, y;
+int32_t x, y;
 int32_t tx, ty, sa, ca;
 uint8_t *s, *d, uc, ucMask;
 uint16_t *uss, *usd;
