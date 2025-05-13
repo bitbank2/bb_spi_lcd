@@ -2201,7 +2201,11 @@ static int iStarted = 0; // indicates if the master driver has already been init
     } // bUseDMA
 #else
 #ifdef __LINUX__
-    spi_fd = open("/dev/spidev0.1", O_RDWR); // DEBUG - open SPI channel 0 
+{
+char szTemp[32];
+    sprintf(szTemp, "/dev/spidev%d.%d", iMOSIPin, iMISOPin);
+    spi_fd = open(szTemp, O_RDWR); 
+}
 #else
 #ifdef ARDUINO_ARCH_RP2040
   pSPI->begin();
