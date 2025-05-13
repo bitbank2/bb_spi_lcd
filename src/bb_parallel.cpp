@@ -377,7 +377,7 @@ static void *mmap_bcm_register(off_t register_offset) {
 //
 void RGBChangeFreq(uint32_t u32Freq)
 {
-#if defined ARDUINO_ESP32S3_DEV
+#if defined CONFIG_IDF_TARGET_ESP32S3
    esp_lcd_rgb_panel_set_pclk(panel_handle, u32Freq);
    vTaskDelay(2); // wait 1 frame time for the update to occur
 #endif
@@ -388,7 +388,7 @@ void RGBChangeFreq(uint32_t u32Freq)
 //
 uint16_t * RGBInit(BB_RGB *pRGB)
 {
-#if defined ARDUINO_ESP32S3_DEV
+#if defined CONFIG_IDF_TARGET_ESP32S3 
 esp_lcd_rgb_panel_config_t panel_config;
 
    memset(&panel_config, 0, sizeof(panel_config));
@@ -439,7 +439,7 @@ esp_lcd_rgb_panel_config_t panel_config;
    return p;
 #else // not S3
    return NULL;
-#endif // ARDUINO_ESP32S3_DEV
+#endif // CONFIG_IDF_TARGET_ESP32S3 
 } /* RGBInit() */
 
 //

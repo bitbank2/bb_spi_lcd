@@ -12,21 +12,22 @@
 #include <bb_spi_lcd.h>
 BB_SPI_LCD lcd;
 
-#define CS_PIN 15
-#define DC_PIN 2
+// Pins for the Keyboard Featherwing with a FeatherS3 board controlling it
+#define CS_PIN 1
+#define DC_PIN 3
 #define RESET_PIN -1
-#define LED_PIN 21
-#define MISO_PIN 12
-#define MOSI_PIN 13
-#define CLK_PIN 14
+#define LED_PIN -1
+#define MISO_PIN MISO
+#define MOSI_PIN MOSI
+#define CLK_PIN SCK
 
 void setup()
 {
   // The begin method prototype:
   // begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin)
   // For unused pins, pass -1
-  // This init sequence is for the original "CYD" ESP32-2432S028 (240x320 2.8" ESP32 PCB)
   lcd.begin(LCD_ILI9341, FLAGS_NONE, 40000000, CS_PIN, DC_PIN, RESET_PIN, LED_PIN, MISO_PIN, MOSI_PIN, CLK_PIN);
+  lcd.setRotation(90);
   // The default orientation is portrait. To set landscape mode use setRotation(270)
   lcd.fillScreen(TFT_BLACK); // the default is to not keep a local copy of the framebuffer since it's large
   lcd.setTextColor(TFT_GREEN); // all functions will send data to the display and be visible immediately
