@@ -211,8 +211,10 @@ class BB_SPI_LCD
     int merge(uint16_t *pSrc, uint16_t usTrans, int bSwap565);
     int begin(int iStandardType);
     int begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin = -1, int iMISOPin = -1, int iMOSIPin = -1, int iCLKPin = -1);
+#ifndef __LINUX__
     int beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq);
     int beginQSPI(int iType, int iFlags, uint8_t CS_PIN, uint8_t CLK_PIN, uint8_t D0_PIN, uint8_t D1_PIN, uint8_t D2_PIN, uint8_t D3_PIN, uint8_t RST_PIN, uint32_t u32Freq);
+#endif // !__LINUX__
     void setBrightness(uint8_t u8Brightness); // 0-FF = off to brightest
     void setRotation(int iAngle);
     void setWordwrap(int bWrap);

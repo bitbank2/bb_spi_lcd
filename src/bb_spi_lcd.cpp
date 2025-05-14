@@ -1878,12 +1878,19 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
 #ifdef __LINUX__
 {
 struct spi_ioc_transfer spi;
+int i;
    memset(&spi, 0, sizeof(spi));
-   spi.tx_buf = (unsigned long)pBuf;
-   spi.len = iLen;
-   spi.speed_hz = pLCD->iSPISpeed;
-   spi.bits_per_word = 8;
-   ioctl(spi_fd, SPI_IOC_MESSAGE(1), &spi);
+   while (iLen) {
+      i = iLen;
+      if (i > 4096) i = 4096; // max default buffer size on Linux SPI driver
+      spi.tx_buf = (unsigned long)pBuf;
+      spi.len = i;
+      spi.speed_hz = pLCD->iSPISpeed;
+      spi.bits_per_word = 8;
+      ioctl(spi_fd, SPI_IOC_MESSAGE(1), &spi);
+      iLen -= i;
+      pBuf += i;
+   } // while
 }
 #else
 #ifdef ARDUINO_ARCH_RP2040
@@ -2066,6 +2073,7 @@ void spilcdSetCallbacks(SPILCD *pLCD, RESETCALLBACK pfnReset, DATACALLBACK pfnDa
     pLCD->pfnDataCallback = pfnData;
     pLCD->pfnResetCallback = pfnReset;
 }
+#ifndef __LINUX__
 int spilcdParallelInit(SPILCD *pLCD, int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq)
 {
     memset(pLCD, 0, sizeof(SPILCD));
@@ -2080,7 +2088,7 @@ int spilcdParallelInit(SPILCD *pLCD, int iType, int iFlags, uint8_t RST_PIN, uin
     spilcdSetCallbacks(pLCD, ParallelReset, ParallelDataWrite);
     return spilcdInit(pLCD, iType, iFlags, 0,0,0,0,0,0,0,0,0);
 } /* spilcdParallelInit() */
-
+#endif // !__LINUX__
 //
 // Initialize the LCD controller and clear the display
 // LED pin is optional - pass as -1 to disable
@@ -3351,10 +3359,7 @@ unsigned char buf[2];
 
     buf[0] = (uint8_t)(us >> 8);
     buf[1] = (uint8_t)us;
-//    myspiWrite(pLCD, buf, 2, MODE_COMMAND, DRAW_TO_LCD);
-    spilcdSetMode(pLCD, MODE_COMMAND);
-    spilcdParallelData(buf, 2);
-    spilcdSetMode(pLCD, MODE_DATA);
+    myspiWrite(pLCD, buf, 2, MODE_COMMAND, DRAW_TO_LCD);
 } /* spilcdWriteCommand() */
 
 //
@@ -3380,8 +3385,7 @@ unsigned char buf[2];
 
     buf[0] = (unsigned char)(us >> 8);
     buf[1] = (unsigned char)us;
-    spilcdParallelData(buf, 2);
-//    myspiWrite(pLCD, buf, 2, MODE_DATA, iFlags);
+    myspiWrite(pLCD, buf, 2, MODE_DATA, iFlags);
 
 } /* spilcdWriteData16() */
 //
@@ -4760,6 +4764,7 @@ void SPD2010Init(SPILCD *pLCD)
 // Initialize a Quad SPI display
 int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u8CS, uint8_t u8CLK, uint8_t u8D0, uint8_t u8D1, uint8_t u8D2, uint8_t u8D3, uint8_t u8RST, uint8_t u8LED)
 {
+#ifndef __LINUX__
     esp_err_t ret;
     
     if (u8CS != 0xff) {
@@ -4845,6 +4850,7 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
             ST77916Init(pLCD);
             break;
     }
+#endif // !__LINUX__
     return 1;
 } /* qspiInit() */
 
@@ -7465,6 +7471,7 @@ uint8_t c, *s = (uint8_t *)pCmdList;
    //digitalWrite(pPanel->cs, HIGH);
 } /* spilcdWritePanelCommands() */
 
+#ifndef __LINUX__
 int BB_SPI_LCD::beginQSPI(int iType, int iFlags, uint8_t CS_PIN, uint8_t CLK_PIN, uint8_t D0_PIN, uint8_t D1_PIN, uint8_t D2_PIN, uint8_t D3_PIN, uint8_t RST_PIN, uint32_t u32Freq)
 {
     memset(&_lcd, 0, sizeof(_lcd));
@@ -7489,7 +7496,8 @@ int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD
     spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
     return spilcdInit(&_lcd, iType, iFlags, 0,0,0,0,0,0,0,0,0);
 } /* beginParallel() */
-
+#endif // !__LINUX__
+ 
 #ifdef ARDUINO_ESP32P4_DEV
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_mipi_dsi.h"
@@ -7655,6 +7663,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             _lcd.iRTOrientation = 0;
             _lcd.iRTThreshold = 6300; 
             break;
+#ifndef __LINUX__
         case DISPLAY_WT32_SC01_PLUS: // 3.5" 480x320 ST7796 8-bit parallel
             memset(&_lcd, 0, sizeof(_lcd));
             pinMode(45, OUTPUT); // backlight
@@ -7663,7 +7672,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             beginParallel(LCD_ST7796, FLAGS_INVERT | FLAGS_FLIPX | FLAGS_SWAP_RB | FLAGS_MEM_RESTART, 4, -1, 47, -1, 0, 8, (uint8_t *)u8_WT32_Pins, 12000000);
             setRotation(270);
             break;
-
+#endif
         case DISPLAY_VIEWE_2432: // VIEWE 2.4" ST7789 transflective
             memset(&_lcd, 0, sizeof(_lcd));
             // normally the LCD interface mode is hard wired, but not here
@@ -7675,7 +7684,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             begin(LCD_ST7789, FLAGS_INVERT, 40000000, 42, 41, -1, 13, -1, 45, 40);
             setRotation(270);
             break;
-
+#ifndef __LINUX__
         case DISPLAY_CYD_22C: // 2.2" ST7789 8-bit parallel
             memset(&_lcd, 0, sizeof(_lcd));
             pinMode(0, OUTPUT); // backlight
@@ -7684,6 +7693,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             beginParallel(LCD_ST7789, FLAGS_INVERT | FLAGS_MEM_RESTART, -1, 2, 4, 17, 16, 8, (uint8_t *)u8_22C_Pins, 12000000);
             setRotation(270);
             break;
+#endif // !__LINUX__
         case DISPLAY_CYD_128:
             spilcdInit(&_lcd, LCD_GC9A01, FLAGS_NONE, 40000000, 10, 2, -1, 3, -1, 7, 6, 1); // Cheap Yellow Display (ESP32-C3 1.28" round version)
             break;
@@ -7712,6 +7722,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14, 1); // Cheap Yellow Display (2.4 and 2.8 w/cap touch)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
+#ifndef __LINUX__
         case DISPLAY_UM_480x480: // UnexpectedMaker 4" 480x480
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
@@ -7742,6 +7753,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             _lcd.iHeight = _lcd.iCurrentHeight = 480;
             spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_800x480_7));
             break;
+#endif // !__LINUX__
 
 #ifdef ARDUINO_ESP32P4_DEV
         case DISPLAY_CYD_P4_1024x600:
@@ -7755,7 +7767,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdSetBuffer(&_lcd, (uint8_t *)jd9165_init());
             break;
 #endif // ESP32-P4
-            
+#ifndef __LINUX__ 
         case DISPLAY_CYD_8048: // 4.3" and 5.5" 800x480 ESP32-S3
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
@@ -7767,6 +7779,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             _lcd.iHeight = _lcd.iCurrentHeight = 480;
             spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_800x480));
             break;
+#endif // !__LINUX__
         case DISPLAY_PYBADGE_M4:
             spilcdInit(&_lcd, LCD_ST7735R, FLAGS_NONE, 50000000, 44, 45, 46, 47, 43, 41, 42, 1);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
@@ -7852,6 +7865,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             pinMode(10, OUTPUT);
             digitalWrite(10, LOW); // inverted backlight signal
             break;
+#ifndef __LINUX__
         case DISPLAY_D1_R32_ILI9341:
             pinMode(32, OUTPUT); // reset
             digitalWrite(32, LOW);
@@ -7863,6 +7877,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 0,0,0,0,0,0,0,0,0);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
+#endif // !__LINUX__
 #ifdef ARDUINO_ARCH_RP2040
         case DISPLAY_KUMAN_35: // ILI9486 320x480 8-bit parallel
             // toggle reset
