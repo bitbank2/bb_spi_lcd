@@ -8779,6 +8779,7 @@ void BB_SPI_LCD::blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SP
 {
 #ifdef ARDUINO_ESP32S3_DEV
     s3_alphatrans_be((uint16_t *)pFGSprite->_lcd.pBackBuffer, (uint16_t *)pBGSprite->_lcd.pBackBuffer, (uint16_t *)pDestSprite->_lcd.pBackBuffer, pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight, u8Alpha, &u16Transparent, u16RGBMasks);
+    Cache_WriteBack_Addr((uint32_t)pDestSprite->_lcd.pBackBuffer, pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight * 2);
 #else
     int i, iCount = pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight;
     uint16_t u16, *pFG, *pBG, *pD;
