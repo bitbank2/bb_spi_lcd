@@ -174,8 +174,10 @@ typedef struct tagSPILCD
    int iCurrentWidth, iCurrentHeight; // rotated size
    int iWriteFlags; // flags specifically for printing (write)
    int iCSPin, iCLKPin, iMOSIPin, iDCPin, iResetPin, iLEDPin;
-#ifndef __LINUX__
+#ifdef ARDUINO
    SPIClass *pSPI;
+#else
+   void *pSPI;
 #endif
    uint8_t iRTMOSI, iRTMISO, iRTCLK, iRTCS; // resistive touch GPIO
    int32_t iSPISpeed, iSPIMode; // SPI settings
@@ -195,7 +197,11 @@ typedef struct tagSPILCD
 
 #ifdef __cplusplus
 
+#ifdef ARDUINO
 class BB_SPI_LCD : public Print
+#else
+class BB_SPI_LCD
+#endif
 {
   public:
     BB_SPI_LCD() {memset(&_lcd, 0, sizeof(_lcd));}
@@ -253,8 +259,10 @@ class BB_SPI_LCD : public Print
     void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void readImage(int x, int y, int w, int h, uint16_t *pixels);
     void pushPixels(uint16_t *pixels, int count, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+#ifdef ARDUINO
     void drawString(const char *pText, int x, int y, int size=-1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawString(String text, int x, int y, int size=-1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+#endif
     void drawStringFast(const char *szText, int x, int y, int size = -1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     int drawBMP(const uint8_t *pBMP, int iDestX, int iDestY, int bStretch = 0, int iTransparent = -1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawLine(int x1, int y1, int x2, int y2, int iColor, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
@@ -267,11 +275,15 @@ class BB_SPI_LCD : public Print
     void fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY, int iCX, int iCY, uint16_t usColor, int iTranslucency);
     int drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale = 1.0f, int iTransparent = -1, int iFlags = DRAW_TO_LCD);
+#ifdef ARDUINO
     using Print::write;
     virtual size_t write(uint8_t);
+#endif
     // Resistive Touch methods
     int rtInit(uint8_t u8MOSI = 255, uint8_t uiMISO = 255, uint8_t u8CLK = 255, uint8_t u8CS = 255);
+#ifdef ARDUINO
     int rtInit(SPIClass &pSPI, uint8_t u8CS = 0xff);
+#endif
     int rtReadTouch(TOUCHINFO *ti);
 
   private:

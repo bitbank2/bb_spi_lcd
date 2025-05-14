@@ -5314,7 +5314,7 @@ uint16_t *d;
                   iBitOff += bits; // because of a clipped line
                   uc <<= (8-bits);
                   k = (int)(d-(uint16_t *)ucRXBuf); // number of words in output buffer
-                  if (k >= sizeof(ucRXBuf)/4) { // time to write it
+                  if (k >= (int)sizeof(ucRXBuf)/4) { // time to write it
                      myspiWrite(pLCD, ucRXBuf, k*sizeof(uint16_t), MODE_DATA, iFlags);
                      d = (uint16_t *)ucRXBuf;
                   }
@@ -7259,6 +7259,7 @@ uint8_t ucTemp[4];
     } // spi / parallel
 } /* setScrollPosition() */
 
+#ifdef ARDUINO
 int BB_SPI_LCD::rtInit(SPIClass &spi, uint8_t u8CS)
 {
     if (u8CS != 0xff) _lcd.iRTCS = u8CS;
@@ -7267,13 +7268,12 @@ int BB_SPI_LCD::rtInit(SPIClass &spi, uint8_t u8CS)
     pinMode(_lcd.iRTCS, OUTPUT);
     return 1;
 }
+#endif // ARDUINO
 //
 // C++ Class implementation
 //
 int BB_SPI_LCD::rtInit(uint8_t u8MOSI, uint8_t u8MISO, uint8_t u8CLK, uint8_t u8CS)
 {
-uint8_t ucTemp[4];
-
    if (u8MOSI != 255) {
       _lcd.iRTMOSI = u8MOSI;
    }
@@ -7323,7 +7323,7 @@ static int rtAVG(int *pI)
 int BB_SPI_LCD::rtReadTouch(TOUCHINFO *ti)
 {
 // commands and SPI transaction filler to read 3 byte response for x/y
-uint8_t ucTemp[4];
+uint8_t ucTemp[4] = {0}; // suppress compiler warning
 int iOrient, x, y, xa[3], ya[3], x1, y1, z, z1, z2;
 const int iOrients[4] = {0,90,180,270};
 
@@ -7333,6 +7333,7 @@ const int iOrients[4] = {0,90,180,270};
 
     if (ti == NULL)
         return 0;
+    x1 = y1 = 0; // suppress compiler warning
     if (_lcd.iRTCS >= 0 && _lcd.iRTCS < 99)
         digitalWrite(_lcd.iRTCS, 0); // active CS
     // read the "pressure" value to see if there is a touch
@@ -7422,7 +7423,7 @@ uint8_t uc;
        delayMicroseconds(1);
        digitalWrite(pPanel->sck, HIGH); // clock D/C bit
        delayMicroseconds(1);
-       for (int j=0; j<8; j++) {
+       for (j=0; j<8; j++) {
           digitalWrite(pPanel->sck, LOW);
           digitalWrite(pPanel->mosi, (uc >> 7) & 1);
           delayMicroseconds(1);
@@ -7436,7 +7437,6 @@ uint8_t uc;
 void spilcdWritePanelCommands(const BB_RGB *pPanel, const uint8_t *pCmdList, int iListLen)
 {
 uint8_t c, *s = (uint8_t *)pCmdList;
-uint8_t ucTemp[16];
 
 // 9-bit mode (no D/C pin)
    pinMode(pPanel->mosi, OUTPUT);
@@ -7700,7 +7700,9 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_CYD_24R:
             spilcdInit(&_lcd, LCD_ST7789, FLAGS_INVERT, 40000000, 15, 2, -1, 27, 12, 13, 14, 0); // Cheap Yellow Display (2.4 w/resistive touch)
             setRotation(270);
+#ifdef ARDUINO
             _lcd.pSPI = &SPI; // shared SPI
+#endif
             _lcd.iRTCS = 33;
             _lcd.iRTMOSI = 255;
             _lcd.iRTOrientation = 270;
@@ -8191,9 +8193,11 @@ void BB_SPI_LCD::setBrightness(uint8_t u8Brightness)
 
 int BB_SPI_LCD::begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin)
 {
+#ifdef ARDUINO
   if (iMISOPin == -1) iMISOPin = MISO;
   if (iMOSIPin == -1) iMOSIPin = MOSI;
   if (iCLKPin == -1) iCLKPin = SCK;
+#endif
   return spilcdInit(&_lcd, iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin,1);
 } /* begin() */
 
@@ -8530,13 +8534,14 @@ void BB_SPI_LCD::setPrintFlags(int iFlags)
 {
     _lcd.iWriteFlags = iFlags;
 }
+#ifdef ARDUINO
 void BB_SPI_LCD::drawString(const char *pText, int x, int y, int size, int iFlags)
 {
     _lcd.iWriteFlags = iFlags;
    if (size == 1) setFont(FONT_6x8);
    else if (size == 2) setFont(FONT_12x16);
    setCursor(x,y);
-   for (int i=0; i<strlen(pText); i++) {
+   for (int i=0; i<(int)strlen(pText); i++) {
       write(pText[i]);
    } 
 } /* drawString() */
@@ -8544,7 +8549,7 @@ void BB_SPI_LCD::drawString(String text, int x, int y, int size, int iFlags)
 {
     drawString(text.c_str(), x, y, size, iFlags);
 } /* drawString() */
-
+#endif
 void BB_SPI_LCD::drawLine(int x1, int y1, int x2, int y2, int iColor, int iFlags)
 {
   spilcdDrawLine(&_lcd, x1, y1, x2, y2, iColor, iFlags);
@@ -8663,7 +8668,7 @@ void BB_SPI_LCD::blurGaussian(void)
 {
     int x, y, w, h;
     uint16_t *s, *d;
-    uint16_t *pOut, *pBitmap;
+    uint16_t *pBitmap;
     uint32_t u32, u32Sum, u32Offset = 0;
     const uint32_t u32Mask = u32BlurMasks[0], u32Round = u32BlurMasks[1];
 
@@ -8911,6 +8916,7 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
     }
     return BB_ERROR_SUCCESS;
 } /* drawSprite() */
+#ifdef ARDUINO
 //
 // write (Print friend class)
 //
@@ -8980,7 +8986,8 @@ int w, h;
   }
   return 1;
 } /* write() */
-
+#endif // ARDUINO
+ 
 void BB_SPI_LCD::display(void)
 {
     spilcdShowBuffer(&_lcd, 0, 0, _lcd.iCurrentWidth, _lcd.iCurrentHeight, DRAW_TO_LCD);
