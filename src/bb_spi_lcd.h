@@ -212,6 +212,7 @@ class BB_SPI_LCD
     int begin(int iStandardType);
     int begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin = -1, int iMISOPin = -1, int iMOSIPin = -1, int iCLKPin = -1);
 #ifndef __LINUX__
+    int begin(int iType, int iFlags, SPIClass *pSPI, int iCSPin, int iDCPin, int iResetPin, int iLEDPin);
     int beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq);
     int beginQSPI(int iType, int iFlags, uint8_t CS_PIN, uint8_t CLK_PIN, uint8_t D0_PIN, uint8_t D1_PIN, uint8_t D2_PIN, uint8_t D3_PIN, uint8_t RST_PIN, uint32_t u32Freq);
 #endif // !__LINUX__
@@ -357,6 +358,8 @@ enum
     DISPLAY_WS_LCD_169, // 1.69" 240x280
     DISPLAY_LILYGO_T4_S3, // 2.41" 600x450 AMOLED
     DISPLAY_VIEWE_2432, // 2.4" transflective 240x320
+    DISPLAY_WS_CAMERA_2, // Waveshare ESP32-S3 2" LCD + camera
+    DISPLAY_WS_C6_147, // Waveshare ESP32-C6 1.47" 172x320 LCD
     DISPLAY_COUNT
 };
 #if !defined(BITBANK_LCD_MODES)

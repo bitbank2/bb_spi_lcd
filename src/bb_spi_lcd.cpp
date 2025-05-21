@@ -100,6 +100,9 @@ struct gpiod_line *lines[64];
 //static uint8_t transfer_is_done = 1;
 static int spi_fd; // SPI handle
 #else // Arduino
+#ifdef ARDUINO_ARCH_ESP32
+SPIClass *pSPI;
+#endif // ESP32
 // Use the default (non DMA) SPI library for boards we don't currently support
 #if !defined(__SAMD51__) && !defined(ARDUINO_SAMD_ZERO) && !defined(ARDUINO_ARCH_RP2040)
 #define mySPI SPI
@@ -1893,25 +1896,13 @@ int i;
    } // while
 }
 #else
-#ifdef ARDUINO_ARCH_RP2040
     pSPI->beginTransaction(SPISettings(pLCD->iSPISpeed, MSBFIRST, pLCD->iSPIMode));
-#else
-    mySPI.beginTransaction(SPISettings(pLCD->iSPISpeed, MSBFIRST, pLCD->iSPIMode));
-#endif
 #ifdef ARDUINO_ARCH_ESP32
-    mySPI.transferBytes(pBuf, NULL, iLen);
+    pSPI->transferBytes(pBuf, NULL, iLen);
 #else
-#ifdef ARDUINO_ARCH_RP2040
     pSPI->transfer(pBuf, iLen);
-#else
-    mySPI.transfer(pBuf, iLen);
-#endif // RP2040
 #endif
-#ifdef ARDUINO_ARCH_RP2040
     pSPI->endTransaction();
-#else
-    mySPI.endTransaction();
-#endif
 #endif // __LINUX__
     if (iMode == MODE_COMMAND) // restore D/C pin to DATA
         spilcdSetMode(pLCD, MODE_DATA);
@@ -2145,7 +2136,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
     pLCD->iSPIMode = (iType == LCD_ST7789_NOCS || iType == LCD_ST7789) ? SPI_MODE3 : SPI_MODE0;
 #endif
     pLCD->iSPISpeed = iSPIFreq;
-	pLCD->iScrollOffset = 0; // current hardware scroll register value
+    pLCD->iScrollOffset = 0; // current hardware scroll register value
 
     pLCD->iDCPin = iDC;
     pLCD->iCSPin = iCS;
@@ -2203,8 +2194,13 @@ static int iStarted = 0; // indicates if the master driver has already been init
     } else { // no DMA
        if (iMISOPin != iMOSIPin) {
           mySPI.begin(iCLKPin, iMISOPin, iMOSIPin, -1); //iCS);
-       } else {
+          pSPI = &mySPI;
+       } else if (iSPIFreq != -1) {
           mySPI.begin();
+          pSPI = &mySPI;
+       }
+       if (iSPIFreq == -1) { // externally initialized SPI bus
+          pLCD->iSPISpeed = 40000000; // 20MHz should be a safe speed for SPI
        }
     } // bUseDMA
 #else
@@ -2356,9 +2352,9 @@ start_of_init:
 	    pLCD->iCurrentHeight = pLCD->iHeight = 280;
             pLCD->iRowStart = pLCD->iMemoryY = 20;
 	} else if (pLCD->iLCDType == LCD_ST7789_172) {
-            pLCD->iCurrentWidth = pLCD->iWidth = 174;
+            pLCD->iCurrentWidth = pLCD->iWidth = 172;
             pLCD->iCurrentHeight = pLCD->iHeight = 320;
-            pLCD->iColStart = pLCD->iMemoryX = 33;
+            pLCD->iColStart = pLCD->iMemoryX = 34;
             pLCD->iRowStart = pLCD->iMemoryY = 0;
 	}
         pLCD->iLCDType = LCD_ST7789; // treat them the same from here on
@@ -7472,6 +7468,13 @@ uint8_t c, *s = (uint8_t *)pCmdList;
 } /* spilcdWritePanelCommands() */
 
 #ifndef __LINUX__
+// start with the SPI bus initialized externally
+int BB_SPI_LCD::begin(int iType, int iFlags, SPIClass *pExtSPI, int iCSPin, int iDCPin, int iResetPin, int iLEDPin)
+{
+    pSPI = pExtSPI; // already initialized
+    return spilcdInit(&_lcd, iType, iFlags, -1, iCSPin, iDCPin, iResetPin, iLEDPin, -1, -1, -1, 0); 
+} /* begin() */
+
 int BB_SPI_LCD::beginQSPI(int iType, int iFlags, uint8_t CS_PIN, uint8_t CLK_PIN, uint8_t D0_PIN, uint8_t D1_PIN, uint8_t D2_PIN, uint8_t D3_PIN, uint8_t RST_PIN, uint32_t u32Freq)
 {
     memset(&_lcd, 0, sizeof(_lcd));
@@ -7979,6 +7982,18 @@ int BB_SPI_LCD::begin(int iDisplayType)
        Wire.end();
 
             qspiInit(&_lcd, LCD_SPD2010, FLAGS_NONE, 40000000, 21,40,46,45,42,41,-1,5);
+            break;
+        case DISPLAY_WS_C6_147: // Waveshare ESP32-C6 172x320
+            _lcd.bUseDMA = 1;
+// iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin
+            begin(LCD_ST7789_172, FLAGS_NONE, 40000000, 14, 15, 21, 22, -1, 6, 7);
+            setRotation(90);
+            break;
+        case DISPLAY_WS_CAMERA_2: // Waveshare 2" 240x320 ESP32-S3
+            _lcd.bUseDMA = 1;
+// iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin
+            begin(LCD_ST7789, FLAGS_NONE, 40000000, 45, 42, 0, 1, -1, 38, 39);
+            setRotation(90);
             break;
         case DISPLAY_WS_LCD_169: // Waveshare 1.69" 240x280 LCD
             memset(&_lcd, 0, sizeof(_lcd));
