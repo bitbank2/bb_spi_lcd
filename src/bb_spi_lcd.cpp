@@ -3,7 +3,7 @@
 // email: bitbank@pobox.com
 // Project started 5/15/2017
 // 
-// Copyright 2017 BitBank Software, Inc. All Rights Reserved.
+// Copyright 2017-2025 BitBank Software, Inc. All Rights Reserved.
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -17,9 +17,6 @@
 //
 //#define LOG_OUTPUT
 
-// The ILITEK LCD display controllers communicate through the SPI interface
-// and two GPIO pins to control the RESET, and D/C (data/command)
-// control lines. 
 //#if defined(ADAFRUIT_PYBADGE_M4_EXPRESS)
 //#define SPI SPI1
 #ifndef __LINUX__
@@ -5160,6 +5157,131 @@ uint16_t usTemp[128];
     pLCD->iCursorY = y;
    return 0;
 } /* spilcdWriteStringAntialias() */
+// 
+// Convert a single Unicode character into codepage 1252 (extended ASCII)
+// 
+static uint8_t spilcdUnicodeTo1252(uint16_t u16CP)
+{
+            // convert supported Unicode values to codepage 1252
+            switch(u16CP) { // they're all over the place, so check each
+                case 0x20ac:
+                    u16CP = 0x80; // euro sign
+                    break;
+                case 0x201a: // single low quote
+                    u16CP = 0x82;
+                    break;
+                case 0x192: // small F with hook
+                    u16CP = 0x83;
+                    break;
+                case 0x201e: // double low quote
+                    u16CP = 0x84;
+                    break;
+                case 0x2026: // hor ellipsis
+                    u16CP = 0x85;
+                    break;
+                case 0x2020: // dagger
+                    u16CP = 0x86;
+                    break;
+                case 0x2021: // double dagger
+                    u16CP = 0x87;
+                    break;
+                case 0x2c6: // circumflex
+                    u16CP = 0x88;
+                    break;
+                case 0x2030: // per mille
+                    u16CP = 0x89;
+                    break;
+                case 0x160: // capital S with caron
+                    u16CP = 0x8a;
+                    break;
+                case 0x2039: // single left pointing quote
+                    u16CP = 0x8b;
+                    break;
+                case 0x152: // capital ligature OE
+                    u16CP = 0x8c;
+                    break;
+                case 0x17d: // captial Z with caron
+                    u16CP = 0x8e;
+                    break;
+                case 0x2018: // left single quote
+                    u16CP = 0x91;
+                    break;
+                case 0x2019: // right single quote
+                    u16CP = 0x92;
+                    break;
+                case 0x201c: // left double quote
+                    u16CP = 0x93;
+                    break;
+                case 0x201d: // right double quote
+                    u16CP = 0x94;
+                    break;
+                case 0x2022: // bullet
+                    u16CP = 0x95;
+                    break;
+                case 0x2013: // en dash
+                    u16CP = 0x96;
+                    break;
+                case 0x2014: // em dash
+                    u16CP = 0x97;
+                    break;
+                case 0x2dc: // small tilde
+                    u16CP = 0x98;
+                    break;
+                case 0x2122: // trademark
+                    u16CP = 0x99;
+                    break;
+                case 0x161: // small s with caron
+                    u16CP = 0x9a;
+                    break;
+                case 0x203a: // single right quote
+                    u16CP = 0x9b;
+                    break;
+                case 0x153: // small ligature oe
+                    u16CP = 0x9c;
+                    break;
+                case 0x17e: // small z with caron
+                    u16CP = 0x9e;
+                    break;
+                case 0x178: // capital Y with diaeresis
+                    u16CP = 0x9f;
+                    break;
+                default:
+                    if (u16CP > 0xff) u16CP = 32; // something went wrong
+                    break;
+            } // switch on character
+    return (uint8_t)u16CP;
+} /* spilcdUnicodeTo1252() */
+//
+// Convert a Unicode string into our extended ASCII set (codepage 1252)
+//
+static void spilcdUnicodeString(const char *szMsg, uint8_t *szExtMsg)
+{
+int i, j;
+uint8_t c;
+uint16_t u16CP; // 16-bit codepoint encoded by the multi-byte sequence
+
+    i = j = 0;
+    while (szMsg[i]) {
+        c = szMsg[i++];
+        if (c < 0x80) { // normal 7-bit ASCII
+             u16CP = c;
+        } else { // multibyte
+             if (c < 0xe0) { // first 0x800 characters
+                  u16CP = (c & 0x3f) << 6;
+                  u16CP += (szMsg[i++] & 0x3f);
+             } else if (c < 0xf0) { // 0x800 to 0x10000
+                  u16CP = (c & 0x3f) << 12;
+                  u16CP += ((szMsg[i++] & 0x3f)<<6);
+                  u16CP += (szMsg[i++] & 0x3f);
+             } else { // 0x10001 to 0x20000
+                  u16CP = 32; // convert to spaces (nothing supported here)
+             }
+        } // multibyte
+        szExtMsg[j++] = spilcdUnicodeTo1252(u16CP);
+    } // while szMsg[i]
+    szExtMsg[j++] = 0; // zero terminate it
+} /* spilcdUnicodeString() */
+
 //
 // Draw a string in a proportional font you supply
 //
@@ -5171,6 +5293,7 @@ uint8_t *s, bits, uc;
 GFXfont font;
 GFXglyph *pGlyph;
 uint16_t *d;
+uint8_t szExtMsg[256];
     
    if (pFont == NULL)
       return -1;
@@ -5180,8 +5303,13 @@ uint16_t *d;
         y = pLCD->iCursorY;
     if (x < 0)
         return -1;
-   // in case of running on AVR, get copy of data from FLASH
-   memcpy_P(&font, pFont, sizeof(font));
+    // in case of running on AVR, get copy of data from FLASH
+    memcpy_P(&font, pFont, sizeof(font));
+    if (szMsg[1] == 0 && szMsg[0] >= 0x80) { // single byte means we're coming from the Arduino write() method with pre-converted extended ASCII
+        szExtMsg[0] = szMsg[0]; szExtMsg[1] = 0;
+    } else {
+        spilcdUnicodeString(szMsg, szExtMsg); // convert to extended ASCII
+    }
    if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
        usFGColor = (usFGColor >> 8) | (usFGColor << 8); // swap h/l bytes
        if (usBGColor != -1) {
@@ -5189,9 +5317,9 @@ uint16_t *d;
        }
    }
    i = 0;
-   while (szMsg[i] && x < pLCD->iCurrentWidth)
+   while (szExtMsg[i] && x < pLCD->iCurrentWidth)
    {
-      c = szMsg[i++];
+      c = szExtMsg[i++];
       if (c < font.first || c > font.last) // undefined character
          continue; // skip it
       c -= font.first; // first char of font defined
@@ -5348,16 +5476,19 @@ int c, i = 0;
 GFXfont font;
 GFXglyph glyph, *pGlyph;
 int miny, maxy;
+uint8_t szExtMsg[256];
 
-   if (pFont == NULL)
+   if (pFont == NULL || szMsg == NULL)
       return;
+   spilcdUnicodeString(szMsg, szExtMsg); // convert to extended ASCII
+
    // in case of running on AVR, get copy of data from FLASH
    memcpy_P(&font, pFont, sizeof(font));
    pGlyph = &glyph;
    if (width == NULL || top == NULL || bottom == NULL || pFont == NULL || szMsg == NULL) return; // bad pointers
    miny = 1000; maxy = 0;
-   while (szMsg[i]) {
-      c = szMsg[i++];
+   while (szExtMsg[i]) {
+      c = szExtMsg[i++];
       if (c < font.first || c > font.last) // undefined character
          continue; // skip it
       c -= font.first; // first char of font defined
@@ -8954,6 +9085,35 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
 size_t BB_SPI_LCD::write(uint8_t c) {
 char szTemp[2]; // used to draw 1 character at a time to the C methods
 int w, h;
+static int iUnicodeCount = 0;
+static uint8_t u8Unicode0, u8Unicode1;
+
+   if (iUnicodeCount == 0) {
+       if (c >= 0x80) { // start of a multi-byte character
+           iUnicodeCount++;
+           u8Unicode0 = c;
+           return 1;
+       } 
+   } else { // middle/end of a multi-byte character
+       uint16_t u16Code;
+       if (u8Unicode0 < 0xe0) { // 2 byte char, 0-0x7ff
+           u16Code = (u8Unicode0 & 0x3f) << 6;
+           u16Code += (c & 0x3f);
+           c = spilcdUnicodeTo1252(u16Code);
+           iUnicodeCount = 0;
+       } else { // 3 byte character 0x800 and above
+           if (iUnicodeCount == 1) {
+               iUnicodeCount++; // save for next byte to arrive
+               u8Unicode1 = c;
+               return 1;
+           }
+           u16Code = (u8Unicode0 & 0x3f) << 12;
+           u16Code += (u8Unicode1 & 0x3f) << 6;
+           u16Code += (c & 0x3f);
+           c = spilcdUnicodeTo1252(u16Code);
+           iUnicodeCount = 0;
+       }
+   }
 
   if (_lcd.iWriteFlags == 0) _lcd.iWriteFlags = DRAW_TO_LCD; // default write mode
   szTemp[0] = c; szTemp[1] = 0;
