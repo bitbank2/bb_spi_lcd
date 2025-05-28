@@ -377,7 +377,7 @@ static void *mmap_bcm_register(off_t register_offset) {
 //
 uint16_t * RGBInit(BB_RGB *pRGB)
 {
-#if defined ARDUINO_ESP32S3_DEV
+#if defined CONFIG_IDF_TARGET_ESP32S3
 esp_lcd_rgb_panel_config_t panel_config;
 
    memset(&panel_config, 0, sizeof(panel_config));
@@ -428,7 +428,7 @@ esp_lcd_rgb_panel_config_t panel_config;
    return p;
 #else // not S3
    return NULL;
-#endif // ARDUINO_ESP32S3_DEV
+#endif // CONFIG_IDF_TARGET_ESP32S3
 } /* RGBInit() */
 
 //
