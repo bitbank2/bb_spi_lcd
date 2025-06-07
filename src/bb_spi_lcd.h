@@ -360,6 +360,7 @@ enum
     DISPLAY_VIEWE_2432, // 2.4" transflective 240x320
     DISPLAY_WS_CAMERA_2, // Waveshare ESP32-S3 2" LCD + camera
     DISPLAY_WS_C6_147, // Waveshare ESP32-C6 1.47" 172x320 LCD
+    DISPLAY_VPLAYER, // Kevin Darrah's ESP32-S3 Video Player board
     DISPLAY_COUNT
 };
 #if !defined(BITBANK_LCD_MODES)

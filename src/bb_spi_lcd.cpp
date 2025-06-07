@@ -97,9 +97,9 @@ struct gpiod_line *lines[64];
 //static uint8_t transfer_is_done = 1;
 static int spi_fd; // SPI handle
 #else // Arduino
-#ifdef ARDUINO_ARCH_ESP32
+#ifndef ARDUINO_ARCH_RP2040
 SPIClass *pSPI;
-#endif // ESP32
+#endif // !RP2040
 // Use the default (non DMA) SPI library for boards we don't currently support
 #if !defined(__SAMD51__) && !defined(ARDUINO_SAMD_ZERO) && !defined(ARDUINO_ARCH_RP2040)
 #define mySPI SPI
@@ -1763,10 +1763,10 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
             {
                 *d++ = *s++;
             }
-#if defined ARDUINO_ESP32S3_DEV
+#if defined CONFIG_IDF_TARGET_ESP32S3 
             Cache_WriteBack_Addr((uint32_t)&pLCD->pBackBuffer[pLCD->iOffset], iStrip*2);
 #endif
-#if defined ARDUINO_ESP32P4_DEV
+#if defined CONFIG_IDF_TARGET_ESP32P4
             esp_cache_msync(&pLCD->pBackBuffer[pLCD->iOffset], iStrip*2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 #endif
             pLCD->iOffset += iStrip*2; iOff += iStrip*2;
@@ -6153,6 +6153,16 @@ uint16_t *u16Temp = (uint16_t *)pDMA;
     if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
         usData = (usData >> 8) | (usData << 8); // swap hi/lo byte for LCD
     }
+    if (pLCD->iLCDType = LCD_VIRTUAL_MEM) { // pure memory
+        uint32_t u32 = usData | (usData << 16); // 32-bit color
+        uint32_t *p32 = (uint32_t *)pLCD->pBackBuffer;
+        y = (pLCD->iCurrentHeight * pLCD->iScreenPitch)/4;
+        for (x=0; x<y; x++) { 
+            *p32++ = u32;
+        }
+        return 0;
+    }
+
     if (pLCD->iLCDFlags & FLAGS_MEM_RESTART) {
         // special case for parllel LCD using ESP32 LCD API
         for (x=0; x<pLCD->iCurrentWidth; x++)
@@ -7632,7 +7642,7 @@ int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD
 } /* beginParallel() */
 #endif // !__LINUX__
  
-#ifdef ARDUINO_ESP32P4_DEV
+#ifdef CONFIG_IDF_TARGET_ESP32P4
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_mipi_dsi.h"
 #include "esp_lcd_panel_io.h"
@@ -7704,7 +7714,7 @@ uint16_t *jd9165_init(void)
     esp_lcd_dpi_panel_get_frame_buffer(panel_handle, 1, (void **)&pFrameBuffer, NULL, NULL);
     return pFrameBuffer;
 } /* jd9165_init() */
-#endif // ARDUINO_ESP32P4_DEV
+#endif // ESP32P4
 
 int BB_SPI_LCD::begin(int iDisplayType)
 {
@@ -7889,7 +7899,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             break;
 #endif // !__LINUX__
 
-#ifdef ARDUINO_ESP32P4_DEV
+#ifdef CONFIG_IDF_TARGET_ESP32P4
         case DISPLAY_CYD_P4_1024x600:
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.iLCDFlags = FLAGS_SWAP_COLOR; // little endian byte order
@@ -8126,8 +8136,14 @@ int BB_SPI_LCD::begin(int iDisplayType)
             begin(LCD_ST7789, FLAGS_NONE, 40000000, 45, 42, 0, 1, -1, 38, 39);
             setRotation(90);
             break;
+        case DISPLAY_VPLAYER: // 1.69" 240x280 LCD
+            _lcd.bUseDMA = 1;
+// iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin
+            begin(LCD_ST7789_280, FLAGS_NONE, 40000000, 10, 13, 14, 9, -1, 11, 12);
+            setRotation(90);
+            break;
+
         case DISPLAY_WS_LCD_169: // Waveshare 1.69" 240x280 LCD
-            memset(&_lcd, 0, sizeof(_lcd));
             _lcd.bUseDMA = 1;
 // iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin
             begin(LCD_ST7789_280, FLAGS_NONE, 40000000, 5, 4, 8, 15, -1, 7, 6);
@@ -8726,7 +8742,7 @@ inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
   return gfxFont->glyph + c;
 #endif //__AVR__
 }
-#ifdef ARDUINO_ESP32S3_DEV
+#ifdef CONFIG_IDF_TARGET_ESP32S3 
     const uint16_t u16RGBMasks[4] = {0x001f, 0x07e0, 0x07c0, 0xf800}; // B, G, R bitmasks for SIMD code
 #endif
 const uint32_t u32BlurMasks[2] = {0x07e0f81f, 0x01004008};
@@ -8737,7 +8753,7 @@ const uint32_t u32BlurMasks[2] = {0x07e0f81f, 0x01004008};
 //
 void BB_SPI_LCD::byteSwap(uint16_t *pSrc, uint16_t *pDest, int iPixelCount)
 {
-#ifdef ARDUINO_ESP32S3_DEV
+#ifdef CONFIG_IDF_TARGET_ESP32S3 
     // work with the unaligned pixels in C and the 16-byte aligned pixels in SIMD
     if (iPixelCount >= 16 && (((intptr_t)pSrc & 15) == ((intptr_t)pDest & 15))) { // only worth doing if a large group
         int i, iAlign = (intptr_t)pSrc;
@@ -8782,14 +8798,14 @@ void BB_SPI_LCD::maskedTint(BB_SPI_LCD *pSrc, BB_SPI_LCD *pMask, int x, int y, u
     
     if (!_lcd.pBackBuffer || !pSrc || !pMask || !pSrc->_lcd.pBackBuffer || !pMask->_lcd.pBackBuffer) return; // no valid memory planes
 
-#ifdef ARDUINO_ESP32S3_DEV
+#ifdef CONFIG_IDF_TARGET_ESP32S3 
 // If the source and destination are the same size, use SIMD code
     if (_lcd.iCurrentWidth == pSrc->_lcd.iCurrentWidth && _lcd.iCurrentHeight == pSrc->_lcd.iCurrentHeight) { // use SIMD code
         s3_masked_tint_be((uint16_t *)_lcd.pBackBuffer, (uint16_t *)pSrc->_lcd.pBackBuffer, (uint16_t *)pMask->_lcd.pBackBuffer, u16Tint, pSrc->_lcd.iCurrentWidth * pSrc->_lcd.iCurrentHeight, u8Alpha, u16RGBMasks);
-#if defined ARDUINO_ESP32S3_DEV
+#if defined CONFIG_IDF_TARGET_ESP32S3 
             Cache_WriteBack_Addr((uint32_t)pSrc->_lcd.pBackBuffer, pSrc->_lcd.iCurrentWidth * pSrc->_lcd.iCurrentHeight*2);
 #endif
-#if defined ARDUINO_ESP32P4_DEV
+#if defined CONFIG_IDF_TARGET_ESP32P4
             esp_cache_msync(pSrc->_lcd.pBackBuffer, pSrc->_lcd.iCurrentWidth * pSrc->_lcd.iCurrentHeight*2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 #endif
         return;
@@ -8844,7 +8860,7 @@ void BB_SPI_LCD::blurGaussian(void)
         d[0] = s[-1]; // copy first pixel unchanged
         d[w-1] = s[w]; // copy last pixel unchanged
         x = 1;
-#ifdef ARDUINO_ESP32S3_DEV
+#ifdef CONFIG_IDF_TARGET_ESP32S3 
         if ((w & 3) == 0) { // must be 8-byte aligned pitch
             s3_blur_be(s, &d[1], w, w*2, u32BlurMasks); // width must be a multiple of 4
             x = w-1; // fall through loop below
@@ -8923,7 +8939,7 @@ void BB_SPI_LCD::blurGaussian(void)
 //
 void BB_SPI_LCD::blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SPI_LCD *pDestSprite, uint8_t u8Alpha, uint16_t u16Transparent)
 {
-#ifdef ARDUINO_ESP32S3_DEV
+#ifdef CONFIG_IDF_TARGET_ESP32S3 
     s3_alphatrans_be((uint16_t *)pFGSprite->_lcd.pBackBuffer, (uint16_t *)pBGSprite->_lcd.pBackBuffer, (uint16_t *)pDestSprite->_lcd.pBackBuffer, pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight, u8Alpha, &u16Transparent, u16RGBMasks);
     Cache_WriteBack_Addr((uint32_t)pDestSprite->_lcd.pBackBuffer, pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight * 2);
 #else
@@ -8956,7 +8972,7 @@ void BB_SPI_LCD::blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SP
 //
 void BB_SPI_LCD::blendSprite(BB_SPI_LCD *pFGSprite, BB_SPI_LCD *pBGSprite, BB_SPI_LCD *pDestSprite, uint8_t u8Alpha)
 {
-#ifdef ARDUINO_ESP32S3_DEV
+#ifdef CONFIG_IDF_TARGET_ESP32S3 
     s3_alpha_blend_be((uint16_t *)pFGSprite->_lcd.pBackBuffer, (uint16_t *)pBGSprite->_lcd.pBackBuffer, (uint16_t *)pDestSprite->_lcd.pBackBuffer, pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight, u8Alpha, u16RGBMasks);
         Cache_WriteBack_Addr((uint32_t)pDestSprite->_lcd.pBackBuffer, pFGSprite->_lcd.iCurrentWidth * pFGSprite->_lcd.iCurrentHeight*2);
 #else
@@ -9067,10 +9083,10 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
                 }
             }
             u32YAcc += u32Frac;
-#if defined ARDUINO_ESP32S3_DEV
+#if defined CONFIG_IDF_TARGET_ESP32S3 
             Cache_WriteBack_Addr((uint32_t)d, cx*2);
 #endif
-#if defined ARDUINO_ESP32P4_DEV
+#if defined CONFIG_IDF_TARGET_ESP32P4
             esp_cache_msync(d, cx*2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 #endif
             d += _lcd.iCurrentWidth;
