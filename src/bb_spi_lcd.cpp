@@ -2322,6 +2322,7 @@ start_of_init:
         case LCD_ST7789_240:
         case LCD_ST7789_135:
         case LCD_ST7789_NOCS:
+        case LCD_ST7789_284:
 	{
         uint8_t iBGR = (pLCD->iLCDFlags & FLAGS_SWAP_RB) ? 8:0;
 		s = (unsigned char *)&uc240x240InitList[0];
@@ -2337,9 +2338,12 @@ start_of_init:
 	{
             pLCD->iCurrentWidth = pLCD->iWidth = 240;
             pLCD->iCurrentHeight = pLCD->iHeight = 240;
-	}
-	else if (pLCD->iLCDType == LCD_ST7789_135)
-	{
+        } else if (pLCD->iLCDType == LCD_ST7789_284) {
+            pLCD->iCurrentWidth = pLCD->iWidth = 76;
+            pLCD->iCurrentHeight = pLCD->iHeight = 284;
+            pLCD->iColStart = pLCD->iMemoryX = 82;
+            pLCD->iRowStart = pLCD->iMemoryY = 18; 
+        } else if (pLCD->iLCDType == LCD_ST7789_135) {
             pLCD->iCurrentWidth = pLCD->iWidth = 135;
             pLCD->iCurrentHeight = pLCD->iHeight = 240;
             pLCD->iColStart = pLCD->iMemoryX = 52;
@@ -4254,6 +4258,38 @@ void RM67162Init(SPILCD *pLCD)
     qspiSendCMD(pLCD, 0x51, u8Temp, 1);
 } /* RM67162Init() */
 
+void SH8601BInit(SPILCD *pLCD)
+{           
+    uint8_t u8Temp[4];
+        
+    pLCD->iCurrentWidth = pLCD->iWidth = 466;
+    pLCD->iCurrentHeight = pLCD->iHeight = 466;
+    pLCD->iMemoryX = pLCD->iColStart = 6;
+    pLCD->iMemoryY = pLCD->iRowStart = 0;
+    qspiSendCMD(pLCD, 0x11, NULL, 0); // sleep out
+    delay(120);
+    u8Temp[0] = 0x80;
+    qspiSendCMD(pLCD, 0xc4, u8Temp, 1);
+    u8Temp[0] = 0x20;
+    qspiSendCMD(pLCD, 0x53, u8Temp, 1);
+    delay(10);
+    u8Temp[0] = 0xff;
+    qspiSendCMD(pLCD, 0x63, u8Temp, 1);
+    delay(1);
+    u8Temp[0] = 0x00;
+    qspiSendCMD(pLCD, 0x51, u8Temp, 1);
+    delay(10);
+    qspiSendCMD(pLCD, 0x29, NULL, 0);
+    delay(10);
+    u8Temp[0] = 0xff;
+    qspiSendCMD(pLCD, 0x51, u8Temp, 1);
+    u8Temp[0] = 0; // MADCTL
+    qspiSendCMD(pLCD, 0x36, u8Temp, 1);
+    u8Temp[0] = 0x55; // color format RGB565
+    qspiSendCMD(pLCD, 0x3a, u8Temp, 1);
+
+} /* SH8601BInit() */
+
 void SH8601Init(SPILCD *pLCD)
 {
     uint8_t u8Temp[4];
@@ -4823,6 +4859,9 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
             break;
         case LCD_SH8601:
             SH8601Init(pLCD);
+            break;
+        case LCD_SH8601B:
+            SH8601BInit(pLCD);
             break;
         case LCD_ICNA3311:
             ICNA3311Init(pLCD);
@@ -6153,7 +6192,7 @@ uint16_t *u16Temp = (uint16_t *)pDMA;
     if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
         usData = (usData >> 8) | (usData << 8); // swap hi/lo byte for LCD
     }
-    if (pLCD->iLCDType = LCD_VIRTUAL_MEM) { // pure memory
+    if (pLCD->iLCDType == LCD_VIRTUAL_MEM) { // pure memory
         uint32_t u32 = usData | (usData << 16); // 32-bit color
         uint32_t *p32 = (uint32_t *)pLCD->pBackBuffer;
         y = (pLCD->iCurrentHeight * pLCD->iScreenPitch)/4;
@@ -8162,15 +8201,21 @@ int BB_SPI_LCD::begin(int iDisplayType)
             qspiInit(&_lcd, LCD_RM690B0, FLAGS_NONE, 40000000, 9,10,11,12,13,14,21,-1);
             break;
 
+        case DISPLAY_WS_AMOLED_143: // Waveshare 1.8" 466x466 AMOLED
+            _lcd.bUseDMA = 1; // allows DMA access
+            pinMode(42, OUTPUT); // power enable
+            digitalWrite(42, 1);
+            // CS=9, SCK=10, D0=11, D1=12, D2=13, D3=14, RST=21, BL=-1
+            qspiInit(&_lcd, LCD_SH8601B, FLAGS_NONE, 40000000, 9,10,11,12,13,14,21,-1);
+            break;
+
         case DISPLAY_WS_AMOLED_18: // Waveshare 1.8" 368x448 AMOLED
-            memset(&_lcd, 0, sizeof(_lcd));
             _lcd.bUseDMA = 1; // allows DMA access
             // CS=12, SCK=11, D0=4, D1=5, D2=6, D3=7, RST=-1, BL=-1
             qspiInit(&_lcd, LCD_SH8601, FLAGS_NONE, 32000000, 12,11,4,5,6,7,-1,-1);
             break;
         case DISPLAY_CYD_535: // 320x480 AXS15321
             // CS=45, SCK=47, D0=21, D1=48, D2=40, D3=39, RST=-1, BL=1
-            memset(&_lcd, 0, sizeof(_lcd));
             _lcd.bUseDMA = 1;
             qspiInit(&_lcd, LCD_AXS15231, FLAGS_NONE, 40000000, 45,47,21,48,40,39,-1,1);
             break;
