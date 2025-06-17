@@ -7816,6 +7816,10 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 60000000, 10, 9, -1, -1, -1, -1, 13,1);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
+        case DISPLAY_TENSTAR_S3_114:
+            spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 7, 39, 40, 45, -1, 35, 36,1);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
+            break;
         case DISPLAY_RANKIN_SENSOR:
             spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 4, 21, 22, 26, -1, 23, 18,1); // Mike's coin cell pin numbering
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);

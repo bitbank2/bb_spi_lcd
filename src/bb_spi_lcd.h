@@ -362,6 +362,7 @@ enum
     DISPLAY_WS_CAMERA_2, // Waveshare ESP32-S3 2" LCD + camera
     DISPLAY_WS_C6_147, // Waveshare ESP32-C6 1.47" 172x320 LCD
     DISPLAY_VPLAYER, // Kevin Darrah's ESP32-S3 Video Player board
+    DISPLAY_TENSTAR_S3_114, // Tenstar Robot ESP32-S3 w/1.14" ST7789 135x240 LCD
     DISPLAY_COUNT
 };
 #if !defined(BITBANK_LCD_MODES)
