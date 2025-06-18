@@ -2209,9 +2209,10 @@ char szTemp[32];
 }
 #else
 #ifdef ARDUINO_ARCH_RP2040
-  pSPI->begin();
+    pSPI->begin();
 #else
-  mySPI.begin(); // simple Arduino init (e.g. AVR)
+    mySPI.begin(); // simple Arduino init (e.g. AVR)
+    pSPI = &mySPI;
 #endif
 #ifdef ARDUINO_SAMD_ZERO
 
@@ -2654,7 +2655,6 @@ start_of_init:
 	}
 //	spilcdFill(0, 1); // erase memory
 	spilcdScrollReset(pLCD);
-   
 	return 0;
 
 } /* spilcdInit() */
