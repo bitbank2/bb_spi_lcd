@@ -17,6 +17,11 @@
 //
 //#define LOG_OUTPUT
 
+// For decompressing compressed fonts and images
+#include "Group5.h"
+#include "g5dec.inl"
+static G5DECIMAGE g5dec;
+
 //#if defined(ADAFRUIT_PYBADGE_M4_EXPRESS)
 //#define SPI SPI1
 #ifndef __LINUX__
@@ -120,7 +125,9 @@ SPIClassRP2040 *pSPI = &SPI;
 #include <bb_spi_lcd.h>
 
 #if defined( ESP_PLATFORM )
-//#include "esp_cache.h"
+#ifdef ARDUINO_ESP32P4_DEV
+#include "esp_cache.h"
+#endif // P4
 #include <esp_psram.h>
 #include <rom/cache.h>
 //#define ESP32_SPI_HOST VSPI_HOST
@@ -136,15 +143,14 @@ SPIClassRP2040 *pSPI = &SPI;
 
 volatile int iCurrentCS;
 
-#ifdef ARDUINO_ARCH_ESP32
-#include "driver/spi_master.h"
-// CS=12, SCK=17, D0=13, D1=18, D2=21, D3=14, RST=16, BL=1
 int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u8CS, uint8_t u8CLK, uint8_t u8D0, uint8_t u8D1, uint8_t u8D2, uint8_t u8D3, uint8_t u8RST, uint8_t u8LED);
 void qspiSendCMD(SPILCD *pLCD, uint8_t ucCMD, uint8_t *pParams, int iLen);
 void qspiSendDATA(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags);
 void qspiRotate(SPILCD *pLCD, int iOrient);
 void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h);
 void qspiSetBrightness(SPILCD *pLCD, uint8_t u8Brightness);
+#ifdef ARDUINO_ARCH_ESP32
+#include "driver/spi_master.h"
 static void spi_pre_transfer_callback(spi_transaction_t *t);
 static spi_device_interface_config_t devcfg;
 static spi_bus_config_t buscfg;
@@ -194,7 +200,6 @@ volatile uint8_t *pDMA;
 volatile bool transfer_is_done = true; // Done yet?
 #endif // AVR | RP2040
 #endif // !ESP32
-#define LCD_DELAY 0xff
 #ifdef __AVR__
 volatile uint8_t *outDC, *outCS; // port registers for fast I/O
 uint8_t bitDC, bitCS; // bit mask for the chosen pins
@@ -286,6 +291,19 @@ const BB_RGB rgbpanel_480x480 = {
     1 /* hsync_polarity */, 1 /* vsync_polarity */,
     480, 480,
     12000000 // speed
+};
+
+const BB_RGB rgbpanel_lilygo = {
+    -1 /* CS */, -1 /* SCK */, -1 /* SDA */,
+    -1 /* DE */, 40 /* VSYNC */, 39 /* HSYNC */, 41 /* PCLK */,
+    1 /* R0 */, 2 /* R1 */, 3 /* R2 */, 4 /* R3 */, 5 /* R4 */,
+    6 /* G0 */, 7 /* G1 */, 8 /* G2 */, 9 /* G3 */, 10 /* G4 */, 11 /* G5 */, 
+    12 /* B0 */, 13 /* B1 */, 42 /* B2 */, 46 /* B3 */, 45 /* B4 */,
+    10 /* hsync_back_porch */, 20 /* hsync_front_porch */, 8 /* hsync_pulse_width */,
+    1 /* vsync_back_porch */, 30 /* vsync_front_porch */, 2 /* vsync_pulse_width */,
+    1 /* hsync_polarity */, 1 /* vsync_polarity */,
+    480, 480,
+    6000000 // speed
 };
 
 const BB_RGB rgbpanel_UM_480x480 = {
@@ -1152,6 +1170,65 @@ const unsigned char ucGC9D01InitList[] PROGMEM = {
     0
 }; // GC9D01 160x160 round
 
+const unsigned char ucGC9203Init[] PROGMEM = {
+    1, 0xfe,
+    1, 0xef,
+    2, 0xeb, 0x14,
+    2, 0x84, 0x60,
+    2, 0x85, 0xff,
+    2, 0x86, 0xff,
+    2, 0x87, 0xff,
+    2, 0x8e, 0xff,
+    2, 0x8f, 0xff,
+    2, 0x88, 0x0a,
+    2, 0x89, 0x2d,
+    2, 0x8b, 0x80,
+    2, 0x8c, 0x01,
+    2, 0x8d, 0x01,
+    2, 0x36, 0x48,
+    2, 0x3a, 0x05,
+    5, 0x90, 0x08, 0x08, 0x08, 0x08,
+    2, 0xbd, 0x06,
+    2, 0xbc, 0x00,
+    2, 0xbb, 0x00,
+    4, 0xff, 0x60, 0x01, 0x04,
+    2, 0xc3, 0x2d,
+    2, 0xc4, 0x08,
+    2, 0xc9, 0x20,
+    2, 0xbe, 0x11,
+    3, 0xe1, 0x10, 0x0e,
+    4, 0xdf, 0x21, 0x10, 0x02,
+    3, 0xed, 0x1b, 0x0b,
+    2, 0xae, 0x77,
+    2, 0xcd, 0x63,
+    10, 0x70, 0x07, 0x07, 0x04, 0x0c, 0x07, 0x09, 0x07, 0x08, 0x03,
+    2, 0xe8, 0x32,
+    7, 0xf0, 0x4d, 0x14, 0x0a, 0x09, 0x26, 0x3d,
+    7, 0xf1, 0x52, 0x76, 0x79, 0x36, 0x37, 0x6f,
+    7, 0xf2, 0x4d, 0x13, 0x0a, 0x0a, 0x26, 0x3c,
+    7, 0xf3, 0x55, 0x96, 0xb9, 0x36, 0x37, 0xaf,
+    3, 0xb5, 0x10, 0x10,
+    11, 0x66, 0xf4, 0x00, 0x98, 0x02, 0x91, 0x80, 0x1a, 0xb0, 0x00, 0x00,
+    11, 0x67, 0x00, 0x2f, 0x00, 0x00, 0x0b, 0xa1, 0x4c, 0x5d, 0x20, 0xcd,
+    9, 0x60, 0x38, 0x14, 0x2d, 0x6d, 0x38, 0x16, 0x2d, 0x6d,
+    9, 0x61, 0x39, 0xda, 0x6d, 0x2d, 0xb8, 0x04, 0x6d, 0x6d,
+    13, 0x62, 0x38, 0x18, 0x71, 0xd7, 0x2d, 0x6d, 0x38, 0x1c, 0x71, 0xdb, 0x2d, 0x6d,
+    7, 0x63, 0x78, 0x10, 0x90, 0x04, 0x6d, 0x6d,
+    8, 0x74, 0x10, 0x85, 0x80, 0x00, 0x00, 0x4e, 0x00,
+    3, 0x98, 0x3e, 0x07,
+    3, 0x99, 0x3e, 0x07,
+    4, 0xea, 0xdb, 0x00, 0xdb,
+    3, 0xb6, 0x00, 0x60,
+    2, 0x35, 0x00,
+    1, 0x21,
+    LCD_DELAY, 120,
+    1, 0x11,
+    LCD_DELAY, 120,
+    1, 0x29,
+    1, 0x2c, 
+    0
+}; // GC9203 128x240
+
 const unsigned char ucGC9A01InitList[]PROGMEM = {
     1, 0xEF,
     2, 0xEB, 0x14,
@@ -1207,6 +1284,128 @@ const unsigned char ucGC9A01InitList[]PROGMEM = {
     LCD_DELAY, 120,
     0
 }; // GC9A01
+
+const unsigned char ucNV3007Init[] PROGMEM = {
+    2, 0xff, 0xa5,
+    1, 0x11,
+    LCD_DELAY, 120,
+    2, 0xff, 0xa5,
+    2, 0x9a, 0x08,
+    2, 0x9b, 0x08,
+    2, 0x9c, 0xb0,
+    2, 0x9d, 0x17,
+    2, 0x9e, 0xc2,
+    3, 0x8f, 0x22, 0x04,
+    2, 0x84, 0x90,
+    2, 0x83, 0x7b,
+    2, 0x85, 0x4f,
+    2, 0x6e, 0x0f,
+    2, 0x7e, 0x0f,
+    2, 0x60, 0x00,
+    2, 0x70, 0x00,
+    2, 0x6d, 0x39,
+    2, 0x7d, 0x31,
+    2, 0x61, 0x0a,
+    2, 0x71, 0x0a,
+    2, 0x6c, 0x35,
+    2, 0x7c, 0x29,
+    2, 0x62, 0x0f,
+    2, 0x72, 0x0f,
+    2, 0x68, 0x4f,
+    2, 0x78, 0x45,
+    2, 0x66, 0x33,
+    2, 0x76, 0x33,
+    2, 0x6b, 0x14,
+    2, 0x7b, 0x14,
+    2, 0x63, 0x09,
+    2, 0x73, 0x09,
+    2, 0x6a, 0x13,
+    2, 0x7a, 0x16,
+    2, 0x64, 0x08,
+    2, 0x74, 0x08,
+    2, 0x69, 0x07,
+    2, 0x79, 0x0d,
+    2, 0x65, 0x05,
+    2, 0x75, 0x05,
+    2, 0x67, 0x33,
+    2, 0x77, 0x33,
+    2, 0x6f, 0x00,
+    2, 0x7f, 0x00,
+    2, 0x50, 0x00,
+    2, 0x52, 0xd6,
+    2, 0x53, 0x04,
+    2, 0x54, 0x04,
+    2, 0x55, 0x1b,
+    2, 0x56, 0x1b,
+    4, 0xa0, 0x2a, 0x24, 0x00,
+    2, 0xa1, 0x84,
+    2, 0xa2, 0x85,
+    2, 0xa8, 0x34,
+    2, 0xa9, 0x80,
+    2, 0xaa, 0x73,
+    3, 0xab, 0x03, 0x61,
+    3, 0xac, 0x03, 0x65,
+    3, 0xad, 0x03, 0x60,
+    3, 0xae, 0x03, 0x64,
+    2, 0xb9, 0x82,
+    2, 0xba, 0x83,
+    2, 0xbb, 0x80,
+    2, 0xbc, 0x81,
+    2, 0xbd, 0x02,
+    2, 0xbe, 0x01,
+    2, 0xbf, 0x04,
+    2, 0xc0, 0x03,
+    2, 0xc4, 0x33,
+    2, 0xc5, 0x80,
+    2, 0xc6, 0x73,
+    2, 0xc7, 0x00,
+    3, 0xc8, 0x33, 0x33,
+    2, 0xc9, 0x5b,
+    2, 0xca, 0x5a,
+    2, 0xcb, 0x5d,
+    2, 0xcc, 0x5c,
+    3, 0xcd, 0x33, 0x33,
+    2, 0xce, 0x5f,
+    2, 0xcf, 0x5e,
+    2, 0xd0, 0x61,
+    2, 0xd1, 0x60,
+    5, 0xb0, 0x3a, 0x3a, 0x00, 0x00,
+    2, 0xb6, 0x32,
+    2, 0xb7, 0x80,
+    2, 0xb8, 0x73,
+    2, 0xe0, 0x00,
+    3, 0xe1, 0x03, 0x0f,
+    2, 0xe2, 0x04,
+    2, 0xe3, 0x01,
+    2, 0xe4, 0x0e,
+    2, 0xe5, 0x01,
+    2, 0xe6, 0x19,
+    2, 0xe7, 0x10,
+    2, 0xe8, 0x10,
+    2, 0xe9, 0x21,
+    2, 0xea, 0x12,
+    2, 0xeb, 0xd0,
+    2, 0xec, 0x04,
+    2, 0xed, 0x07,
+    2, 0xee, 0x07,
+    2, 0xef, 0x09,
+    2, 0xf0, 0xd0,
+    2, 0xf1, 0x0e,
+    2, 0xf9, 0x56,
+    5, 0xf2, 0x26, 0x1b, 0x0b, 0x20,
+    2, 0xec, 0x04,
+    2, 0x35, 0x00,
+    3, 0x44, 0x00, 0x10,
+    2, 0x46, 0x10,
+    2, 0xff, 0x00,
+    2, 0x3a, 0x05,
+//    2, 0x36, 0x00,
+    1, 0x11,
+    LCD_DELAY, 200,
+    1, 0x29,
+    LCD_DELAY, 150, 
+    0
+}; // LCD_NV3007
 
 const unsigned char ucGC9107InitList[]PROGMEM = {
     1, 0xEF,
@@ -1726,7 +1925,7 @@ void SPI_BitBang(SPILCD *pLCD, uint8_t *pData, int iLen, int iMode)
 static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, int iFlags)
 {
     if (iLen == 0) return;
- //   Serial.printf("myspiWrite len=%d, flags=%d\n", iLen, iFlags);
+//   Serial.printf("myspiWrite len=%d, flags=%d\n", iLen, iFlags);
 // swap DMA buffers
 #ifndef __LINUX__
     if (pDMA == pDMA0) {
@@ -1795,12 +1994,12 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
        (*pLCD->pfnDataCallback)(pBuf, iLen, iMode);
        return;
     }
-#ifdef ARDUINO_ARCH_ESP32
+#if defined( ARDUINO_ARCH_ESP32 ) || defined (ARDUINO_ARCH_RP2040)
     if (pLCD->iLCDType > LCD_QUAD_SPI) {
         qspiSendDATA(pLCD, pBuf, iLen, iFlags);
         return;
     }
-#endif // ESP32
+#endif // ESP32 / RP2040
     if (pLCD->iLCDFlags & FLAGS_BITBANG)
     {
         SPI_BitBang(pLCD, pBuf, iLen, iMode);
@@ -2092,6 +2291,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
     if (pLCD->pFont != NULL && iSPIFreq != 0) { // the structure is probably not initialized
         memset(pLCD, 0, sizeof(SPILCD));
     }   
+    pLCD->iFG = 0xffff; // default to white text color
     pDMA = pDMA0;
     pLCD->bUseDMA = bUseDMA;
     pLCD->iColStart = pLCD->iRowStart = pLCD->iMemoryX = pLCD->iMemoryY = 0;
@@ -2387,6 +2587,28 @@ start_of_init:
         s = d;
        } // GC9D01
        break;
+
+    case LCD_NV3007:
+        pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
+        pLCD->iCurrentWidth = pLCD->iWidth = 168;
+        pLCD->iCurrentHeight = pLCD->iHeight = 428;
+        pLCD->iColStart = pLCD->iMemoryX = 14;
+        pLCD->iRowStart = pLCD->iMemoryY = 0;
+        s = (unsigned char *)&ucNV3007Init[0];
+        memcpy_P(d, s, sizeof(ucNV3007Init));
+        s = d;
+        break;
+
+    case LCD_GC9203:
+        pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
+        pLCD->iCurrentWidth = pLCD->iWidth = 128;
+        pLCD->iCurrentHeight = pLCD->iHeight = 220;
+        pLCD->iColStart = pLCD->iMemoryX = 56;
+        pLCD->iRowStart = pLCD->iMemoryY = 0;
+        s = (unsigned char *)&ucGC9203Init[0];
+        memcpy_P(d, s, sizeof(ucGC9203Init));
+        s = d;
+        break;
 
     case LCD_GC9A01:
        {
@@ -3416,7 +3638,7 @@ int iLen;
 
     if (!(iFlags & DRAW_TO_LCD) || pLCD->iLCDType == LCD_VIRTUAL_MEM) return; // nothing to do
     // Only ESP32 supports QSPI for now
-#ifdef ARDUINO_ARCH_ESP32
+#if defined ( ARDUINO_ARCH_ESP32 ) || defined ( ARDUINO_ARCH_RP2040 )
     if (pLCD->iLCDType > LCD_QUAD_SPI) {
         qspiSetPosition(pLCD, x, y, w, h);
         return;
@@ -3716,7 +3938,9 @@ int iCount;
         pData += iCount;
     }
 } /* qspiSendDATA() */
+#endif
 
+#if defined (ARDUINO_ARCH_ESP32) || defined (ARDUINO_ARCH_RP2040)
 void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h)
 {
     uint8_t u8Temp[8];
@@ -3732,7 +3956,7 @@ void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h)
         u8Temp[1] = (uint8_t)x;
         u8Temp[2] = (uint8_t)(x2 >> 8);
         u8Temp[3] = (uint8_t)x2;
-        qspiSendCMD(pLCD, 0x2a, u8Temp, 8); // set x1/x2
+        qspiSendCMD(pLCD, 0x2a, u8Temp, 4); // set x1/x2
     }
     if (y != pLCD->iOldY || h != pLCD->iOldCY) {
         pLCD->iOldY = y; pLCD->iOldCY = h;
@@ -3745,6 +3969,7 @@ void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h)
         u8Temp[3] = (uint8_t)y2;
         qspiSendCMD(pLCD, 0x2b, u8Temp, 4); // set y1/y2
     }
+    qspiSendCMD(pLCD, 0x2c ,NULL, 0);
     bSetPosition = 1;
 } /* qspiSetPosition() */
 
@@ -3777,6 +4002,9 @@ void qspiRotate(SPILCD *pLCD, int iOrient)
     }
     qspiSendCMD(pLCD, 0x36, &u8Mad, 1);
 } /* qspiRotate() */
+#endif // ESP32+RP2040
+
+#ifdef ARDUINO_ARCH_ESP32
 
 void ST77916Init(SPILCD *pLCD)
 {
@@ -4032,7 +4260,7 @@ const uint8_t st77916_init[] = {
 void NV3041AInit(SPILCD *pLCD)
 {
 
-DRAM_ATTR static const uint8_t nv3041a_init[] = {
+const uint8_t nv3041a_init[] = {
     0xff, 0xa5,
     //0xE7, 0x10,
     0x35, 0x00,
@@ -4257,6 +4485,38 @@ void RM67162Init(SPILCD *pLCD)
     u8Temp[0] = 0xd0; // display brightness (max = 0xff)
     qspiSendCMD(pLCD, 0x51, u8Temp, 1);
 } /* RM67162Init() */
+
+void SH8601AInit(SPILCD *pLCD)
+{
+    uint8_t u8Temp[4];
+         
+    pLCD->iCurrentWidth = pLCD->iWidth = 390;
+    pLCD->iCurrentHeight = pLCD->iHeight = 390;
+    pLCD->iMemoryX = pLCD->iColStart = 0;
+    pLCD->iMemoryY = pLCD->iRowStart = 0;
+    qspiSendCMD(pLCD, 0x11, NULL, 0); // sleep out
+    delay(120);
+    u8Temp[0] = 0x80;
+    qspiSendCMD(pLCD, 0xc4, u8Temp, 1);
+    u8Temp[0] = 0x20;
+    qspiSendCMD(pLCD, 0x53, u8Temp, 1); 
+    delay(10);
+    u8Temp[0] = 0xff;
+    qspiSendCMD(pLCD, 0x63, u8Temp, 1);
+    delay(1);
+    u8Temp[0] = 0x00;
+    qspiSendCMD(pLCD, 0x51, u8Temp, 1);
+    delay(10);
+    qspiSendCMD(pLCD, 0x29, NULL, 0);
+    delay(10);
+    u8Temp[0] = 0xff;
+    qspiSendCMD(pLCD, 0x51, u8Temp, 1);
+    u8Temp[0] = 0; // MADCTL
+    qspiSendCMD(pLCD, 0x36, u8Temp, 1);
+    u8Temp[0] = 0x55; // color format RGB565
+    qspiSendCMD(pLCD, 0x3a, u8Temp, 1);
+
+} /* SH8601AInit() */
 
 void SH8601BInit(SPILCD *pLCD)
 {           
@@ -4860,6 +5120,9 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
         case LCD_SH8601:
             SH8601Init(pLCD);
             break;
+        case LCD_SH8601A:
+            SH8601AInit(pLCD);
+            break;
         case LCD_SH8601B:
             SH8601BInit(pLCD);
             break;
@@ -4900,7 +5163,7 @@ static void IRAM_ATTR spi_post_transfer_callback(spi_transaction_t *t)
 //    myPinWrite(iCurrentCS, 1);
 //    iCurrentCS = -1;
 }
-#endif
+#endif // ESP32
 
 #ifdef ARDUINO_SAMD_ZERO
 // Callback for end-of-DMA-transfer
@@ -5078,16 +5341,15 @@ static void Scale2Gray(uint8_t *source, int width, int iPitch)
 // at 1/2 its original size
 // A back buffer must be defined to use a transparent color for the background color
 //
-int spilcdWriteStringAntialias(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, int iFGColor, int iBGColor, int iFlags)
+int spilcdWriteStringAntialias(SPILCD *pLCD, void *pFont, int x, int y, char *szMsg, int iFGColor, int iBGColor, int iFlags)
 {
-int i, end_y, cx, dx, dy, tx, ty, c, iBitOff;
-uint8_t *s, *d, bits, /*ucMask,*/ ucClr, uc;
-GFXfont font;
-GFXglyph glyph, *pGlyph;
+int rc, i, end_y, cx, dx, dy, tx, ty, c;
+uint8_t *s, *d, ucClr;
+BB_FONT *pBBF = (BB_FONT *)pFont;
+BB_GLYPH *pGlyph;
+uint8_t *pBits;
 const uint32_t ulClrMask = 0x07E0F81F;
 uint32_t ulFG, ulBG;
-uint8_t ucTemp[64]; // enough space for a 256 pixel wide font
-uint16_t usTemp[128];
     
    if (pLCD == NULL || pFont == NULL)
       return -1;
@@ -5101,61 +5363,52 @@ uint16_t usTemp[128];
     ulFG = iFGColor | ((uint32_t)iFGColor << 16);
     ulBG = iBGColor | ((uint32_t)iBGColor << 16);
     ulFG &= ulClrMask; ulBG &= ulClrMask;
-   // in case of running on Harvard CPU, get copy of data from FLASH
-   memcpy_P(&font, pFont, sizeof(font));
-   pGlyph = &glyph;
 
    i = 0;
-   while (szMsg[i] && x < pLCD->iCurrentWidth)
-   {
-      c = szMsg[i++];
-      if (c < font.first || c > font.last) // undefined character
-         continue; // skip it
-      c -= font.first; // first char of font defined
-      memcpy_P(&glyph, &font.glyph[c], sizeof(glyph));
-      dx = x + pGlyph->xOffset/2; // offset from character UL to start drawing
+    // Point to the start of the compressed data
+    pBits = (uint8_t *)pFont;
+    pBits += sizeof(BB_FONT);
+    pBits += (pBBF->last - pBBF->first + 1) * sizeof(BB_GLYPH);
+   while (szMsg[i] && x < pLCD->iCurrentWidth) {
+       c = szMsg[i++];
+       if (c < pBBF->first || c > pBBF->last) // undefined character
+          continue; // skip it
+       c -= pBBF->first; // first char of font defined
+       pGlyph = &pBBF->glyphs[c];
+
+       dx = x + pGlyph->xOffset/2; // offset from character UL to start drawing
        cx = (pGlyph->width+1)/2;
        if (dx+cx > pLCD->iCurrentWidth)
            cx = pLCD->iCurrentWidth - dx;
       dy = y + (pGlyph->yOffset/2);
-      s = font.bitmap + pGlyph->bitmapOffset; // start of bitmap data
-      // Bitmap drawing loop. Image is MSB first and each pixel is packed next
-      // to the next (continuing on to the next character line)
-      iBitOff = 0; // bitmap offset (in bits)
-      bits = uc = 0; // bits left in this font byte
+      s = pBits + pGlyph->bitmapOffset; // start of bitmap data
       end_y = dy + (pGlyph->height+1)/2;
-//      if (dy < 0) { // skip these lines
-//          iBitOff += (pGlyph->width * (-dy));
-//          dy = 0;
-//      }
        if (iBGColor != -1) {
            spilcdSetPosition(pLCD, dx, dy, cx, end_y-dy, iFlags);
        }
-       memset(ucTemp, 0, sizeof(ucTemp));
+       ty = (pgm_read_word(&pGlyph[1].bitmapOffset) - (intptr_t)(s - pBits)); // compressed size
+        if (ty < 0 || ty > 4096) ty = 4096; // DEBUG
+       rc = g5_decode_init(&g5dec, pGlyph->width, pGlyph->height, s, ty);
+       if (rc != G5_SUCCESS) {
+            return -1; // corrupt data?
+       }
        for (ty=0; ty<pGlyph->height; ty++) {
-         d = &ucTemp[(ty & 1) * (sizeof(ucTemp)/2)]; // internal buffer dest
-         for (tx=0; tx<pGlyph->width; tx++) {
-            if (bits == 0) { // need to read more font data
-               uc = pgm_read_byte(&s[iBitOff>>3]); // get more font bitmap data
-               bits = 8;
-               iBitOff += bits;
-            } // if we ran out of bits
-            if (uc & 0x80) { // set the pixel
-                d[(tx>>3)] |= (0x80 >> (tx & 7));
-            }
-            bits--; // next bit
-            uc <<= 1;
-         } // for x
+           d = &ucRXBuf[(ty & 1) * (sizeof(ucRXBuf)/2)]; // internal buffer dest
+           g5_decode_line(&g5dec, d);
            if ((ty & 1) || ty == pGlyph->height-1) {
                uint8_t *pg; // pointer to gray source pixels
                uint16_t *pus;
                uint32_t ulAlpha, ulPixel;
-               //int j;
                const uint8_t ucClrConvert[4] = {0,5,11,16};
+               if (pGlyph->width & 1) { // make sure odd width doesn't have any artifacts when turned to gray
+                   tx = pGlyph->width;
+                   ucRXBuf[(tx>>3)] &= ~(0x80 >> (tx & 7));
+                   ucRXBuf[(tx>>3) + sizeof(ucRXBuf)/2] &= ~(0x80 >> (tx & 7));
+               }
                // Convert this pair of lines to grayscale output
-               Scale2Gray(ucTemp, pGlyph->width, sizeof(ucTemp)/2);
+               Scale2Gray(ucRXBuf, pGlyph->width, sizeof(ucRXBuf)/2);
                // the Scale2Gray code writes the bits horizontally; crop and convert them for the internal memory format
-               pg = ucTemp;
+               pg = ucRXBuf;
                ucClr = *pg++;
                if (iBGColor == -1) { // transparent
                    pus = (uint16_t *)&pLCD->pBackBuffer[((dy+(ty/2)) * pLCD->iScreenPitch) + (dx*2)];
@@ -5174,7 +5427,7 @@ uint16_t usTemp[128];
                            ucClr = *pg++; // get 4 more pixels
                    } // for tx
                } else { // draw to the display
-                   pus = usTemp;
+                   pus = (uint16_t *)ucTXBuf;
                    for (tx=0; tx<cx; tx++) {
                        ulAlpha = ucClrConvert[((ucClr & 0xc0) >> 6)]; // 0-3 scaled from 0 to 100% in thirds
                        ulPixel = ((ulFG * ulAlpha) + (ulBG * (16-ulAlpha))) >> 4;
@@ -5185,9 +5438,8 @@ uint16_t usTemp[128];
                        if ((tx & 3) == 3)
                            ucClr = *pg++; // get 4 more pixels
                    } // for tx
-                   myspiWrite(pLCD, (uint8_t *)usTemp, cx*sizeof(uint16_t), MODE_DATA, iFlags);
+                   myspiWrite(pLCD, (uint8_t *)ucTXBuf, cx*sizeof(uint16_t), MODE_DATA, iFlags);
                }
-               memset(ucTemp, 0, sizeof(ucTemp));
            }
       } // for y
       x += pGlyph->xAdvance/2; // width of this character
@@ -5196,7 +5448,7 @@ uint16_t usTemp[128];
     pLCD->iCursorY = y;
    return 0;
 } /* spilcdWriteStringAntialias() */
-// 
+//
 // Convert a single Unicode character into codepage 1252 (extended ASCII)
 // 
 static uint8_t spilcdUnicodeTo1252(uint16_t u16CP)
@@ -5324,15 +5576,18 @@ uint16_t u16CP; // 16-bit codepoint encoded by the multi-byte sequence
 //
 // Draw a string in a proportional font you supply
 //
-int spilcdWriteStringCustom(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, int usFGColor, int usBGColor, int bBlank, int iFlags)
+int spilcdWriteStringCustom(SPILCD *pLCD, void *pFont, int x, int y, char *szMsg, int usFGColor, int usBGColor, int bBlank, int iFlags)
 {
-int i, /*j, iLen, */ k, dx, dy, cx, cy, c, iBitOff;
-int tx, ty;
-uint8_t *s, bits, uc;
-GFXfont font;
-GFXglyph *pGlyph;
+int i, rc, w, h, j, k, dx, dy, cx, cy, c;
+int tx, ty, iSkip;
+uint8_t first, last, *s, bits, uc, *pBits;
+BB_FONT *pBBF;
+BB_FONT_SMALL *pBBFS;
+BB_GLYPH *pGlyph;
+BB_GLYPH_SMALL *pSmallGlyph;
 uint16_t *d;
 uint8_t szExtMsg[256];
+uint16_t u16FontType;
     
    if (pFont == NULL)
       return -1;
@@ -5340,10 +5595,19 @@ uint8_t szExtMsg[256];
         x = pLCD->iCursorX;
     if (y == -1)
         y = pLCD->iCursorY;
-    if (x < 0)
-        return -1;
-    // in case of running on AVR, get copy of data from FLASH
-    memcpy_P(&font, pFont, sizeof(font));
+// Determine if we're using a small or large font
+    u16FontType = pgm_read_word(pFont);
+    if (u16FontType == BB_FONT_MARKER) {
+        pBBF = (BB_FONT *)pFont;
+        pBBFS = NULL;
+        first = pgm_read_byte(&pBBF->first);
+        last = pgm_read_byte(&pBBF->last);
+    } else {
+        pBBFS = (BB_FONT_SMALL *)pFont;
+        pBBF = NULL;
+        first = pgm_read_byte(&pBBFS->first);
+        last = pgm_read_byte(&pBBFS->last);
+    }
     if (szMsg[1] == 0 && szMsg[0] >= 0x80) { // single byte means we're coming from the Arduino write() method with pre-converted extended ASCII
         szExtMsg[0] = szMsg[0]; szExtMsg[1] = 0;
     } else {
@@ -5355,151 +5619,209 @@ uint8_t szExtMsg[256];
            usBGColor = (usBGColor >> 8) | (usBGColor << 8);
        }
    }
+    // Point to the start of the compressed data
+    if (pBBF) { // large font
+        pBits = (uint8_t *)pFont;
+        pBits += sizeof(BB_FONT);
+        pBits += (pgm_read_byte(&pBBF->last) - pgm_read_byte(&pBBF->first) + 1) * sizeof(BB_GLYPH);
+    } else {  // small font
+        pBits = (uint8_t *)pFont;
+        pBits += sizeof(BB_FONT_SMALL);
+        pBits += (pgm_read_byte(&pBBFS->last) - pgm_read_byte(&pBBFS->first) + 1) * sizeof(BB_GLYPH_SMALL);
+    }
    i = 0;
    while (szExtMsg[i] && x < pLCD->iCurrentWidth)
    {
       c = szExtMsg[i++];
-      if (c < font.first || c > font.last) // undefined character
+      if (c < first || c > last) // undefined character
          continue; // skip it
-      c -= font.first; // first char of font defined
-      pGlyph = &font.glyph[c];
-      // set up the destination window (rectangle) on the display
-      dx = x + pGlyph->xOffset; // offset from character UL to start drawing
-      dy = y + pGlyph->yOffset;
-      cx = pGlyph->width;
-      cy = pGlyph->height;
-      iBitOff = 0; // bitmap offset (in bits)
-      if (dy + cy > pLCD->iCurrentHeight)
-         cy = pLCD->iCurrentHeight - dy; // clip bottom edge
-      else if (dy < 0) {
-         cy += dy;
-         iBitOff += (pGlyph->width * (-dy));
-         dy = 0;
+      c -= first; // first char of font defined
+      iSkip = 0; // number of lines to skip for clipping the top of the char
+      if (pBBF) { // big font
+          pGlyph = &pBBF->glyphs[c];
+          // set up the destination window (rectangle) on the display
+          dx = x + pGlyph->xOffset; // offset from character UL to start drawing
+          dy = y + pGlyph->yOffset;
+          w = cx = pGlyph->width;
+          h = cy = pGlyph->height;
+          if (dy + cy > pLCD->iCurrentHeight)
+              cy = pLCD->iCurrentHeight - dy; // clip bottom edge
+          else if (dy < 0) {
+              cy += dy;
+              iSkip = -dy;
+              dy = 0;
+          }
+      } else { // small font
+          pSmallGlyph = &pBBFS->glyphs[c];
+          // set up the destination window (rectangle) on the display
+          dx = x + pSmallGlyph->xOffset; // offset from character UL to start drawing
+          dy = y + pSmallGlyph->yOffset;
+          w = cx = pSmallGlyph->width;
+          h = cy = pSmallGlyph->height;
+          if (dy + cy > pLCD->iCurrentHeight)
+              cy = pLCD->iCurrentHeight - dy; // clip bottom edge
+          else if (dy < 0) {
+              cy += dy;
+              iSkip = -dy;
+              dy = 0;
+          }
       }
-      if (dx + cx > pLCD->iCurrentWidth)
-         cx = pLCD->iCurrentWidth - dx; // clip right edge
-      s = font.bitmap + pGlyph->bitmapOffset; // start of bitmap data
-      // Bitmap drawing loop. Image is MSB first and each pixel is packed next
-      // to the next (continuing on to the next character line)
-      bits = uc = 0; // bits left in this font byte
-
-      if (bBlank) { // erase the areas around the char to not leave old bits
-         int miny, maxy;
-         c = '0' - font.first;
-         miny = y + pGlyph->yOffset;
-         c = 'y' - font.first;
-         maxy = miny + pGlyph->height;
-         if (maxy > pLCD->iCurrentHeight)
-            maxy = pLCD->iCurrentHeight;
-         cx = pGlyph->xAdvance;
-         if (cx + x > pLCD->iCurrentWidth) {
-            cx = pLCD->iCurrentWidth - x;
-         }
-         // Serial.println("Blank");
-         spilcdSetPosition(pLCD, x, miny, cx, maxy-miny, iFlags);
-            // blank out area above character
-//            cy = font.yAdvance - pGlyph->height;
-//            for (ty=miny; ty<miny+cy && ty < maxy; ty++) {
-//               for (tx=0; tx<cx; tx++)
-//                  u16Temp[tx] = usBGColor;
-//               myspiWrite(pLCD, (uint8_t *)u16Temp, cx*sizeof(uint16_t), MODE_DATA, iFlags);
-//            } // for ty
-            // character area (with possible padding on L+R)
-            for (ty=0; ty<pGlyph->height && ty+miny < maxy; ty++) {
-               d = (uint16_t *)ucRXBuf;
-               for (tx=0; tx<pGlyph->xOffset && tx < cx; tx++) { // left padding
-                  *d++ = usBGColor;
+       if (dx >= 0) { // character visible?
+           if (dx + cx > pLCD->iCurrentWidth)
+               cx = pLCD->iCurrentWidth - dx; // clip right edge
+           if (pBBF) { // big font
+               s = pBits + pGlyph->bitmapOffset; // start of bitmap data
+               ty = pGlyph[1].bitmapOffset - (intptr_t)(s - pBits); // compressed size
+           } else { // small font
+               s = pBits + pSmallGlyph->bitmapOffset; // start of bitmap data
+               ty = pSmallGlyph[1].bitmapOffset - (intptr_t)(s - pBits); // compressed size
+           }
+           if (ty < 0 || ty > 4096) ty = 4096; // DEBUG
+           rc = g5_decode_init(&g5dec, w, h, s, ty);
+           if (rc != G5_SUCCESS) {
+               return -1; // corrupt data?
+           }
+           if (bBlank) { // erase the areas around the char to not leave old bits
+               int miny, maxy;
+               c = '0' - first;
+               if (pBBF) {
+                   cx = pGlyph->xAdvance;
+                   miny = y + pGlyph->yOffset;
+               } else {
+                   cx = pSmallGlyph->xAdvance;
+                   miny = y + pSmallGlyph->yOffset;
                }
-            // character bitmap (center area)
-               for (tx=0; tx<pGlyph->width; tx++) {
-                  if (bits == 0) { // need more data
-                     uc = pgm_read_byte(&s[iBitOff>>3]);
-                     bits = 8;
-                     iBitOff += bits;
-                  }
-                  if (tx + pGlyph->xOffset < cx) {
-                     *d++ = (uc & 0x80) ? usFGColor : usBGColor;
-                  }
-                  bits--;
-                  uc <<= 1;
-               } // for tx
-               // right padding
-               k = pGlyph->xAdvance - (int)(d - (uint16_t *)ucRXBuf); // remaining amount
-               for (tx=0; tx<k && (tx+pGlyph->xOffset+pGlyph->width) < cx; tx++)
-                  *d++ = usBGColor;
-               myspiWrite(pLCD, ucRXBuf, cx*sizeof(uint16_t), MODE_DATA, iFlags);
-            } // for ty
-            // padding below the current character
-            ty = y + pGlyph->yOffset + pGlyph->height;
-            for (; ty < maxy; ty++) {
-               for (tx=0; tx<cx; tx++)
-                  ucRXBuf[tx] = usBGColor;
-               myspiWrite(pLCD, ucRXBuf, cx*sizeof(uint16_t), MODE_DATA, iFlags);
-            } // for ty
-      } else if (usFGColor == usBGColor || usBGColor == -1) { // transparent
-          int iCount; // opaque pixel count
-          //Serial.println("Transparent");
-          d = (uint16_t *)ucRXBuf;
-          for (iCount=0; iCount < cx; iCount++)
-              d[iCount] = usFGColor; // set up a line of solid color
-          iCount = 0; // number of sequential opaque pixels
-             for (ty=0; ty<cy; ty++) {
-             for (tx=0; tx<pGlyph->width; tx++) {
-                if (bits == 0) { // need to read more font data
-                   uc = pgm_read_byte(&s[iBitOff>>3]); // get more font bitmap data
-                   bits = 8 - (iBitOff & 7); // we might not be on a byte boundary
-                   iBitOff += bits; // because of a clipped line
-                   uc <<= (8-bits);
-                } // if we ran out of bits
-                if (tx < cx) {
-                    if (uc & 0x80) {
-                        iCount++; // one more opaque pixel
-                    } else { // any opaque pixels to write?
-                        if (iCount) { // send this line segment to the display
-                            spilcdSetPosition(pLCD, dx+tx-iCount, dy+ty, iCount, 1, iFlags);
-                            myspiWrite(pLCD, ucRXBuf, iCount*sizeof(uint16_t), MODE_DATA, iFlags);
-                            iCount = 0;
-                        } // if opaque pixels to write
-                    } // if transparent pixel hit
-                }
-                bits--; // next bit
-                uc <<= 1;
-             } // for tx
-                 if (iCount) { // draw any visible pixels left on the line
-                     spilcdSetPosition(pLCD, dx+tx-iCount, dy+ty, iCount, 1, iFlags);
-                     myspiWrite(pLCD, ucRXBuf, iCount*sizeof(uint16_t), MODE_DATA, iFlags);
-                     iCount = 0;
-                 }
-             } // for ty
-       // quicker drawing
-      } else { // just draw the current character box fast
-         spilcdSetPosition(pLCD, dx, dy, cx, cy, iFlags);
-            d = (uint16_t *)ucRXBuf; // point to start of output buffer
-            for (ty=0; ty<cy; ty++) {
-            for (tx=0; tx<pGlyph->width; tx++) {
-               if (bits == 0) { // need to read more font data
-                  uc = pgm_read_byte(&s[iBitOff>>3]); // get more font bitmap data
-                  bits = 8 - (iBitOff & 7); // we might not be on a byte boundary
-                  iBitOff += bits; // because of a clipped line
-                  uc <<= (8-bits);
-                  k = (int)(d-(uint16_t *)ucRXBuf); // number of words in output buffer
-                  if (k >= (int)sizeof(ucRXBuf)/4) { // time to write it
-                     myspiWrite(pLCD, ucRXBuf, k*sizeof(uint16_t), MODE_DATA, iFlags);
-                     d = (uint16_t *)ucRXBuf;
-                  }
-               } // if we ran out of bits
-               if (tx < cx) {
-                  *d++ = (uc & 0x80) ? usFGColor : usBGColor;
+               c = 'y' - first;
+               maxy = miny + h;
+               if (maxy > pLCD->iCurrentHeight)
+                   maxy = pLCD->iCurrentHeight;
+               if (cx + x > pLCD->iCurrentWidth) {
+                   cx = pLCD->iCurrentWidth - x;
                }
-               bits--; // next bit
-               uc <<= 1;
-            } // for tx
-            } // for ty
-            k = (int)(d-(uint16_t *)ucRXBuf);
-            if (k) // write any remaining data
-               myspiWrite(pLCD, ucRXBuf, k*sizeof(uint16_t), MODE_DATA, iFlags);
-      } // quicker drawing
-      x += pGlyph->xAdvance; // width of this character
+               // Serial.println("Blank");
+               spilcdSetPosition(pLCD, x, miny, cx, maxy-miny, iFlags);
+               for (ty=0; ty<h && ty+miny < maxy; ty++) {
+                   d = (uint16_t *)ucRXBuf;
+                   g5_decode_line(&g5dec, ucTXBuf);
+                   if (iSkip) { // clip amount of the top
+                       iSkip--;
+                       ty--; // not counted in height calculation
+                       continue;
+                   }
+                   s = ucTXBuf;
+                   bits = 0;
+                   k = (pBBF) ? pGlyph->xOffset : pSmallGlyph->xOffset;
+                   for (tx=0; tx<k && tx < cx; tx++) { // left padding
+                       *d++ = usBGColor;
+                   }
+                   // Character bitmap (center area)
+                   for (tx=0; tx<w; tx++) {
+                       if (bits == 0) { // need more data
+                           uc = *s++;
+                           bits = 8;
+                       }
+                       if (tx + k < cx) {
+                           *d++ = (uc & 0x80) ? usFGColor : usBGColor;
+                       }
+                       bits--;
+                       uc <<= 1;
+                   } // for tx
+                   // right padding
+                   k = (pBBF) ? pGlyph->xAdvance : pSmallGlyph->xAdvance;
+                   j = (pBBF) ? pGlyph->xOffset : pSmallGlyph->xOffset;
+                   k = k - (int)(d - (uint16_t *)ucRXBuf); // remaining amount
+                   for (tx=0; tx<k && (tx+j+w) < cx; tx++)
+                       *d++ = usBGColor;
+                   myspiWrite(pLCD, ucRXBuf, cx*sizeof(uint16_t), MODE_DATA, iFlags);
+               } // for ty
+               // padding below the current character
+               if (pBBF) {
+                   ty = y + pGlyph->yOffset + pGlyph->height;
+               } else {
+                   ty = y + pSmallGlyph->yOffset + pSmallGlyph->height;
+               }
+               for (; ty < maxy; ty++) {
+                   for (tx=0; tx<cx; tx++)
+                       ucRXBuf[tx] = usBGColor;
+                   myspiWrite(pLCD, ucRXBuf, cx*sizeof(uint16_t), MODE_DATA, iFlags);
+               } // for ty
+           } else if (usFGColor == usBGColor || usBGColor == -1) { // transparent
+               int iCount; // opaque pixel count
+               //Serial.println("Transparent");
+               for (ty=0; ty<cy; ty++) {
+                   d = (uint16_t *)ucRXBuf;
+                   g5_decode_line(&g5dec, ucTXBuf);
+                   if (iSkip) { // clip amount of the top
+                       iSkip--;
+                       ty--; // not counted in height calculation
+                       continue; 
+                   }
+                   s = ucTXBuf;
+                   bits = 0;
+                   for (tx=0; tx<cx; tx++) {
+                       if (bits == 0) { // need to read more font data
+                           uc = *s++; // get more font bitmap data
+                           bits = 8;
+                       } // if we ran out of bits
+                       if (uc & 0x80) {
+                           *d++ = usFGColor; // one more opaque pixel
+                       } else { // any opaque pixels to write?
+                           if (d != (uint16_t *)ucRXBuf) { // send this line segment to the display
+                               iCount = (int)((intptr_t)d - (intptr_t)ucRXBuf);
+                               iCount >>= 1;
+                               spilcdSetPosition(pLCD, dx+tx-iCount, dy+ty, iCount, 1, iFlags);
+                               myspiWrite(pLCD, ucRXBuf, iCount*2, MODE_DATA, iFlags);
+                               d = (uint16_t *)ucRXBuf;
+                           } // if opaque pixels to write
+                       } // if transparent pixel hit
+                       bits--; // next bit
+                       uc <<= 1;
+                   } // for tx
+                   if (d != (uint16_t *)ucRXBuf) { // draw any visible pixels left on the line
+                       iCount = (int)((intptr_t)d - (intptr_t)ucRXBuf);
+                       iCount >>= 1;
+                       spilcdSetPosition(pLCD, dx+tx-iCount, dy+ty, iCount, 1, iFlags);
+                       myspiWrite(pLCD, ucRXBuf, iCount*2, MODE_DATA, iFlags);
+                   }
+               } // for ty
+               // quicker drawing
+           } else { // just draw the current character box fast
+               spilcdSetPosition(pLCD, dx, dy, cx, cy, iFlags);
+               d = (uint16_t *)ucRXBuf; // point to start of output buffer
+               for (ty=0; ty<cy; ty++) {
+                   g5_decode_line(&g5dec, ucTXBuf);
+                   if (iSkip) { // clip amount of the top
+                       iSkip--;
+                       ty--; // not counted in height calculation
+                       continue; 
+                   }
+                   s = ucTXBuf;
+                   bits = 0;
+                   for (tx=0; tx<cx; tx++) {
+                       if (bits == 0) { // need to read more font data
+                           uc = *s++; // get more font bitmap data
+                           bits = 8;
+                           k = (int)(d-(uint16_t *)ucRXBuf); // number of words in output buffer
+                           if (k >= (int)sizeof(ucRXBuf)/4) { // time to write it
+                               myspiWrite(pLCD, ucRXBuf, k*sizeof(uint16_t), MODE_DATA, iFlags);
+                               d = (uint16_t *)ucRXBuf;
+                           }
+                       } // if we ran out of bits
+                       *d++ = (uc & 0x80) ? usFGColor : usBGColor;
+                       bits--; // next bit
+                       uc <<= 1;
+                   } // for tx
+               } // for ty
+               k = (int)(d-(uint16_t *)ucRXBuf);
+               if (k) // write any remaining data
+                   myspiWrite(pLCD, ucRXBuf, k*sizeof(uint16_t), MODE_DATA, iFlags);
+           } // quicker drawing
+       } // character is visible
+      if (pBBF) {
+          x += pGlyph->xAdvance; // width of this character
+      } else {
+          x += pSmallGlyph->xAdvance;
+      }
    } // while drawing characters
     pLCD->iCursorX = x;
     pLCD->iCursorY = y;
@@ -5508,12 +5830,12 @@ uint8_t szExtMsg[256];
 //
 // Get the width of text in a custom font
 //
-void spilcdGetStringBox(GFXfont *pFont, char *szMsg, int *width, int *top, int *bottom)
+void spilcdGetStringBox(void *pFont, char *szMsg, int *width, int *top, int *bottom)
 {
 int cx = 0;
 int c, i = 0;
-GFXfont font;
-GFXglyph glyph, *pGlyph;
+BB_FONT *pBBF = (BB_FONT *)pFont;
+BB_GLYPH *pGlyph;
 int miny, maxy;
 uint8_t szExtMsg[256];
 
@@ -5521,17 +5843,14 @@ uint8_t szExtMsg[256];
       return;
    spilcdUnicodeString(szMsg, szExtMsg); // convert to extended ASCII
 
-   // in case of running on AVR, get copy of data from FLASH
-   memcpy_P(&font, pFont, sizeof(font));
-   pGlyph = &glyph;
    if (width == NULL || top == NULL || bottom == NULL || pFont == NULL || szMsg == NULL) return; // bad pointers
    miny = 1000; maxy = 0;
    while (szExtMsg[i]) {
       c = szExtMsg[i++];
-      if (c < font.first || c > font.last) // undefined character
+      if (c < pBBF->first || c > pBBF->last) // undefined character
          continue; // skip it
-      c -= font.first; // first char of font defined
-      memcpy_P(&glyph, &font.glyph[c], sizeof(glyph));
+      c -= pBBF->first; // first char of font defined
+      pGlyph = &pBBF->glyphs[c];
       cx += pGlyph->xAdvance;
       if (pGlyph->yOffset < miny) miny = pGlyph->yOffset;
       if (pGlyph->height+pGlyph->yOffset > maxy) maxy = pGlyph->height+pGlyph->yOffset;
@@ -6114,7 +6433,7 @@ int bX=0, bY=0, bV=0;
    if (pLCD->iCMDType == CMD_TYPE_SITRONIX_8BIT)
    {
       uint8_t uc = 0;
-       if (pLCD->iLCDType == LCD_JD9613 || pLCD->iLCDType == LCD_ILI9342) // x is reversed
+       if (pLCD->iLCDType == LCD_GC9203 || pLCD->iLCDType == LCD_JD9613 || pLCD->iLCDType == LCD_ILI9342) // x is reversed
            bX = !bX;
       if (bY) uc |= 0x80;
       if (bX) uc |= 0x40;
@@ -6188,7 +6507,9 @@ int x, y;
 uint16_t *u16Temp = (uint16_t *)pDMA;
 
     // make sure we're in landscape mode to use the correct coordinates
-    spilcdScrollReset(pLCD);
+    if (pLCD->iLCDType < LCD_QUAD_SPI) {
+        spilcdScrollReset(pLCD);
+    }
     if (!(pLCD->iLCDFlags & FLAGS_SWAP_COLOR)) {
         usData = (usData >> 8) | (usData << 8); // swap hi/lo byte for LCD
     }
@@ -6863,7 +7184,11 @@ int spilcdAllocBackbuffer(SPILCD *pLCD)
     if (pLCD->pBackBuffer != NULL) // already allocated
         return -1;
     pLCD->iScreenPitch = pLCD->iCurrentWidth * 2;
+#ifdef BOARD_HAS_PSRAM
+    pLCD->pBackBuffer = (uint8_t *)ps_malloc(pLCD->iScreenPitch * pLCD->iCurrentHeight);
+#else
     pLCD->pBackBuffer = (uint8_t *)malloc(pLCD->iScreenPitch * pLCD->iCurrentHeight);
+#endif
     if (pLCD->pBackBuffer == NULL) // no memory
         return -1;
     memset(pLCD->pBackBuffer, 0, pLCD->iScreenPitch * pLCD->iCurrentHeight);
@@ -7396,15 +7721,14 @@ uint8_t ucTemp[4];
         pRXBuf[i] = ucIn; // store the received data
         } // for each byte
     } else { // shared SPI bus
-#ifdef ARDUINO_ARCH_ESP32
-        spi_transaction_t t;
+#ifdef ARDUINO
         memcpy(pRXBuf, ucTemp, iLen); // Arduino only allows duplex overwrite
         digitalWrite(pLCD->iRTCS, LOW);
         pLCD->pSPI->beginTransaction(SPISettings(2000000, MSBFIRST, 0));
         pLCD->pSPI->transfer(pRXBuf, iLen);
         pLCD->pSPI->endTransaction();
         digitalWrite(pLCD->iRTCS, HIGH);
-#endif // ESP32
+#endif // ARDUINO
     }
 #endif // !__LINUX__   
 } /* rtSPIXfer() */
@@ -7649,7 +7973,11 @@ uint8_t c, *s = (uint8_t *)pCmdList;
 
 #ifndef __LINUX__
 // start with the SPI bus initialized externally
+#ifdef ARDUINO_ARCH_RP2040
+int BB_SPI_LCD::begin(int iType, int iFlags, SPIClassRP2040 *pExtSPI, int iCSPin, int iDCPin, int iResetPin, int iLEDPin)
+#else
 int BB_SPI_LCD::begin(int iType, int iFlags, SPIClass *pExtSPI, int iCSPin, int iDCPin, int iResetPin, int iLEDPin)
+#endif
 {
     pSPI = pExtSPI; // already initialized
     return spilcdInit(&_lcd, iType, iFlags, -1, iCSPin, iDCPin, iResetPin, iLEDPin, -1, -1, -1, 0); 
@@ -7722,7 +8050,8 @@ uint16_t *jd9165_init(void)
     digitalWrite(LCD_LED, HIGH); // turn on LCD backlight
     // 首先创建 MIPI DSI 总线，它还将初始化 DSI PHY
     esp_lcd_dsi_bus_handle_t mipi_dsi_bus;
-    esp_lcd_dsi_bus_config_t bus_config = JD9165_PANEL_BUS_DSI_2CH_CONFIG();
+    esp_lcd_dsi_bus_config_t bus_config = ST7701_PANEL_BUS_DSI_2CH_CONFIG();
+//    esp_lcd_dsi_bus_config_t bus_config = JD9165_PANEL_BUS_DSI_2CH_CONFIG();
     ESP_ERROR_CHECK(esp_lcd_new_dsi_bus(&bus_config, &mipi_dsi_bus));
     
     ESP_LOGI("bb_spi_lcd", "Install MIPI DSI LCD control panel");
@@ -7731,7 +8060,8 @@ uint16_t *jd9165_init(void)
     
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_dbi(mipi_dsi_bus, &dbi_config, &io_handle));
     // 创建JD9165控制面板
-    esp_lcd_dpi_panel_config_t dpi_config = JD9165_1024_600_PANEL_60HZ_DPI_CONFIG(MIPI_DPI_PX_FORMAT);
+    esp_lcd_dpi_panel_config_t dpi_config = ST7701_480_800_PANEL_60HZ_DPI_CONFIG(MIPI_DPI_PX_FORMAT);
+    //esp_lcd_dpi_panel_config_t dpi_config = JD9165_1024_600_PANEL_60HZ_DPI_CONFIG(MIPI_DPI_PX_FORMAT);
     
     jd9165_vendor_config_t vendor_config = {
         .mipi_config = {
@@ -7740,7 +8070,7 @@ uint16_t *jd9165_init(void)
         },
     };
     const esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = LCD_RST,
+        .reset_gpio_num = GPIO_NUM_5, //LCD_RST,
         .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = LCD_BIT_PER_PIXEL,
         .vendor_config = &vendor_config,
@@ -7754,6 +8084,156 @@ uint16_t *jd9165_init(void)
     return pFrameBuffer;
 } /* jd9165_init() */
 #endif // ESP32P4
+const uint8_t st7701s_init_commands[] = {
+   6, 0xff, 0x77, 0x01, 0x00, 0x00, 0x13,
+   2, 0xef, 0x08,
+   6, 0xff, 0x77, 0x01, 0x00, 0x00, 0x10,
+   3, 0xc0, 0x3b, 0x00, // Display Line Setting
+   3, 0xc1, 0x0b, 0x02, // Porch Control
+   4, 0xc2, 0x30, 0x02, 0x37,
+   2, 0xcc, 0x10,
+  17, 0xb0, 0x00, 0x0f, 0x16, 0x0e, 0x11, 0x07, 0x09, 0x09, 0x08, 0x23, 0x05, 0x11, 0x0f, 0x28, 0x2d, 0x18,
+  17, 0xb1, 0x00, 0x0f, 0x16, 0x0e, 0x11, 0x07, 0x09, 0x08, 0x09, 0x23, 0x05, 0x11, 0x0f, 0x28, 0x2d, 0x18,
+   6, 0xff, 0x77, 0x01, 0x00, 0x00, 0x11,
+   2, 0xb0, 0x4d,
+   2, 0xb1, 0x33,
+   2, 0xb2, 0x87,
+   2, 0xb5, 0x4b,
+   2, 0xb7, 0x8c,
+   2, 0xb8, 0x20,
+   2, 0xc1, 0x78,
+   2, 0xc2, 0x78,
+   2, 0xd0, 0x88,
+   4, 0xe0, 0x00, 0x00, 0x02,
+  12, 0xe1, 0x02, 0xf0, 0x00, 0x00, 0x03, 0xf0, 0x00, 0x00, 0x00, 0x44, 0x44,
+  13, 0xe2, 0x10, 0x10, 0x40, 0x40, 0xf2, 0xf0, 0x00, 0x00, 0xf2, 0xf0, 0x00, 0x00,
+   5, 0xe3, 0x00, 0x00, 0x11, 0x11,
+   3, 0xe4, 0x44, 0x44,
+  17, 0xe5, 0x07, 0xef, 0xf0, 0xf0, 0x09, 0xf1, 0xf0, 0xf0, 0x03, 0xf3, 0xf0, 0xf0, 0x05, 0xed, 0xf0, 0xf0,
+   5, 0xe6, 0x00, 0x00, 0x11, 0x11,
+   3, 0xe7, 0x44, 0x44,
+  17, 0xe8, 0x08, 0xf0, 0xf0, 0xf0, 0x0a, 0xf2, 0xf0, 0xf0, 0x04, 0xf4, 0xf0, 0xf0, 0x06, 0xee, 0xf0, 0xf0,
+   8, 0xeb, 0x00, 0x00, 0xe4, 0xe4, 0x44, 0x88, 0x40,
+   3, 0xec, 0x78, 0x00,
+  17, 0xed, 0x20, 0xf9, 0x87, 0x76, 0x65, 0x54, 0x4f, 0xff, 0xff, 0xf4, 0x45, 0x56, 0x67, 0x78, 0x9f, 0x02,
+   7, 0xef, 0x10, 0x0d, 0x04, 0x08, 0x3f, 0x1f,
+   2, 0x3a, 0x55,
+   2, 0x36, 0x08,
+   1, 0x11,
+   1, 0x29, // display on
+0
+};
+//
+// Set a specific pin's mode
+//
+static uint8_t ioRegs[8] = {0};
+
+void PCA9535Mode(uint8_t pin, uint8_t mode)
+{
+    const uint8_t port = pin / 8;
+    
+    pin &= 7;
+    if (mode == INPUT) {
+        ioRegs[6 + port] |= (1 << pin);
+    } else {
+        ioRegs[6 + port] &= ~(1 << pin);
+    }
+    Wire.beginTransmission(0x20);
+    Wire.write(6+port); // port direction
+    Wire.write(ioRegs[6+port]);
+    Wire.endTransmission();
+} /* PCA9535Mode() */
+
+void PCA9535Write(uint8_t pin, uint8_t value)
+{
+    const uint8_t port = pin / 8;
+   
+    pin &= 7;
+    if (value) {
+        ioRegs[2 + port] |= (1 << pin);
+    } else {
+        ioRegs[2 + port] &= ~(1 << pin);
+    }
+    Wire.beginTransmission(0x20); 
+    Wire.write(2+port); // output port data
+    Wire.write(ioRegs[2+port]);
+    Wire.endTransmission();
+} /* PCA9535Write() */
+
+//
+// Bit Bang SPI commands into the RGB Panel controller
+//
+void BB_SPI_LCD::spilcdBitBangRGBCommands(const uint8_t *pCMDList)
+{
+    Wire.end();
+    Wire.begin(17, 18); // I2C to I/O expander
+    Wire.setClock(400000);
+
+	const uint8_t RST = 5;	// P0.5
+	const uint8_t MOSI = 14; // P1.6
+	const uint8_t CLK = 13;	// P1.5
+	const uint8_t CS = 15;	// P1.7
+
+	// Configure pins as output
+	PCA9535Mode(MOSI, OUTPUT);
+	PCA9535Mode(CLK, OUTPUT);
+	PCA9535Mode(CS, OUTPUT);
+	PCA9535Mode(RST, OUTPUT);
+
+        PCA9535Write(RST, HIGH);
+	delay(10);
+	PCA9535Write(RST, LOW);
+	delay(10);
+	PCA9535Write(RST, HIGH);
+	delay(10);
+
+	// Set initial pin states
+	PCA9535Write(CS, HIGH);
+	PCA9535Write(CLK, LOW);
+
+	PCA9535Write(MOSI, LOW);
+
+	while (*pCMDList) {
+		uint8_t len = *pCMDList++;
+		if (len == LCD_DELAY) {
+			delay(*pCMDList++);
+			continue;
+		}
+		uint8_t cmd = *pCMDList++;
+
+		PCA9535Write(CS, LOW); // start SPI transaction
+
+		// DC LOW = command
+		PCA9535Write(CLK, LOW);
+		PCA9535Write(MOSI, 0);
+		PCA9535Write(CLK, HIGH);
+
+		// Send command
+		for (int i = 7; i >= 0; i--) {
+			PCA9535Write(CLK, LOW);
+			PCA9535Write(MOSI, (cmd >> i) & 0x01);
+			PCA9535Write(CLK, HIGH);
+		}
+
+		// Send data bytes
+		for (uint8_t i = 0; i < len - 1; i++) {
+			uint8_t byte = *pCMDList++;
+
+			// DC IGH = data
+			PCA9535Write(CLK, LOW);
+			PCA9535Write(MOSI, 1);
+			PCA9535Write(CLK, HIGH);
+
+			for (int j = 7; j >= 0; j--) {
+				PCA9535Write(CLK, LOW);
+				PCA9535Write(MOSI, (byte >> j) & 0x01);
+				PCA9535Write(CLK, HIGH);
+			}
+		} // for each data byte
+		PCA9535Write(CS, HIGH); // end of SPI transaction
+	}
+	Wire.end();
+} /* spilcdBitBangRGBCommands() */
 
 int BB_SPI_LCD::begin(int iDisplayType)
 {
@@ -7812,10 +8292,19 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 30000000, 69, 70, 71, 72, -1, -1, -1, 1);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
+
         case DISPLAY_TEENSY_ILI9341:
-            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 60000000, 10, 9, -1, -1, -1, -1, 13,1);
+            spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 60000000, 10, 9, -1, -1, 12, 11, 13,0);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
+#ifdef ARDUINO
+            _lcd.pSPI = &SPI; // shared SPI
+#endif      
+            _lcd.iRTCS = 8;
+            _lcd.iRTMOSI = 255;
+            _lcd.iRTOrientation = 180;
+            _lcd.iRTThreshold = 6300;
             break;
+
         case DISPLAY_TENSTAR_S3_114:
             spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 7, 39, 40, 45, -1, 35, 36,1);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
@@ -7910,6 +8399,23 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
 #ifndef __LINUX__
+        case DISPLAY_T_WATCH:
+// iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin, DMA
+            spilcdInit(&_lcd, LCD_ST7789_240, FLAGS_NONE, 40000000, 12, 38, -1, 45, -1, 13, 18, 1); 
+            break;
+
+        case DISPLAY_T_PANEL:
+            _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
+            _lcd.iLEDPin = 14;
+            pinMode(14, OUTPUT);
+            digitalWrite(14, HIGH);
+            _lcd.iLCDType = LCD_VIRTUAL_MEM;
+            _lcd.iWidth = _lcd.iCurrentWidth = 480;
+            _lcd.iHeight = _lcd.iCurrentHeight = 480;
+            spilcdBitBangRGBCommands(st7701s_init_commands);
+            spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_lilygo));      
+            break;
+
         case DISPLAY_UM_480x480: // UnexpectedMaker 4" 480x480
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
@@ -7953,6 +8459,17 @@ int BB_SPI_LCD::begin(int iDisplayType)
             _lcd.iHeight = _lcd.iCurrentHeight = 600;
             spilcdSetBuffer(&_lcd, (uint8_t *)jd9165_init());
             break;
+        case DISPLAY_CYD_P4_480x800: // 4.3" JC4880P443
+            memset(&_lcd, 0, sizeof(_lcd));
+            _lcd.iLCDFlags = FLAGS_SWAP_COLOR; // little endian byte order
+            _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
+            _lcd.iLEDPin = -1;
+            _lcd.iLCDType = LCD_VIRTUAL_MEM;
+            _lcd.iWidth = _lcd.iCurrentWidth = 480;
+            _lcd.iHeight = _lcd.iCurrentHeight = 800;
+            spilcdSetBuffer(&_lcd, (uint8_t *)jd9165_init());
+            break;
+
 #endif // ESP32-P4
 #ifndef __LINUX__ 
         case DISPLAY_CYD_8048: // 4.3" and 5.5" 800x480 ESP32-S3
@@ -8007,6 +8524,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 24000000, 5, 23, 18, -1, -1, 15, 13,1);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
+
         case DISPLAY_M5STACK_STICKCPLUS:
             AxpPowerUp();
             AxpBrightness(9); // turn on backlight (0-12)
@@ -8014,6 +8532,13 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             break;
 #endif // ARDUINO_M5Stick_C
+
+        case DISPLAY_M5STACK_STICKCPLUS2:
+            spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 5, 14, 12, 27, -1, 15, 13,1);
+            setBrightness(255); // this LCD doesn't work with PWM
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
+            break;
+
 #ifdef ARDUINO_M5STACK_CORES3
         case DISPLAY_M5STACK_CORES3:
             CoreS3AxpPowerUp(); // D/C is shared with MISO
@@ -8066,6 +8591,12 @@ int BB_SPI_LCD::begin(int iDisplayType)
             break;
 #endif // !__LINUX__
 #ifdef ARDUINO_ARCH_RP2040
+        case DISPLAY_WS_RP_147: // Waveshare RP2350 172x320
+// iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin
+            begin(LCD_ST7789_172, FLAGS_NONE, 37500000, 17, 16, 20, 21, -1, 19, 18);
+            setRotation(90);
+            break;
+
         case DISPLAY_KUMAN_35: // ILI9486 320x480 8-bit parallel
             // toggle reset
             pinMode(9, OUTPUT);
@@ -8140,7 +8671,6 @@ int BB_SPI_LCD::begin(int iDisplayType)
            break;
 
         case DISPLAY_WS_ROUND_146: // Waveshare 1.46" 412x412 round IPS
-            memset(&_lcd, 0, sizeof(_lcd));
             _lcd.bUseDMA = 1; // allows DMA access
             // CS=21, SCK=40, D0=46, D1=45, D2=42, D3=41, RST=-1, BL=5 
        // need to release the RESET line which is controlled by an
@@ -8167,12 +8697,14 @@ int BB_SPI_LCD::begin(int iDisplayType)
 
             qspiInit(&_lcd, LCD_SPD2010, FLAGS_NONE, 40000000, 21,40,46,45,42,41,-1,5);
             break;
+
         case DISPLAY_WS_C6_147: // Waveshare ESP32-C6 172x320
             _lcd.bUseDMA = 1;
 // iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin
             begin(LCD_ST7789_172, FLAGS_NONE, 40000000, 14, 15, 21, 22, -1, 6, 7);
             setRotation(90);
             break;
+
         case DISPLAY_WS_CAMERA_2: // Waveshare 2" 240x320 ESP32-S3
             _lcd.bUseDMA = 1;
 // iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin
@@ -8191,8 +8723,41 @@ int BB_SPI_LCD::begin(int iDisplayType)
 // iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin
             begin(LCD_ST7789_280, FLAGS_NONE, 40000000, 5, 4, 8, 15, -1, 7, 6);
             break;
+
+        case DISPLAY_LILYGO_T_ENCODER_PRO: // 1.2" AMOLED round 390x390
+            _lcd.bUseDMA = 1;
+            // VCI_EN = 3 (use in place of backlight)
+            // CS=10, SCK=12, D0=11, D1=13, D2=7, D3=14, RST=4, BL=3
+            qspiInit(&_lcd, LCD_SH8601A, FLAGS_NONE, 40000000, 10,12,11,13,7,14,4,3);
+            break;
+
+        case DISPLAY_LILYGO_T_BAR: // 2.84" 284x76 T-BAR
+            _lcd.bUseDMA = 1;
+            // iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin
+            begin(LCD_ST7789_284, FLAGS_INVERT, 40000000, 8, 5, 40, 15, -1, 6, 7);
+            setRotation(90);
+            break;
+
+        case DISPLAY_LILYGO_T_HMI: // 2.8" 240x320 8-bit parallel ST7789
+            _lcd.bUseDMA = 1;
+            pinMode(38, OUTPUT); // backlight 
+            digitalWrite(38, HIGH);
+            pinMode(10, OUTPUT); // power enable
+            digitalWrite(10, HIGH); // turn on LCD
+            _lcd.iLEDPin = 38;
+            {
+            static const uint8_t u8Pins[8] = {48,47,39,40,41,42,45,46};
+            beginParallel(LCD_ST7789, FLAGS_INVERT, -1, -1, 8, 6, 7, 8, (uint8_t *)u8Pins, 20000000);
+            setRotation(270); 
+            }
+            _lcd.iRTMOSI = 3;
+            _lcd.iRTMISO = 4; // pre-configure resistive touch
+            _lcd.iRTCLK = 1;
+            _lcd.iRTCS = 2;
+            _lcd.iRTOrientation = 180;
+            _lcd.iRTThreshold = 6300;
+            break;
         case DISPLAY_LILYGO_T4_S3: // LilyGo T4-S3 AMOLED 2.41
-            memset(&_lcd, 0, sizeof(_lcd));
             _lcd.bUseDMA = 1;
             // CS=11, SCK=15, D0=14, D1=10, D2=16, D3=12, RST=13, BL=-1
             qspiInit(&_lcd, LCD_RM690B0, FLAGS_NONE, 40000000, 11,15,14,10,16,12,13,-1);
@@ -8216,7 +8781,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
         case DISPLAY_WS_AMOLED_18: // Waveshare 1.8" 368x448 AMOLED
             _lcd.bUseDMA = 1; // allows DMA access
             // CS=12, SCK=11, D0=4, D1=5, D2=6, D3=7, RST=-1, BL=-1
-            qspiInit(&_lcd, LCD_SH8601, FLAGS_NONE, 32000000, 12,11,4,5,6,7,-1,-1);
+            qspiInit(&_lcd, LCD_SH8601, FLAGS_NONE, 40000000, 12,11,4,5,6,7,-1,-1);
             break;
         case DISPLAY_CYD_535: // 320x480 AXS15321
             // CS=45, SCK=47, D0=21, D1=48, D2=40, D3=39, RST=-1, BL=1
@@ -8286,6 +8851,13 @@ int BB_SPI_LCD::begin(int iDisplayType)
             }
             break;
 #endif // ARDUINO_ARCH_ESP32
+#ifdef ARDUINO_ARCH_RP2040
+        case DISPLAY_WS_RP2350_164:
+            _lcd.bUseDMA = 1; // allows DMA access
+// int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u8CS, uint8_t u8CLK, uint8_t u8D0, uint8_t u8D1, uint8_t u8D2, uint8_t u8D3, uint8_t u8RST, uint8_t u8LED);
+            qspiInit(&_lcd, LCD_CO5300, FLAGS_NONE, 40000000, 9,10,11,12,13,14,15,17);
+           break;
+#endif // ARDUINO_ARCH_RP2040
         default:
             return -1;
     }
@@ -8470,30 +9042,79 @@ int h;
     return h;
 } /* fontHeight() */
 
-void BB_SPI_LCD::getTextBounds(const char *string, int16_t x, int16_t y, int16_t *x1, int16_t *y1, uint16_t *w1, uint16_t *h1)
+void BB_SPI_LCD::getStringBox(const char *szMsg, BB_RECT *pRect)
 {
-    if (_lcd.pFont == NULL) { // use built-in fonts
-        int iLen = strlen(string);
-        int h, w;
-        if (_lcd.iFont == FONT_8x8 || _lcd.iFont == FONT_6x8) {
-          h = 8;
-          w = (_lcd.iFont == FONT_8x8) ? 8 : 6;
-        } else if (_lcd.iFont == FONT_12x16 || _lcd.iFont == FONT_16x16) {
-          h = 16;
-          w = (_lcd.iFont == FONT_12x16) ? 12 : 16;
-        } else { w = 16; h = 32; }
-        *x1 = x; *y1 = y; // starts drawing downward
-        *w1 = w * iLen;
-        *h1 = h;
-    } else { // custom fonts
-        int w, top, bottom;
-        spilcdGetStringBox(_lcd.pFont, (char *)string, &w, &top, &bottom);
-        *w1 = w;
-        *h1 = bottom - top;
-        *y1 = y + top;
-        *x1 = x;
-    }
-} /* getTextBounds() */
+int cx = 0;
+unsigned int c, i = 0;
+BB_FONT *pBBF;
+BB_FONT_SMALL *pBBFS;
+BB_GLYPH *pGlyph;
+BB_GLYPH_SMALL *pSmallGlyph;
+int miny, maxy;
+uint8_t szExtMsg[80];
+
+   if (pRect == NULL || szMsg == NULL) return; // bad pointers
+
+   if (_lcd.pFont == NULL) { // built-in font
+        miny = 0;
+        switch (_lcd.iFont) {
+            case FONT_6x8:
+                cx = 6;
+                maxy = 8;
+                break;
+            case FONT_8x8:
+                cx = 8;
+                maxy = 8;
+                break;
+            case FONT_12x16:
+                cx = 12;
+                maxy = 16;
+                break;
+            case FONT_16x16:
+                cx = 16;
+                maxy = 16;
+                break;
+        }
+        cx *= strlen(szMsg);
+   } else { // proportional fonts
+       spilcdUnicodeString(szMsg, szExtMsg); // convert to extended ASCII
+       if (pgm_read_word(_lcd.pFont) == BB_FONT_MARKER) {
+           pBBF = (BB_FONT *)_lcd.pFont; pBBFS = NULL;
+       } else { // small font
+           pBBFS = (BB_FONT_SMALL *)_lcd.pFont; pBBF = NULL;
+       }
+       miny = 4000; maxy = 0;
+       while (szExtMsg[i]) {
+           c = szExtMsg[i++];
+           if (pBBF) { // big font
+               if (c < pgm_read_byte(&pBBF->first) || c > pgm_read_byte(&pBBF->last)) // undefined character
+                   continue; // skip it
+               c -= pgm_read_byte(&pBBF->first); // first char of font defined
+               pGlyph = &pBBF->glyphs[c];
+               cx += pgm_read_word(&pGlyph->xAdvance);
+               if ((int16_t)pgm_read_word(&pGlyph->yOffset) < miny) miny = pgm_read_word(&pGlyph->yOffset);
+               if (pgm_read_word(&pGlyph->height)+(int16_t)pgm_read_word(&pGlyph->yOffset) > maxy) maxy = pgm_read_word(&pGlyph->height)+(int16_t)pgm_read_word(&pGlyph->yOffset);
+           } else {  // small font
+               if (c < pgm_read_byte(&pBBFS->first) || c > pgm_read_byte(&pBBFS->last)) // undefined character
+                   continue; // skip it
+               c -= pgm_read_byte(&pBBFS->first); // first char of font defined
+               pSmallGlyph = &pBBFS->glyphs[c];
+               cx += pgm_read_byte(&pSmallGlyph->xAdvance);
+               if ((int8_t)pgm_read_byte(&pSmallGlyph->yOffset) < miny) miny = (int8_t)pgm_read_byte(&pSmallGlyph->yOffset);
+               if (pgm_read_byte(&pSmallGlyph->height)+(int8_t)pgm_read_byte(&pSmallGlyph->yOffset) > maxy) maxy = pgm_read_byte(&pSmallGlyph->height)+(int8_t)pgm_read_byte(&pSmallGlyph->yOffset);
+           } // small
+       }
+   } // prop fonts
+   pRect->w = cx;
+   pRect->x = _lcd.iCursorX;
+   pRect->y = _lcd.iCursorY + miny;
+   pRect->h = maxy - miny + 1;
+} /* getStringBox() */
+
+void BB_SPI_LCD::getStringBox(const String &str, BB_RECT *pRect)
+{
+    getStringBox(str.c_str(), pRect); 
+}
 
 bool BB_SPI_LCD::allocBuffer(void)
 {
@@ -8713,8 +9334,12 @@ void BB_SPI_LCD::setTextColor(int iFG, int iBG)
 
 void BB_SPI_LCD::setCursor(int x, int y)
 {
-  _lcd.iCursorX = x;
-  _lcd.iCursorY = y;
+    if (x != -1) {
+        _lcd.iCursorX = x;
+    }
+    if (y != -1) {
+        _lcd.iCursorY = y;
+    }
 } /* setCursor() */
 
 void BB_SPI_LCD::setFont(int iFont)
@@ -8739,15 +9364,98 @@ void BB_SPI_LCD::backlight(bool bOn)
       myPinWrite(_lcd.iLEDPin, (int)bOn); 
 } /* backlight() */
 
-void BB_SPI_LCD::setFreeFont(const GFXfont *pFont)
+void BB_SPI_LCD::setFont(const void *pFont)
 {
-  _lcd.pFont = (GFXfont *)pFont;
-} /* setFreeFont() */
+  _lcd.pFont = (void *)pFont;
+} /* setFont() */
 
 int BB_SPI_LCD::drawBMP(const uint8_t *pBMP, int iDestX, int iDestY, int bStretch, int iTransparent, int iFlags)
 {
     return spilcdDrawBMP(&_lcd, (uint8_t *)pBMP, iDestX, iDestY, bStretch, iTransparent, iFlags);
 } /* drawBMP() */
+
+int BB_SPI_LCD::drawG5Image(const uint8_t *pG5, int x, int y, uint16_t iFG, uint16_t iBG, float fScale, int iFlags)
+{
+    uint16_t rc, tx, ty, cx, cy, dx, dy, size;
+    uint8_t *s, u8, src_mask;
+    uint16_t *d;
+    int width, height;
+    BB_BITMAP *pbbb;
+    uint32_t u32Frac, u32XAcc, u32YAcc; // integer fraction vars
+
+    if (pG5 == NULL || fScale < 0.01) return BB_ERROR_INV_PARAM;
+    pbbb = (BB_BITMAP *)pG5;
+    if (pgm_read_word(&pbbb->u16Marker) != BB_BITMAP_MARKER) return BB_ERROR_BAD_DATA;
+    if (!(_lcd.iLCDFlags & FLAGS_SWAP_COLOR)) { // make big endian colors
+        iFG = __builtin_bswap16(iFG);
+        iBG = __builtin_bswap16(iBG);
+    }
+    u32Frac = (uint32_t)(65536.0f / fScale); // calculate the fraction to advance the destination x/y
+    cx = pgm_read_word(&pbbb->width);
+    cy = pgm_read_word(&pbbb->height);
+    width = _lcd.iCurrentWidth;
+    height =_lcd.iCurrentHeight;
+    // Calculate scaled destination size
+    dx = (int)(fScale * (float)cx);
+    dy = (int)(fScale * (float)cy);
+    size = pgm_read_word(&pbbb->size);
+    rc = g5_decode_init(&g5dec, cx, cy, (uint8_t *)&pbbb[1], size);
+    if (rc != G5_SUCCESS) return BB_ERROR_BAD_DATA; // corrupt data?
+    if (x + dx > _lcd.iCurrentWidth) { // clip right edge
+        dx = _lcd.iCurrentWidth - x;
+        if (dx < 0) return BB_ERROR_INV_PARAM;
+    }
+    if (y + dy > _lcd.iCurrentHeight) { // clip bottom
+        dy = _lcd.iCurrentHeight - y;
+        if (dy < 0) return BB_ERROR_INV_PARAM;
+    }
+    spilcdSetPosition(&_lcd, x, y, dx, dy, iFlags);
+    u32YAcc = 65536; // force first line to get decoded
+    for (ty=y; ty<y+dy; ty++) {
+        while (u32YAcc >= 65536) { // advance to next source line
+            g5_decode_line(&g5dec, ucRXBuf);
+            u32YAcc -= 65536;
+        }
+        if (!_lcd.pBackBuffer) {
+            d = (uint16_t *)pDMA;
+        } else {
+            d = (uint16_t *)&_lcd.pBackBuffer[(x*2) + (ty * _lcd.iScreenPitch)];
+        }
+        if (ty >= 0) { // visible
+            src_mask = 0x80; // MSB on the left
+            u32XAcc = 0;
+            s = ucRXBuf;
+            u8 = *s++; // grab first source byte (8 pixels)
+            for (tx=0; tx<dx; tx++) {
+                if (iFG == iBG) { // transparent
+                    if (u8 & src_mask) { // foreground pixel
+                        *d = iFG;
+                    }
+                } else {
+                    if (u8 & src_mask)
+                        *d = iFG;
+                    else
+                        *d = iBG;
+                }
+                d++;
+                u32XAcc += u32Frac;
+                while (u32XAcc >= 65536) {
+                    u32XAcc -= 65536; // whole source pixel horizontal movement
+                    src_mask >>= 1;
+                    if (src_mask == 0) { // need to load the next byte
+                        u8 = *s++;
+                        src_mask = 0x80;
+                    }
+                }
+            } // for tx
+        }
+        u32YAcc += u32Frac;
+        if (!_lcd.pBackBuffer) { // write the line to the display
+            myspiWrite(&_lcd, (uint8_t *)pDMA, dx*2, MODE_DATA, iFlags);
+        }
+    } // for ty
+    return BB_ERROR_SUCCESS;
+} /* drawG5Image() */
 
 void BB_SPI_LCD::drawStringFast(const char *szText, int x, int y, int size, int iFlags)
 {
@@ -8780,17 +9488,7 @@ void BB_SPI_LCD::drawLine(int x1, int y1, int x2, int y2, int iColor, int iFlags
 {
   spilcdDrawLine(&_lcd, x1, y1, x2, y2, iColor, iFlags);
 } /* drawLine() */
-inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
-#ifdef __AVR__
-  return &(((GFXglyph *)pgm_read_pointer(&gfxFont->glyph))[c]);
-#else
-  // expression in __AVR__ section may generate "dereferencing type-punned
-  // pointer will break strict-aliasing rules" warning In fact, on other
-  // platforms (such as STM32) there is no need to do this pointer magic as
-  // program memory may be read in a usual way So expression may be simplified
-  return gfxFont->glyph + c;
-#endif //__AVR__
-}
+
 #ifdef CONFIG_IDF_TARGET_ESP32S3 
     const uint16_t u16RGBMasks[4] = {0x001f, 0x07e0, 0x07c0, 0xf800}; // B, G, R bitmasks for SIMD code
 #endif
@@ -9214,19 +9912,35 @@ static uint8_t u8Unicode0, u8Unicode1;
       spilcdWriteString(&_lcd, -1, -1, szTemp, _lcd.iFG, _lcd.iBG, _lcd.iFont, _lcd.iWriteFlags);
     }
   } else { // Custom font
+      BB_FONT *pBBF;
+      BB_FONT_SMALL *pBBFS;
+      BB_GLYPH *pGlyph;
+      BB_GLYPH_SMALL *pGlyphSmall;
+      int first, last, height;
+      if (*(uint16_t *)_lcd.pFont == BB_FONT_MARKER) {
+          pBBF = (BB_FONT *)_lcd.pFont; pBBFS = NULL;
+          first = pBBF->first; last = pBBF->last; height = pBBF->height;
+          pGlyph = &pBBF->glyphs[c - first];
+          w = pGlyph->width;
+          h = pGlyph->height;
+      } else { // small font
+          pBBFS = (BB_FONT_SMALL *)_lcd.pFont; pBBF = NULL;
+          first = pBBFS->first; last = pBBFS->last; height = pBBFS->height;
+          pGlyphSmall = &pBBFS->glyphs[c - first];
+          w = pGlyphSmall->width;
+          h = pGlyphSmall->height;
+      }
     if (c == '\n') {
       _lcd.iCursorX = 0;
-      _lcd.iCursorY += (uint8_t)pgm_read_byte(&_lcd.pFont->yAdvance);
+      _lcd.iCursorY += height;
     } else if (c != '\r') {
-      uint8_t first = pgm_read_byte(&_lcd.pFont->first);
-      if ((c >= first) && (c <= (uint8_t)pgm_read_byte(&_lcd.pFont->last))) {
-        GFXglyph *glyph = pgm_read_glyph_ptr(_lcd.pFont, c - first);
-        w = pgm_read_byte(&glyph->width);
-        h = pgm_read_byte(&glyph->height);
-        if ((w > 0) && (h > 0)) { // Is there an associated bitmap?
-          int16_t xo = (int8_t)pgm_read_byte(&glyph->xOffset);
-          w += xo; // xadvance
-          h = (uint8_t)pgm_read_byte(&_lcd.pFont->yAdvance);
+        if (c >= first && c <= last) {
+            if ((w > 0) && (h > 0)) { // Is there an associated bitmap?
+            if (pBBF) {
+                w += pGlyph->xOffset; // xadvance
+            } else {
+                w += pGlyphSmall->xOffset; // xadvance
+            }
           if (_lcd.iAntialias) { w /= 2; h /= 2; }
           if (_lcd.iWrap && ((_lcd.iCursorX + w) > _lcd.iCurrentWidth)) {
             _lcd.iCursorX = 0;

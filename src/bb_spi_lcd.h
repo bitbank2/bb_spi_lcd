@@ -57,6 +57,8 @@ void digitalWrite(int iPin, int iValue);
 int digitalRead(int iPin);
 #endif // __LINUX__
 
+#define LCD_DELAY 0xff
+
 #if !defined( __SS_OLED_H__ ) && !defined( __ONEBITDISPLAY__ )
 enum {
    FONT_6x8 = 0,
@@ -108,29 +110,6 @@ typedef void (*DATACALLBACK)(uint8_t *pData, int len, int iMode);
 // Use it to prepare the GPIO lines and reset the display
 //
 typedef void (*RESETCALLBACK)(void);
-
-// Proportional font data taken from Adafruit_GFX library
-/// Font data stored PER GLYPH
-#if !defined( _ADAFRUIT_GFX_H ) && !defined( _GFXFONT_H_ )
-#define _GFXFONT_H_
-typedef struct {
-  uint16_t bitmapOffset; ///< Pointer into GFXfont->bitmap
-  uint16_t width;         ///< Bitmap dimensions in pixels
-  uint16_t height;        ///< Bitmap dimensions in pixels
-  uint16_t xAdvance;      ///< Distance to advance cursor (x axis)
-  int16_t xOffset;        ///< X dist from cursor pos to UL corner
-  int16_t yOffset;        ///< Y dist from cursor pos to UL corner
-} GFXglyph;
-
-/// Data stored for FONT AS A WHOLE
-typedef struct {
-  uint8_t *bitmap;  ///< Glyph bitmaps, concatenated
-  GFXglyph *glyph;  ///< Glyph array
-  uint8_t first;    ///< ASCII extents (first char)
-  uint8_t last;     ///< ASCII extents (last char)
-  int16_t yAdvance; ///< Newline distance (y axis)
-} GFXfont;
-#endif // _ADAFRUIT_GFX_H
 
 #ifndef TFT_BLACK
 #define TFT_BLACK 0x0000
@@ -188,13 +167,20 @@ typedef struct tagSPILCD
    int iWindowCX, iWindowCY;
    int iCursorX, iCursorY; // for text operations
    int iFont, iWrap, iFG, iBG, iAntialias;
-   GFXfont *pFont;
+   void *pFont;
    int iOldX, iOldY, iOldCX, iOldCY; // to optimize spilcdSetPosition()
 
    RESETCALLBACK pfnResetCallback;
    DATACALLBACK pfnDataCallback;
 } SPILCD;
 
+typedef struct {
+    int x; 
+    int y;
+    int w;
+    int h;
+} BB_RECT;  
+    
 #ifdef __cplusplus
 
 #ifdef ARDUINO
@@ -212,7 +198,11 @@ class BB_SPI_LCD
     int begin(int iStandardType);
     int begin(int iType, int iFlags, int iFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin = -1, int iMISOPin = -1, int iMOSIPin = -1, int iCLKPin = -1);
 #ifndef __LINUX__
+#ifdef ARDUINO_ARCH_RP2040
+    int begin(int iType, int iFlags, SPIClassRP2040 *pSPI, int iCSPin, int iDCPin, int iResetPin, int iLEDPin);
+#else
     int begin(int iType, int iFlags, SPIClass *pSPI, int iCSPin, int iDCPin, int iResetPin, int iLEDPin);
+#endif
     int beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq);
     int beginQSPI(int iType, int iFlags, uint8_t CS_PIN, uint8_t CLK_PIN, uint8_t D0_PIN, uint8_t D1_PIN, uint8_t D2_PIN, uint8_t D3_PIN, uint8_t RST_PIN, uint32_t u32Freq);
 #endif // !__LINUX__
@@ -229,7 +219,8 @@ class BB_SPI_LCD
     void setTextColor(int iFG, int iBG = -2);
     void setCursor(int x, int y);
     void setAddrWindow(int x, int y, int w, int h);
-    void getTextBounds(const char *string, int16_t x, int16_t y, int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
+    void getStringBox(const char *string, BB_RECT *pRect);
+    void getStringBox(const String &str, BB_RECT *pRect);
     int16_t getCursorX(void);
     int16_t getCursorY(void);
     int fontHeight(void);
@@ -242,10 +233,10 @@ class BB_SPI_LCD
     void freeBuffer(void);
     void setTextSize(int iSize) {}; // empty for now
     void setFont(int iFont);
+    void setFont(const void *pFont);
     void setScroll(bool bScroll);
     void setScrollPosition(int iLines);
     void setAntialias(bool bAntialias);
-    void setFreeFont(const GFXfont *pFont);
     int16_t height(void);
     int16_t width(void);
     void display(void);
@@ -268,6 +259,7 @@ class BB_SPI_LCD
 #endif
     void drawStringFast(const char *szText, int x, int y, int size = -1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     int drawBMP(const uint8_t *pBMP, int iDestX, int iDestY, int bStretch = 0, int iTransparent = -1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+    int drawG5Image(const uint8_t *pG5, int x, int y, uint16_t iFG, uint16_t iBG, float fScale = 1.0f, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawLine(int x1, int y1, int x2, int y2, int iColor, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
@@ -290,6 +282,7 @@ class BB_SPI_LCD
     int rtReadTouch(TOUCHINFO *ti);
 
   private:
+    void spilcdBitBangRGBCommands(const uint8_t *pCMDList);
     SPILCD _lcd;
 
 }; // class BB_SPI_LCD
@@ -310,11 +303,14 @@ enum
     DISPLAY_LOLIN_S3_MINI_PRO,
     DISPLAY_M5STACK_STICKC,
     DISPLAY_M5STACK_STICKCPLUS,
+    DISPLAY_M5STACK_STICKCPLUS2,
     DISPLAY_M5STACK_CORE2,
     DISPLAY_M5STACK_CORES3,
     DISPLAY_RANKIN_COLORCOIN,
     DISPLAY_RANKIN_SENSOR,
     DISPLAY_RANKIN_POWER,
+    DISPLAY_T_PANEL, // 4" 480x480 RGB parallel
+    DISPLAY_T_WATCH, // T-Watch S3
     DISPLAY_T_DONGLE_S3,
     DISPLAY_T_DISPLAY_S3,
     DISPLAY_T_DISPLAY_S3_PRO,
@@ -350,6 +346,7 @@ enum
     DISPLAY_D1_R32_ILI9341,
     DISPLAY_XIAO_ROUND,
     DISPLAY_CYD_P4_1024x600, // ESP32-P4 MIPI DSI 1024x600
+    DISPLAY_CYD_P4_480x800, // JC4880P443 4.3" 480x800 MIPI DSI
     DISPLAY_STAMPS3_8PIN, // 8-pin 0.5mm FFC connector LCDs
     DISPLAY_WS_AMOLED_18, // Waveshare 368x448 1.8" AMOLED
     DISPLAY_WS_AMOLED_143, // Waveshare 466x466 1.43" AMOLED round
@@ -358,11 +355,16 @@ enum
     DISPLAY_WS_AMOLED_241, // 2.41" 450x600
     DISPLAY_WS_LCD_169, // 1.69" 240x280
     DISPLAY_LILYGO_T4_S3, // 2.41" 600x450 AMOLED
+    DISPLAY_LILYGO_T_HMI, // 2.8" 240x320 parallel ST7789
+    DISPLAY_LILYGO_T_BAR, // 2.84" 284x76 ST7789
+    DISPLAY_LILYGO_T_ENCODER_PRO, // 1.2" round AMOLED 390x390
     DISPLAY_VIEWE_2432, // 2.4" transflective 240x320
     DISPLAY_WS_CAMERA_2, // Waveshare ESP32-S3 2" LCD + camera
     DISPLAY_WS_C6_147, // Waveshare ESP32-C6 1.47" 172x320 LCD
+    DISPLAY_WS_RP_147, // Waveshare RP2350 1.47" 172x320 LCD
     DISPLAY_VPLAYER, // Kevin Darrah's ESP32-S3 Video Player board
     DISPLAY_TENSTAR_S3_114, // Tenstar Robot ESP32-S3 w/1.14" ST7789 135x240 LCD
+    DISPLAY_WS_RP2350_164, // Waveshare RP2350 QSPI 1.64 AMOLED
     DISPLAY_COUNT
 };
 #if !defined(BITBANK_LCD_MODES)
@@ -481,15 +483,15 @@ int spilcdWriteStringFast(SPILCD *pLCD, int x, int y, char *szText, unsigned sho
 //
 // Draw a string in a proportional font you supply
 //
-int spilcdWriteStringCustom(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, int usFGColor, int usBGColor, int bBlank, int iFlags);
+int spilcdWriteStringCustom(SPILCD *pLCD, void *pFont, int x, int y, char *szMsg, int usFGColor, int usBGColor, int bBlank, int iFlags);
 //
 // Draw a string in a proportional font with antialiasing
 //
-int spilcdWriteStringAntialias(SPILCD *pLCD, GFXfont *pFont, int x, int y, char *szMsg, int usFGColor, int usBGColor, int iFlags);
+int spilcdWriteStringAntialias(SPILCD *pLCD, void *pFont, int x, int y, char *szMsg, int usFGColor, int usBGColor, int iFlags);
 //
 // Get the width and upper/lower bounds of text in a custom font
 //
-void spilcdGetStringBox(GFXfont *pFont, char *szMsg, int *width, int *top, int *bottom);
+void spilcdGetStringBox(void *pFont, char *szMsg, int *width, int *top, int *bottom);
 
 // Sets a pixel to the given color
 // Coordinate system is pixels, not text rows (0-239, 0-319)
@@ -616,11 +618,14 @@ enum {
    LCD_ILI9486, // 320x480
    LCD_ILI9488, // 320x480
    LCD_GC9A01, // 240x240 round
+   LCD_GC9203, // 128x220 rectangle
    LCD_GC9107, // 128x128 tiny (0.85")
    LCD_GC9D01, // 160x160 round
+   LCD_NV3007, // 128x428 rectangle
    LCD_JD9613, // 294x126 AMOLED
    LCD_GDOD0139, // 454x454 1.39" AMOLED
    LCD_QUAD_SPI, // divider for LCDs with QSPI interface
+   LCD_CO5300, // 280x456 1.64" AMOLED
    LCD_RM67162, // 240x536 2.4" AMOLED QSPI
    LCD_AXS15231, // 320x480 3.5" QSPI
    LCD_AXS15231B, // 180x640 3.4" QSPI
@@ -628,6 +633,7 @@ enum {
    LCD_ST77916, // 360x360 round 1.8" QSPI
    LCD_ICNA3311, // 280x456 AMOLED 1.64" QSPI
    LCD_SH8601, // 368x448 AMOLED 1.8" QSPI
+   LCD_SH8601A, // 390x390 AMOLED 1.2" QSPI
    LCD_SH8601B, // 466x466 AMOLED 1.43" QSPI round
    LCD_SPD2010, // 412x412 AMOLED 1.46" QSPI
    LCD_RM690B0, // 450x600 AMOLED 2.41" QSPI
@@ -640,7 +646,8 @@ enum {
   BB_ERROR_SUCCESS=0, // no error
   BB_ERROR_INV_PARAM, // invalid parameter
   BB_ERROR_NO_BUFFER, // no backbuffer defined
-  BB_ERROR_SMALL_BUFFER // SPI data buffer too small
+  BB_ERROR_SMALL_BUFFER, // SPI data buffer too small
+  BB_ERROR_BAD_DATA // decode error
 };
 
 // touch panel types

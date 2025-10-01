@@ -23,6 +23,8 @@
 
 static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 static uint8_t *_data_pins;
+void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h);
+
 #ifdef __LINUX__
 #include <sys/mman.h>
 volatile uint32_t *gpio_port, *set_reg, *clr_reg;
@@ -38,6 +40,7 @@ volatile uint32_t *gpio_port, *set_reg, *clr_reg;
 #define PAGE_SIZE 4096
 #endif // __LINUX__
 //#define USE_ESP32_GPIO
+extern int bSetPosition;
 #if defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C6)
 #if __has_include (<esp_lcd_panel_io.h>)
 #include <esp_lcd_panel_io.h>
@@ -57,7 +60,6 @@ volatile uint32_t *gpio_port, *set_reg, *clr_reg;
 //#include <soc/lcd_cam_struct.h>
 #include <hal/lcd_types.h>
 //extern DMA_ATTR uint8_t *ucTXBuf;
-extern int bSetPosition;
 extern volatile bool transfer_is_done;
 #ifdef CONFIG_IDF_TARGET_ESP32
 uint32_t u32IOMask, u32IOMask2, u32IOLookup[256], u32IOLookup2[256]; // for old ESP32
@@ -200,6 +202,9 @@ static inline pio_sm_config st7789_parallel_program_get_default_config(uint offs
 }
 uint32_t parallel_sm;
 PIO parallel_pio;
+PIO qspi_pio = pio0;
+dma_channel_config dma_cc;
+uint8_t sm_4wire = 0, sm_1wire = 1;
 uint32_t parallel_offset;
 uint32_t parallel_dma;
 #endif // ARDUINO_ARCH_RP2040
@@ -343,6 +348,261 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 #endif // FUTURE
 #endif // ARDUINO_ARCH_ESP32
 } /* ParallelDataWrite() */
+
+//  
+// This set of qspi functions is for RP2350 only
+//  
+#ifdef ARDUINO_ARCH_RP2040
+#define qspi_4wire_data_wrap_target 0
+#define qspi_4wire_data_wrap 1
+#define qspi_4wire_data_pio_version 0
+
+static const uint16_t qspi_4wire_data_program_instructions[] = {
+            //     .wrap_target
+    0x7004, //  0: out    pins, 4         side 0
+    0xb842, //  1: nop                    side 1
+            //     .wrap
+};
+static const struct pio_program qspi_4wire_data_program = {
+    .instructions = qspi_4wire_data_program_instructions,
+    .length = 2,
+    .origin = -1,
+    .pio_version = qspi_4wire_data_pio_version,
+#if PICO_PIO_VERSION > 0
+    .used_gpio_ranges = 0x0
+#endif
+};
+
+static inline pio_sm_config qspi_4wire_data_program_get_default_config(uint offset) {
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_wrap(&c, offset + qspi_4wire_data_wrap_target, offset + qspi_4wire_data_wrap);
+    sm_config_set_sideset(&c, 2, true, false);
+    return c;
+}
+
+#define qspi_1write_cmd_wrap_target 0
+#define qspi_1write_cmd_wrap 1
+#define qspi_1write_cmd_pio_version 0
+
+static const uint16_t qspi_1write_cmd_program_instructions[] = {
+            //     .wrap_target
+    0x7001, //  0: out    pins, 1         side 0
+    0xb842, //  1: nop                    side 1
+            //     .wrap
+};
+static const struct pio_program qspi_1write_cmd_program = {
+    .instructions = qspi_1write_cmd_program_instructions,
+    .length = 2,
+    .origin = -1,
+    .pio_version = qspi_1write_cmd_pio_version,
+#if PICO_PIO_VERSION > 0
+    .used_gpio_ranges = 0x0
+#endif
+};
+
+static inline pio_sm_config qspi_1write_cmd_program_get_default_config(uint offset) {
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_wrap(&c, offset + qspi_1write_cmd_wrap_target, offset + qspi_1write_cmd_wrap);
+    sm_config_set_sideset(&c, 2, true, false);
+    return c;
+}
+
+static inline void qspi_4wire_data_program_init(PIO pio, uint sm, uint offset, uint pin_scl, uint out_base, uint out_pin_num) {
+    pio_sm_config c = qspi_4wire_data_program_get_default_config( offset );  
+    // CLK
+    pio_gpio_init(pio, pin_scl);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_scl, 1, true);
+    sm_config_set_sideset_pins(&c, pin_scl);
+    // DAT
+    sm_config_set_out_pins(&c, out_base, out_pin_num);
+    sm_config_set_out_shift(&c, false, true, 8);
+    for (uint32_t pin_offset = 0; pin_offset < out_pin_num; pin_offset++) {
+        pio_gpio_init(pio, out_base + pin_offset);
+    }
+    pio_sm_set_consecutive_pindirs(pio, sm, out_base, out_pin_num, true);
+    // PIO CLK
+    sm_config_set_clkdiv( &c, 1.0f);
+    // INIT
+    pio_sm_init( pio, sm, offset, &c );
+    pio_sm_clear_fifos( pio , sm);
+    pio_sm_set_enabled( pio, sm, true );
+}
+
+static inline void qspi_1write_cmd_program_init(PIO pio, uint sm, uint offset, uint pin_scl, uint out_base, uint out_pin_num) {
+    pio_sm_config c = qspi_1write_cmd_program_get_default_config( offset );
+    // CLK
+    pio_gpio_init(pio, pin_scl);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_scl, 1, true);
+    sm_config_set_sideset_pins(&c, pin_scl);
+    // DAT
+    sm_config_set_out_pins(&c, out_base, out_pin_num);
+    sm_config_set_out_shift(&c, false, true, 8);
+    for (uint32_t pin_offset = 0; pin_offset < out_pin_num; pin_offset++) {
+        pio_gpio_init(pio, out_base + pin_offset);
+    }
+    pio_sm_set_consecutive_pindirs(pio, sm, out_base, out_pin_num, true);
+    // PIO CLK
+    sm_config_set_clkdiv( &c, 1.0f);
+    // INIT
+    pio_sm_init( pio, sm, offset, &c );
+    pio_sm_clear_fifos( pio , sm);
+    pio_sm_set_enabled( pio, sm, true );
+}
+
+void qspiSendCMD(SPILCD *pLCD, uint8_t u8CMD, uint8_t *pParams, int iCount)
+{
+uint32_t u32;
+Serial.printf("qspiSendCMD: 0x%02x\n", u8CMD);
+// enable 1wire mode
+    pio_sm_set_enabled(qspi_pio, sm_4wire, false);
+    pio_sm_set_enabled(qspi_pio, sm_1wire, true);
+    gpio_put(pLCD->iCSPin,0); // select CS
+    // write command 0x02 for most commands, 0x32 if pixels will follow
+    if (u8CMD == 0x3c || u8CMD == 0x2c) { // pixels
+        pio_sm_put_blocking(qspi_pio, sm_1wire, (0x32 << 24));
+    } else { // regular command
+        pio_sm_put_blocking(qspi_pio, sm_1wire, (0x02 << 24));
+    }
+    // 1 wire address
+    pio_sm_put_blocking(qspi_pio, sm_1wire, 0);
+    u32 = u8CMD;
+    pio_sm_put_blocking(qspi_pio, sm_1wire, (u32 << 24));
+    pio_sm_put_blocking(qspi_pio, sm_1wire, 0);
+    while (iCount) { // write the params in 1 wire mode too
+        u32 = *pParams++;
+        pio_sm_put_blocking(qspi_pio, sm_1wire, u32 << 24);
+        iCount--;
+    }
+    if (u8CMD != 0x3c) { // deselect if command only
+        gpio_put(pLCD->iCSPin,1); // deselect CS
+    }
+
+} /* qspiSendCMD() */
+
+void qspiSendDATA(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags)
+{
+// Wait for previous DMA transfer to complete
+//    while(dma_channel_is_busy(parallel_dma));
+    if (bSetPosition) { // first data after a setPosition()
+        qspiSendCMD(pLCD, 0x2c, NULL, 0);
+        bSetPosition = 0;
+    } else {
+        qspiSendCMD(pLCD, 0x3c, NULL, 0);
+    }
+//    delayMicroseconds(0); // small delay needed here?
+    gpio_put(pLCD->iCSPin, 0);
+    // switch to 4wire mode for pixel data
+    pio_sm_set_enabled(qspi_pio, sm_4wire, true);
+    pio_sm_set_enabled(qspi_pio, sm_1wire, false);
+    channel_config_set_dreq(&dma_cc, pio_get_dreq(qspi_pio, sm_4wire, true));
+    dma_channel_configure(parallel_dma, &dma_cc,
+                            &qspi_pio->txf[sm_4wire],  // Destination pointer (PIO TX FIFO)
+                            pData,            // Source pointer (data buffer)
+                            iLen,      // Data length (unit: number of transmissions)
+                            true);                    // Start transferring immediately
+    while(dma_channel_is_busy(parallel_dma));
+    gpio_put(pLCD->iCSPin,1); // deselect CS
+} /* qspiSendDATA() */
+
+const uint8_t u8_CO5300InitList[] = {
+ 1, 0x11, // sleep out
+ LCD_DELAY, 120,
+ 3, 0x44, 0x01, 0xc5,
+ 2, 0x35, 0x00,
+ 2, 0x3a, 0x55, // pixel format RGB565
+ 2, 0xc4, 0x80,
+ 2, 0x53, 0x20,
+ 2, 0x63, 0xff,
+ 2, 0x51, 0x00,
+ 1, 0x29,
+ LCD_DELAY, 10,
+ 2, 0x51, 0xff, // set max brightness
+ 0,0 // end
+};
+
+void CO5300Init(SPILCD *pLCD)
+{
+int iCount;
+uint8_t *s, u8Temp[32];
+
+    pLCD->iCurrentWidth = pLCD->iWidth = 280;
+    pLCD->iCurrentHeight = pLCD->iHeight = 456;
+    pLCD->iLCDType = LCD_CO5300;
+    iCount = 1;
+    s = (uint8_t *)u8_CO5300InitList;
+    while (iCount) {
+        iCount = *s++;
+        if (iCount == LCD_DELAY) {
+            delay(*s++);
+        } else if (iCount > 0) {
+            qspiSendCMD(pLCD, s[0], &s[1], iCount-1);
+            s += iCount;
+        }
+    } // while commands to send
+    qspiSetPosition(pLCD, 32, 32, 32, 32);
+    memset(u8Temp, 0xff, sizeof(u8Temp));
+    for (int i=0; i<100; i++) {
+        qspiSendDATA(pLCD, u8Temp, sizeof(u8Temp), 0);
+    } 
+} /* CO5300Init() */
+
+// Initialize a Quad SPI display
+int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u8CS, uint8_t u8CLK, uint8_t u8D0, uint8_t u8D1, uint8_t u8D2, uint8_t u8D3, uint8_t u8RST, uint8_t u8LED)
+{
+    // Initialize Clock (RP2350 default 150MHz clock)
+#define PLL_SYS_KHZ 150 * 1000
+    set_sys_clock_khz(PLL_SYS_KHZ, true);
+    clock_configure(
+        clk_peri,
+        0,
+        CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS,
+        PLL_SYS_KHZ * 1000,
+        PLL_SYS_KHZ * 1000
+    );
+    // Initialize DMA
+    parallel_dma = dma_claim_unused_channel(true);
+    dma_cc = dma_channel_get_default_config(parallel_dma);
+    channel_config_set_transfer_data_size(&dma_cc, DMA_SIZE_8);
+    channel_config_set_read_increment(&dma_cc, true);
+    channel_config_set_write_increment(&dma_cc, false);
+    channel_config_set_dreq(&dma_cc, pio_get_dreq(qspi_pio, sm_4wire, false));
+    irq_set_enabled(DMA_IRQ_0, false);
+// Init GPIO
+    pLCD->iCSPin = u8CS;
+    gpio_init(u8CS);
+    gpio_pull_down(u8CS);
+    gpio_set_dir(u8CS,GPIO_OUT);
+    gpio_put(u8CS,1);
+
+    if (u8LED != 0xff) {
+        gpio_init(u8LED); // AMOLED power enable
+        gpio_set_dir(u8LED,GPIO_OUT);
+        gpio_put(u8LED,1);
+    }
+
+    gpio_init(u8RST);
+    gpio_set_dir(u8RST,GPIO_OUT);
+    gpio_put(u8RST,1);
+    delay(50);
+    gpio_put(u8RST,0);
+    delay(50);
+    gpio_put(u8RST,1);
+    delay(300);
+// Init PIO
+    uint offset = pio_add_program(qspi_pio, &qspi_4wire_data_program);
+    qspi_4wire_data_program_init(qspi_pio, sm_4wire, offset, u8CLK, u8D0, 4);
+
+    offset = pio_add_program(qspi_pio, &qspi_1write_cmd_program);
+    qspi_1write_cmd_program_init(qspi_pio, sm_1wire, offset, u8CLK, u8D0, 1);
+    pio_sm_clear_fifos(qspi_pio, sm_1wire);
+
+    pio_sm_set_enabled(qspi_pio, sm_4wire, false);
+    pio_sm_set_enabled(qspi_pio, sm_1wire, false);
+    CO5300Init(pLCD);
+    return 1;
+} /* qspiInit() */
+#endif // ARDUINO_ARCH_RP2040
+
 #ifdef __LINUX__
 // Return a pointer to a periphery subsystem register.
 static void *mmap_bcm_register(off_t register_offset) {
@@ -394,7 +654,7 @@ esp_lcd_rgb_panel_config_t panel_config;
    memset(&panel_config, 0, sizeof(panel_config));
    panel_config.num_fbs = 1; // single framebuffer
    panel_config.psram_trans_align = 64;
-//   panel_config.sram_trans_align = 8;
+   panel_config.sram_trans_align = 8;
    panel_config.data_width = 16;
    panel_config.bits_per_pixel = 16;
    panel_config.clk_src = LCD_CLK_SRC_PLL160M;
@@ -431,6 +691,8 @@ esp_lcd_rgb_panel_config_t panel_config;
    panel_config.timings.vsync_back_porch = pRGB->vsync_back_porch;
    panel_config.timings.vsync_front_porch = pRGB->vsync_front_porch;
    panel_config.timings.vsync_pulse_width = pRGB->vsync_pulse_width;
+// DEBUG
+//   panel_config.timings.flags.pclk_active_neg = 10;
    ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &panel_handle));
    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));

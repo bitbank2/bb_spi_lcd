@@ -27,6 +27,7 @@ typedef struct {
     size_t data_bytes;      /*<! Size of `data` in memory, in bytes */
     unsigned int delay_ms;  /*<! Delay in milliseconds after this command */
 } jd9165_lcd_init_cmd_t;
+#define st7701_lcd_init_cmd_t jd9165_lcd_init_cmd_t
 
 /**
  * @brief LCD panel vendor configuration.
@@ -77,6 +78,14 @@ esp_err_t esp_lcd_new_panel_jd9165(const esp_lcd_panel_io_handle_t io, const esp
         .lane_bit_rate_mbps = 750,                       \
     }
 
+#define ST7701_PANEL_BUS_DSI_2CH_CONFIG()                \
+    {                                                    \
+        .bus_id = 0,                                     \
+        .num_data_lanes = 2,                             \
+        .phy_clk_src = MIPI_DSI_PHY_CLK_SRC_DEFAULT,     \
+        .lane_bit_rate_mbps = 500,                       \
+    }
+
 /**
  * @brief MIPI-DBI panel IO configuration structure
  *
@@ -118,6 +127,27 @@ esp_err_t esp_lcd_new_panel_jd9165(const esp_lcd_panel_io_handle_t io, const esp
             .use_dma2d = true,                                   \
         },                                                       \
     }								
+
+#define ST7701_480_800_PANEL_60HZ_DPI_CONFIG(px_format)  \
+    {                                                    \
+        .virtual_channel = 0,                            \
+        .dpi_clk_src = MIPI_DSI_DPI_CLK_SRC_DEFAULT,     \
+        .dpi_clock_freq_mhz = 34,                        \
+        .pixel_format = px_format,                       \
+        .num_fbs = 1,                                    \
+        .video_timing = {                                \
+            .h_size = 480,                               \
+            .v_size = 800,                               \
+            .hsync_pulse_width = 12,                     \
+            .hsync_back_porch = 42,                      \
+            .hsync_front_porch = 42,                     \
+            .vsync_pulse_width = 2,                     \
+            .vsync_back_porch = 8,                      \
+            .vsync_front_porch = 166,                     \
+        },                                               \
+        .flags = {.use_dma2d = true,}                         \
+    }
+
 #endif
 
 #ifdef __cplusplus
