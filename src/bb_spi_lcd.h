@@ -150,7 +150,11 @@ typedef struct tagSPILCD
 
 #ifdef __cplusplus
 
+#ifdef __LINUX__
+class BB_SPI_LCD
+#else
 class BB_SPI_LCD : public Print
+#endif
 {
   public:
     BB_SPI_LCD() {memset(&_lcd, 0, sizeof(_lcd));}
@@ -193,7 +197,9 @@ class BB_SPI_LCD : public Print
     void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD);
     void pushPixels(uint16_t *pixels, int count, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawString(const char *pText, int x, int y, int size=-1);
+#ifndef __LINUX__
     void drawString(String text, int x, int y, int size=-1);
+#endif
     void drawStringFast(const char *szText, int x, int y, int size = -1);
     int drawBMP(const uint8_t *pBMP, int iDestX, int iDestY, int bStretch = 0, int iTransparent = -1, int iFlags = DRAW_TO_LCD);
     void drawLine(int x1, int y1, int x2, int y2, int iColor);
@@ -205,12 +211,14 @@ class BB_SPI_LCD : public Print
     void drawEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color);
     void fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color);
     void drawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY, int iCX, int iCY, uint16_t usColor, int iTranslucency);
+#ifndef __LINUX__
     using Print::write;
     virtual size_t write(uint8_t);
     // Resistive Touch methods
     int rtInit(uint8_t u8MOSI = 255, uint8_t uiMISO = 255, uint8_t u8CLK = 255, uint8_t u8CS = 255);
     int rtInit(SPIClass &pSPI, uint8_t u8CS = 0xff);
     int rtReadTouch(TOUCHINFO *ti);
+#endif // !__LINUX__
 
   private:
     SPILCD _lcd;

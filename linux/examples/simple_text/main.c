@@ -22,14 +22,14 @@
 #else
 // Pin definitions for Adafruit PiTFT HAT
 // GPIO 25 = Pin 22
-#define DC_PIN 22
+#define DC_PIN 25
 // GPIO 27 = Pin 13
-#define RESET_PIN 13
+#define RESET_PIN -1
 // GPIO 8 = Pin 24
-#define CS_PIN 24
+#define CS_PIN 8
 // GPIO 24 = Pin 18
-#define LED_PIN 18
-#define LCD_TYPE LCD_ST7789_240
+#define LED_PIN -1
+#define LCD_TYPE LCD_ILI9341
 #endif
 
 SPILCD lcd;

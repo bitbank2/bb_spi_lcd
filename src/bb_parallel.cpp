@@ -1,9 +1,20 @@
 //
 // Parallel LCD support for bb_spi_lcd
 //
-
+#ifdef ARDUINO
 #include <Arduino.h>
 #include <SPI.h>
+#else
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#define INPUT 0
+#define OUTPUT 1
+#define LOW 0
+#define HIGH 1
+extern void pinMode(int pin, int mode);
+extern void digitalWrite(int pin, int value);
+#endif
 #include <bb_spi_lcd.h>
 
 static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;

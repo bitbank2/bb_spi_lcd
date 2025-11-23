@@ -782,17 +782,17 @@ const uint8_t ucSmallFont[]PROGMEM = {
 
 // wrapper/adapter functions to make the code work on Linux
 #ifdef __LINUX__
-static int digitalRead(int iPin)
+int digitalRead(int iPin)
 {
   return gpiod_line_get_value(lines[iPin]);
 } /* digitalRead() */
 
-static void digitalWrite(int iPin, int iState)
+void digitalWrite(int iPin, int iState)
 {
    gpiod_line_set_value(lines[iPin], iState);
 } /* digitalWrite() */
 
-static void pinMode(int iPin, int iMode)
+void pinMode(int iPin, int iMode)
 {
    if (chip == NULL) {
        chip = gpiod_chip_open_by_name("gpiochip0");
@@ -828,12 +828,6 @@ static int16_t pgm_read_word(uint8_t *ptr)
 }
 #endif // FUTURE
 #endif // __LINUX__
-void spilcdParallelData(uint8_t *pData, int iLen)
-{
-	// not supported on Linux
-	(void)pData;
-	(void)iLen;
-}
 //
 // Provide a small temporary buffer for use by the graphics functions
 //
@@ -1708,6 +1702,7 @@ struct spi_ioc_transfer spi;
    spi.tx_buf = (unsigned long)pBuf;
    spi.len = iLen;
    spi.speed_hz = pLCD->iSPISpeed;
+   //spi.cs_change = 1;
    spi.bits_per_word = 8;
    ioctl(spi_fd, SPI_IOC_MESSAGE(1), &spi);
 }
@@ -2012,6 +2007,9 @@ static int iStarted = 0; // indicates if the master driver has already been init
 #else
 #ifdef __LINUX__
     spi_fd = open("/dev/spidev0.1", O_RDWR); // DEBUG - open SPI channel 0 
+    if (spi_fd <= 0) {
+	    printf("Error opening spidev0.1\n");
+    }
 #else
 #ifdef ARDUINO_ARCH_RP2040
   pSPI->begin();
@@ -6049,6 +6047,7 @@ uint8_t ucTemp[4];
 } /* rtSPIXfer() */
 
 #ifdef __cplusplus
+#ifndef __LINUX__
 int BB_SPI_LCD::rtInit(SPIClass &spi, uint8_t u8CS)
 {
     if (u8CS != 0xff) _lcd.iRTCS = u8CS;
@@ -6197,7 +6196,7 @@ const int iOrients[4] = {0,90,180,270};
     //delay(10); // don't let the user try to read samples too quickly
     return 1;
 } /* rtReadTouch() */
-
+#endif // !__LINUX__
 int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq)
 {
     memset(&_lcd, 0, sizeof(_lcd));
@@ -6256,6 +6255,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
         iLED = -1;
     }
 #endif
+#ifndef __LINUX__
     switch (iDisplayType)
     {
         case DISPLAY_TINYPICO_IPS_SHIELD:
@@ -6512,6 +6512,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
         default:
             return -1;
     }
+#endif // !__LINUX__
     return 0;
 }
 //
@@ -6836,18 +6837,23 @@ void BB_SPI_LCD::drawStringFast(const char *szText, int x, int y, int size)
 
 void BB_SPI_LCD::drawString(const char *pText, int x, int y, int size)
 {
+#ifdef __LINUX__
+   spilcdWriteString(&_lcd, x, y, (char *)pText, _lcd.iFG, _lcd.iBG, size, 1);
+#else
    if (size == 1) setFont(FONT_6x8);
    else if (size == 2) setFont(FONT_12x16);
    setCursor(x,y);
    for (int i=0; i<strlen(pText); i++) {
       write(pText[i]);
-   } 
+   }
+#endif
 } /* drawString() */
+#ifndef __LINUX__
 void BB_SPI_LCD::drawString(String text, int x, int y, int size)
 {
     drawString(text.c_str(), x, y, size);
 } /* drawString() */
-
+#endif
 void BB_SPI_LCD::drawLine(int x1, int y1, int x2, int y2, int iColor)
 {
   spilcdDrawLine(&_lcd, x1, y1, x2, y2, iColor, DRAW_TO_LCD | DRAW_TO_RAM);
@@ -6864,6 +6870,7 @@ inline GFXglyph *pgm_read_glyph_ptr(const GFXfont *gfxFont, uint8_t c) {
 #endif //__AVR__
 }
 
+#ifndef __LINUX__
 //
 // write (Print friend class)
 //
@@ -6932,6 +6939,7 @@ int w, h;
   }
   return 1;
 } /* write() */
+#endif // !__LINUX__
 
 void BB_SPI_LCD::display(void)
 {
