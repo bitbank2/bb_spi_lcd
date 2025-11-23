@@ -1969,7 +1969,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
       bitCS = digitalPinToBitMask(iCS);
     }
 }
-#endif
+#endif // __AVR__
 
     pLCD->iLEDPin = -1; // assume it's not defined
 	if (iType <= LCD_INVALID || iType >= LCD_VALID_MAX)
