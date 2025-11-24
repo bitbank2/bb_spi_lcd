@@ -1740,12 +1740,18 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
 {
 struct spi_ioc_transfer spi;
    memset(&spi, 0, sizeof(spi));
-   spi.tx_buf = (unsigned long)pBuf;
-   spi.len = iLen;
-   spi.speed_hz = pLCD->iSPISpeed;
-   //spi.cs_change = 1;
-   spi.bits_per_word = 8;
-   ioctl(spi_fd, SPI_IOC_MESSAGE(1), &spi);
+   while (iLen) { // max 64k transfers (default is 4k)
+       int j = iLen;
+       if (j > 65536) j = 65536;
+       spi.tx_buf = (unsigned long)pBuf;
+       spi.len = j;
+       spi.speed_hz = pLCD->iSPISpeed;
+       //spi.cs_change = 1;
+       spi.bits_per_word = 8;
+       ioctl(spi_fd, SPI_IOC_MESSAGE(1), &spi);
+       iLen -= j;
+       pBuf += j;
+   }
 }
 #else
 #ifdef ARDUINO_ARCH_RP2040
