@@ -383,6 +383,13 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
    void *gpio_map;
    uint32_t u32GPIO_BASE;
 
+    pinMode(u8CS, OUTPUT);
+    pinMode(u8DC, OUTPUT);
+    pinMode(u8WR, OUTPUT);
+    for (int i=14; i<22; i++) { // data pins
+        pinMode(i, OUTPUT);
+    }
+
    // Determine if we're on a RPI 2/3 or 4 based on the RAM size
    struct sysinfo info;
    sysinfo(&info);
@@ -419,12 +426,6 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
     sel_reg = gpio;
     set_reg = &gpio[7];
     clr_reg = &gpio[10];
-    pinMode(u8CS, OUTPUT);
-    pinMode(u8DC, OUTPUT);
-    pinMode(u8WR, OUTPUT);
-    for (int i=14; i<22; i++) { // data pins
-        pinMode(i, OUTPUT);
-    }
     return;
 #endif // __LINUX__
 // old ESP32 only supports direct register parallelism
