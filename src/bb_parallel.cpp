@@ -216,7 +216,7 @@ static void wait_cycles(unsigned int n)
 void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 {
 #ifdef __LINUX__
-#define LCD_DELAY 300
+#define LCD_DELAY 10
         const uint32_t DATA_BIT_0 = 14; // DEBUG
         uint32_t c, e, d=0xffff;
         const uint32_t u32WR = 1 << u8WR;
@@ -237,15 +237,14 @@ if (iMode != MODE_DATA) {
             c = *pData++;
           // The GPIO writes add additional latency. This extra branch 
           // speeds up the average data write by 20+%
-          //  if (c != d) { // different data?
+            if (c != d) { // different data?
                 e = c << DATA_BIT_0;
-              *clr_reg = (e ^ xor_mask);
-        //        *clr_reg = (e ^ xor_mask2); // set 0 bits and WR low
+                *clr_reg = (e ^ xor_mask2); // set 0 bits and WR low
                 *set_reg = e; // set 1 bits
-           //     d = c;
-           // } else {
+                d = c;
+            } else {
                 *clr_reg = u32WR;
-           // }
+            }
             wait_cycles(LCD_DELAY);
             *set_reg = u32WR; // clock high
             wait_cycles(LCD_DELAY);
@@ -363,6 +362,20 @@ if (iMode != MODE_DATA) {
 #endif // FUTURE
 #endif // ARDUINO_ARCH_ESP32
 } /* ParallelDataWrite() */
+#ifdef __LINUX__
+//
+// Configure a GPIO pin on the Raspberry Pi as an OUTPUT
+//
+void set_gpio_output(int pin) {
+    // The pin in GPIOSEL0 goes from 0-9 and next pins 10-19
+    // is on reg GPIOSEL1 and so on
+    int reg = pin / 10; 
+    int shift = (pin % 10) * 3;
+    // Clear the 3 bits for the pin and set it to 001 (output)
+    gpio[reg] = (gpio[reg] & ~(7 << shift)) | (1 << shift);
+} /* set_gpio_output() */
+
+#endif // __LINUX__
 //
 // Initialize the parallel bus info
 //
@@ -383,13 +396,6 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
    void *gpio_map;
    uint32_t u32GPIO_BASE;
 
-    pinMode(u8CS, OUTPUT);
-    pinMode(u8DC, OUTPUT);
-    pinMode(u8WR, OUTPUT);
-    for (int i=14; i<22; i++) { // data pins
-        pinMode(i, OUTPUT);
-    }
-
    // Determine if we're on a RPI 2/3 or 4 based on the RAM size
    struct sysinfo info;
    sysinfo(&info);
@@ -408,7 +414,8 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
     // Map GPIO memory to our address space
     gpio_map = mmap(
         NULL,                 // Any address in our space will do
-        GPIO_BLOCK_SIZE,      // Map length = 4K
+        0x150010,
+//        GPIO_BLOCK_SIZE,      // Map length = 4K
         PROT_READ | PROT_WRITE, // Enable reading & writing to mapped memory
         MAP_SHARED,           // Shared with other processes
         mem_fd,               // File descriptor for /dev/mem
@@ -422,10 +429,21 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
 
     // volatile pointer to prevent compiler optimizations
     gpio = (volatile uint32_t *)gpio_map;
+    gpio[0x5401] = 0; // disable UART/SPI1/SPI2
 
     sel_reg = gpio;
     set_reg = &gpio[7];
     clr_reg = &gpio[10];
+
+    set_gpio_output(u8CS);
+    set_gpio_output(13); // RESET
+    *set_reg = (1 << 13); // RESET disabled
+    set_gpio_output(u8DC);
+    set_gpio_output(u8WR);
+    for (int i=14; i<22; i++) { // data pins
+        set_gpio_output(i);
+    }
+
     return;
 #endif // __LINUX__
 // old ESP32 only supports direct register parallelism
