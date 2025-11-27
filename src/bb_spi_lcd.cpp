@@ -84,6 +84,7 @@ SPIClass mySPI(
 #ifndef CONSUMER
 #define CONSUMER "Consumer"
 #endif
+static int iGPIOChip;
 struct gpiod_chip *chip = NULL;
 #ifdef GPIOD_API
 struct gpiod_line *lines[64];
@@ -810,7 +811,9 @@ void pinMode(int iPin, int iMode)
 {
 #ifdef GPIOD_API // old 1.6 API
    if (chip == NULL) {
-       chip = gpiod_chip_open_by_name("gpiochip0");
+       char szTemp[32];
+       snprintf(szTemp, sizeof(szTemp), "gpiochip%d", iGPIOChip);
+       chip = gpiod_chip_open_by_name(szTemp);
    }
    lines[iPin] = gpiod_chip_get_line(chip, iPin);
    if (iMode == OUTPUT) {
@@ -824,7 +827,10 @@ void pinMode(int iPin, int iMode)
    struct gpiod_line_settings *settings;
    struct gpiod_line_config *line_cfg;
    struct gpiod_request_config *req_cfg;
-   chip = gpiod_chip_open("/dev/gpiochip0");
+   char szTemp[32];
+   snprintf(szTemp, sizeof(szTemp), "/dev/gpiochip%d", iGPIOChip);
+   printf("opening %s\n", szTemp);
+   chip = gpiod_chip_open(szTemp);
    if (!chip) {
         printf("chip open failed\n");
            return;
@@ -2053,9 +2059,12 @@ static int iStarted = 0; // indicates if the master driver has already been init
     } // bUseDMA
 #else
 #ifdef __LINUX__
-    spi_fd = open("/dev/spidev0.1", O_RDWR); // DEBUG - open SPI channel 0 
+    iGPIOChip = iMISOPin;
+    char szTemp[32];
+    snprintf(szTemp, sizeof(szTemp), "/dev/spidev%d.0", iMOSIPin);
+    spi_fd = open(szTemp, O_RDWR); // DEBUG - open SPI channel x
     if (spi_fd <= 0) {
-	    printf("Error opening spidev0.1\n");
+	    printf("Error opening %s\n", szTemp);
     }
 #else
 #ifdef ARDUINO_ARCH_RP2040
