@@ -31,7 +31,7 @@ volatile uint32_t *set_reg, *clr_reg, *sel_reg;
 #include <bb_spi_lcd.h>
 
 #ifdef __LINUX__
-static uint32_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
+static uint32_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD, u32Speed;
 #else
 static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 #endif
@@ -216,9 +216,8 @@ static void wait_cycles(unsigned int n)
 void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 {
 #ifdef __LINUX__
-#define LCD_DELAY 10
         const uint32_t DATA_BIT_0 = 14; // DEBUG
-        uint32_t c, e, d=0xffff;
+        uint32_t c, e;
         const uint32_t u32WR = 1 << u8WR;
         const uint32_t xor_mask = (0xff << DATA_BIT_0);
         const uint32_t xor_mask2 = (xor_mask | u32WR);
@@ -231,23 +230,19 @@ if (iMode != MODE_DATA) {
         } else {
              *clr_reg = (1 << u8DC); // DC low
         }
-        wait_cycles(LCD_DELAY);
+        //wait_cycles(u32Speed);
  
         for (int i=0; i<len; i++) {
             c = *pData++;
-          // The GPIO writes add additional latency. This extra branch 
-          // speeds up the average data write by 20+%
-            if (c != d) { // different data?
-                e = c << DATA_BIT_0;
-                *clr_reg = (e ^ xor_mask2); // set 0 bits and WR low
-                *set_reg = e; // set 1 bits
-                d = c;
-            } else {
-                *clr_reg = u32WR;
-            }
-            wait_cycles(LCD_DELAY);
+            e = c << DATA_BIT_0;
+            *clr_reg = (e ^ xor_mask2); // set 0 bits and WR low
+            *set_reg = e; // set 1 bits
+	    // The latch timing is lopsided because the data setup time
+	    // and rising edge of the write signal needs a little more time
+	    // compared to the falling edge of the signal
+            wait_cycles(u32Speed);
             *set_reg = u32WR; // clock high
-            wait_cycles(LCD_DELAY);
+            wait_cycles(u32Speed/2);
         } // for i
         *set_reg = (1 << u8CS); // de-activate CS
     return;
@@ -396,6 +391,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
    void *gpio_map;
    uint32_t u32GPIO_BASE;
 
+   u32Speed = u32Freq; // delay amount for parallel data too
    // Determine if we're on a RPI 2/3 or 4 based on the RAM size
    struct sysinfo info;
    sysinfo(&info);
