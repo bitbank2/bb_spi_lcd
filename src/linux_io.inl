@@ -47,7 +47,7 @@ volatile uint32_t *set_reg, *clr_reg, *sel_reg;
 #define GPIO_BLOCK_SIZE 4*1024
 static uint32_t u32Speed;
 // N.B. the default buffer size is 4K
-#define RPI_DMA_SIZE 65536
+#define RPI_DMA_SIZE 4096 
 // wrapper/adapter functions to make the code work on Linux
 int digitalRead(int iPin)
 {

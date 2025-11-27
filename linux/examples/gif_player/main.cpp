@@ -8,6 +8,17 @@
 #include <time.h>
 AnimatedGIF gif;
 BB_SPI_LCD lcd;
+#define RADXA
+
+#ifdef RADXA
+#define LCD_TYPE LCD_ST7789
+#define DC_PIN 48
+#define RESET_PIN -1
+#define CS_PIN 55
+#define LED_PIN 56
+#define GPIO_CHIP 4
+#define SPI_NUM 12
+#else
 // definitions for parallel 3.5" Kumon LCD shield
 uint8_t u8DataPins[8] = {14,15,16,17,18,19,20,21};
 #define LCD_TYPE LCD_ILI9488
@@ -17,6 +28,7 @@ uint8_t u8DataPins[8] = {14,15,16,17,18,19,20,21};
 #define CS_PIN 22
 #define DC_PIN 4
 #define BUS_WIDTH 8
+#endif // RADXA
 
 int MilliTime()
 {
@@ -34,15 +46,21 @@ int main(int argc, char *argv[])
   int iTime, iFrame;
   int w, h;
   uint8_t *pStart;
-
-  if (argc != 2) {
-      printf("bb_spi_lcd gif_player\nUsage: gif_player <file>\n");
+  int iLoops = 1;
+  if (argc != 2 && argc != 3) {
+      printf("bb_spi_lcd gif_player\nUsage: gif_player <file> <optional loop count>\n");
       return -1;
   }
+#ifdef RADXA
+  lcd.begin(LCD_TYPE, FLAGS_NONE, 30000000, CS_PIN, DC_PIN, RESET_PIN, LED_PIN, GPIO_CHIP, SPI_NUM, 0);
+#else
   lcd.beginParallel(LCD_TYPE, FLAGS_SWAP_RB, RESET_PIN, RD_PIN, WR_PIN, CS_PIN
 , DC_PIN, BUS_WIDTH, u8DataPins, 18); // last parameter is the delay cycles for parallel data output
-  lcd.setRotation(270);
+#endif // RADXA
+  lcd.setRotation(90);
   lcd.fillScreen(0);
+
+  if (argc == 3) iLoops = atoi(argv[2]);
 
   gif.begin(BIG_ENDIAN_PIXELS);
   iFrame = 0;
@@ -56,15 +74,18 @@ int main(int argc, char *argv[])
       gif.setDrawType(GIF_DRAW_COOKED); // fully prepare pixels
       iFrame = 0;
       iTime = MilliTime();
-      while (gif.playFrame(false, NULL, NULL)) {
-	lcd.setAddrWindow(0,0,w,h);
-	//i = MilliTime();
-	lcd.pushPixels((uint16_t *)pStart, w * h);
-	//i = MilliTime() - i;
-	iFrame++;
-     }
-	iTime = MilliTime() - iTime;
-	printf("%d frames in %d ms\n", iFrame, iTime);
+      for (int i=0; i<iLoops; i++) {
+          while (gif.playFrame(false, NULL, NULL)) {
+	      lcd.setAddrWindow(0,0,w,h);
+	      //i = MilliTime();
+	      lcd.pushPixels((uint16_t *)pStart, w * h);
+	      //i = MilliTime() - i;
+	      iFrame++;
+          } // while decoding frames
+	  gif.reset();
+      } // fore each loop
+      iTime = MilliTime() - iTime;
+      printf("%d frames in %d ms\n", iFrame, iTime);
   }
   usleep(1000000); // wait a second before erasing the display
   lcd.fillScreen(0);
