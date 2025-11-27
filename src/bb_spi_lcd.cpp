@@ -23,7 +23,7 @@
 // control lines. 
 //#if defined(ADAFRUIT_PYBADGE_M4_EXPRESS)
 //#define SPI SPI1
-#ifndef __LINUX__
+#ifdef ARDUINO
 #include <SPI.h>
 #endif
 //#define SPI mySPI
@@ -70,40 +70,7 @@ SPIClass mySPI(
 #endif // ARDUINO_SAMD_ZERO
 
 #ifdef __LINUX__
-#include <stdint.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <string.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <linux/i2c-dev.h>
-#include <linux/spi/spidev.h>
-#include <gpiod.h>
-#include <math.h>
-#ifndef CONSUMER
-#define CONSUMER "Consumer"
-#endif
-static int iGPIOChip;
-struct gpiod_chip *chip = NULL;
-#ifdef GPIOD_API
-struct gpiod_line *lines[64];
-#else
-struct gpiod_line_request *lines[64];
-#endif
-uint8_t ucTXBuf[4096];
-uint8_t *pDMA = ucTXBuf;
-static uint8_t transfer_is_done = 1;
-#define false 0
-#define true 1
-#define PROGMEM
-#define memcpy_P memcpy
-#define OUTPUT 0
-#define INPUT 1
-#define INPUT_PULLUP 2
-#define HIGH 1
-#define LOW 0
-static int spi_fd; // SPI handle
+#include "linux_io.inl"
 #else // Arduino
 // Use the default (non DMA) SPI library for boards we don't currently support
 #if !defined(__SAMD51__) && !defined(ARDUINO_SAMD_ZERO) && !defined(ARDUINO_ARCH_RP2040)
@@ -120,7 +87,7 @@ SPIClassRP2040 *pSPI = &SPI;
 
 #include <Arduino.h>
 #include <SPI.h>
-#endif // LINUX
+#endif // ARDUINO
 
 #include <bb_spi_lcd.h>
 
@@ -785,96 +752,6 @@ const uint8_t ucSmallFont[]PROGMEM = {
     0x4c,0x00,0x00,0x08,0x3e,0x41,0x41,0x00,0x00,0x00,0x00,0x77,0x00,0x00,0x00,0x00,
     0x41,0x41,0x3e,0x08,0x00,0x02,0x01,0x02,0x01,0x00,0x00,0x3c,0x26,0x23,0x26,0x3c};
 
-// wrapper/adapter functions to make the code work on Linux
-#ifdef __LINUX__
-int digitalRead(int iPin)
-{
-    if (lines[iPin] == 0) return 0;
-#ifdef GPIOD_API // 1.x (old) API
-    return gpiod_line_get_value(lines[iPin]);
-#else // 2.x (new)
-    return gpiod_line_request_get_value(lines[iPin], iPin) == GPIOD_LINE_VALUE_ACTIVE;
-#endif 
-} /* digitalRead() */
-
-void digitalWrite(int iPin, int iState)
-{
-    if (lines[iPin] == 0) return;
-#ifdef GPIOD_API // old 1.6 API
-    gpiod_line_set_value(lines[iPin], iState);
-#else // new 2.x API
-   gpiod_line_request_set_value(lines[iPin], iPin, (iState) ? GPIOD_LINE_VALUE_ACTIVE : GPIOD_LINE_VALUE_INACTIVE);
-#endif
-} /* digitalWrite() */
-
-void pinMode(int iPin, int iMode)
-{
-#ifdef GPIOD_API // old 1.6 API
-   if (chip == NULL) {
-       char szTemp[32];
-       snprintf(szTemp, sizeof(szTemp), "gpiochip%d", iGPIOChip);
-       chip = gpiod_chip_open_by_name(szTemp);
-   }
-   lines[iPin] = gpiod_chip_get_line(chip, iPin);
-   if (iMode == OUTPUT) {
-       gpiod_line_request_output(lines[iPin], CONSUMER, 0);
-   } else if (iMode == INPUT_PULLUP) {
-       gpiod_line_request_input_flags(lines[iPin], CONSUMER, GPIOD_LINE_REQUEST_FLAG_BIAS_PULL_UP);
-   } else { // plain input
-       gpiod_line_request_input(lines[iPin], CONSUMER);
-   }
-#else // new 2.x API
-   struct gpiod_line_settings *settings;
-   struct gpiod_line_config *line_cfg;
-   struct gpiod_request_config *req_cfg;
-   char szTemp[32];
-   snprintf(szTemp, sizeof(szTemp), "/dev/gpiochip%d", iGPIOChip);
-   printf("opening %s\n", szTemp);
-   chip = gpiod_chip_open(szTemp);
-   if (!chip) {
-        printf("chip open failed\n");
-           return;
-   }
-   settings = gpiod_line_settings_new();
-   if (!settings) {
-        printf("line_settings_new failed\n");
-           return;
-   }
-   gpiod_line_settings_set_direction(settings, (iMode == OUTPUT) ? GPIOD_LINE_DIRECTION_OUTPUT : GPIOD_LINE_DIRECTION_INPUT);
-   line_cfg = gpiod_line_config_new();
-   if (!line_cfg) return;
-   gpiod_line_config_add_line_settings(line_cfg, (const unsigned int *)&iPin, 1, settings);
-   req_cfg = gpiod_request_config_new();
-   gpiod_request_config_set_consumer(req_cfg, CONSUMER);
-   lines[iPin] = gpiod_chip_request_lines(chip, req_cfg, line_cfg);
-   gpiod_request_config_free(req_cfg);
-   gpiod_line_config_free(line_cfg);
-   gpiod_line_settings_free(settings);
-   gpiod_chip_close(chip);
-#endif
-} /* pinMode() */
-
-static void delay(int iMS)
-{
-  usleep(iMS * 1000);
-} /* delay() */
-
-static void delayMicroseconds(int iMS)
-{
-  usleep(iMS);
-} /* delayMicroseconds() */
-
-static uint8_t pgm_read_byte(uint8_t *ptr)
-{
-  return *ptr;
-}
-#ifdef FUTURE
-static int16_t pgm_read_word(uint8_t *ptr)
-{
-  return ptr[0] + (ptr[1]<<8);
-}
-#endif // FUTURE
-#endif // __LINUX__
 //
 // Provide a small temporary buffer for use by the graphics functions
 //
@@ -1743,22 +1620,7 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
         
 // No DMA requested or available, fall through to here
 #ifdef __LINUX__
-{
-struct spi_ioc_transfer spi;
-   memset(&spi, 0, sizeof(spi));
-   while (iLen) { // max 64k transfers (default is 4k)
-       int j = iLen;
-       if (j > 65536) j = 65536;
-       spi.tx_buf = (unsigned long)pBuf;
-       spi.len = j;
-       spi.speed_hz = pLCD->iSPISpeed;
-       //spi.cs_change = 1;
-       spi.bits_per_word = 8;
-       ioctl(spi_fd, SPI_IOC_MESSAGE(1), &spi);
-       iLen -= j;
-       pBuf += j;
-   }
-}
+    linux_spi_write(pBuf, iLen, pLCD->iSPISpeed);
 #else
 #ifdef ARDUINO_ARCH_RP2040
     pSPI->beginTransaction(SPISettings(pLCD->iSPISpeed, MSBFIRST, pLCD->iSPIMode));
@@ -2059,13 +1921,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
     } // bUseDMA
 #else
 #ifdef __LINUX__
-    iGPIOChip = iMISOPin;
-    char szTemp[32];
-    snprintf(szTemp, sizeof(szTemp), "/dev/spidev%d.0", iMOSIPin);
-    spi_fd = open(szTemp, O_RDWR); // DEBUG - open SPI channel x
-    if (spi_fd <= 0) {
-	    printf("Error opening %s\n", szTemp);
-    }
+    linux_spi_init(iMISOPin, iMOSIPin);
 #else
 #ifdef ARDUINO_ARCH_RP2040
   pSPI->begin();

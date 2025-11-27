@@ -15,26 +15,12 @@
 extern void pinMode(int pin, int mode);
 extern void digitalWrite(int pin, int value);
 
-#ifdef __LINUX__
-#include <fcntl.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/sysinfo.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-volatile uint32_t *gpio;
-volatile uint32_t *set_reg, *clr_reg, *sel_reg;
-#define GPIO_BLOCK_SIZE 4*1024
-#endif // __LINUX__
-
+extern void linux_parallel_init(uint32_t u32Freq);
+extern void linux_parallel_write(uint8_t *pData, int len, int iMode);
 #endif
 #include <bb_spi_lcd.h>
 
-#ifdef __LINUX__
-static uint32_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD, u32Speed;
-#else
-static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
-#endif
+uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 //#define USE_ESP32_GPIO
 #if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
 #if __has_include (<esp_lcd_panel_io.h>)
@@ -202,49 +188,10 @@ void ParallelReset(void) {
     
 } /* ParallelReset() */
 
-#ifdef __LINUX__
-/**   
- * Wait N CPU cycles (ARM CPU only)
- * On the RPI Zero 2W, 1 microsecond ˜= 463 wait loops
- */
-static void wait_cycles(unsigned int n)
-{
-    if(n) while(n--) { asm volatile("nop"); }
-}
-#endif // __LINUX__
-
 void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 {
 #ifdef __LINUX__
-        const uint32_t DATA_BIT_0 = 14; // DEBUG
-        uint32_t c, e;
-        const uint32_t u32WR = 1 << u8WR;
-        const uint32_t xor_mask = (0xff << DATA_BIT_0);
-        const uint32_t xor_mask2 = (xor_mask | u32WR);
-if (iMode != MODE_DATA) {
-//printf("parallel data: len=%d, mode=%d\n", len, iMode);
-}
-        *clr_reg = (1 << u8CS); // activate CS
-        if (iMode == MODE_DATA) { // DC high
-             *set_reg = (1 << u8DC);
-        } else {
-             *clr_reg = (1 << u8DC); // DC low
-        }
-        //wait_cycles(u32Speed);
- 
-        for (int i=0; i<len; i++) {
-            c = *pData++;
-            e = c << DATA_BIT_0;
-            *clr_reg = (e ^ xor_mask2); // set 0 bits and WR low
-            *set_reg = e; // set 1 bits
-	    // The latch timing is lopsided because the data setup time
-	    // and rising edge of the write signal needs a little more time
-	    // compared to the falling edge of the signal
-            wait_cycles(u32Speed);
-            *set_reg = u32WR; // clock high
-            wait_cycles(u32Speed/2);
-        } // for i
-        *set_reg = (1 << u8CS); // de-activate CS
+    linux_parallel_write(pData, len, iMode);
     return;
 #endif //__LINUX__
 
@@ -357,20 +304,6 @@ if (iMode != MODE_DATA) {
 #endif // FUTURE
 #endif // ARDUINO_ARCH_ESP32
 } /* ParallelDataWrite() */
-#ifdef __LINUX__
-//
-// Configure a GPIO pin on the Raspberry Pi as an OUTPUT
-//
-void set_gpio_output(int pin) {
-    // The pin in GPIOSEL0 goes from 0-9 and next pins 10-19
-    // is on reg GPIOSEL1 and so on
-    int reg = pin / 10; 
-    int shift = (pin % 10) * 3;
-    // Clear the 3 bits for the pin and set it to 001 (output)
-    gpio[reg] = (gpio[reg] & ~(7 << shift)) | (1 << shift);
-} /* set_gpio_output() */
-
-#endif // __LINUX__
 //
 // Initialize the parallel bus info
 //
@@ -387,59 +320,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
         digitalWrite(RD_PIN, HIGH); // RD deactivated
     }
 #ifdef __LINUX__
-   int mem_fd;
-   void *gpio_map;
-   uint32_t u32GPIO_BASE;
-
-   u32Speed = u32Freq; // delay amount for parallel data too
-   // Determine if we're on a RPI 2/3 or 4 based on the RAM size
-   struct sysinfo info;
-   sysinfo(&info);
-//printf("ram size = %d\n", info.totalram);
-   if (info.totalram < 950000000) { // must be Zero2W or RPI 3B
-//       printf("RPI 2/3\n");
-       u32GPIO_BASE = 0x3f000000+0x00200000;
-   } else { // RPI 4B
-//       printf("RPI 4B\n");
-       u32GPIO_BASE = 0xfe000000+0x00200000;
-   }
-    if ((mem_fd = open("/dev/mem", O_RDWR | O_SYNC)) < 0) {
-        perror("Failed to open /dev/mem, try running as root");
-        exit(EXIT_FAILURE);
-    }
-    // Map GPIO memory to our address space
-    gpio_map = mmap(
-        NULL,                 // Any address in our space will do
-        0x150010,
-//        GPIO_BLOCK_SIZE,      // Map length = 4K
-        PROT_READ | PROT_WRITE, // Enable reading & writing to mapped memory
-        MAP_SHARED,           // Shared with other processes
-        mem_fd,               // File descriptor for /dev/mem
-        u32GPIO_BASE          // Offset to GPIO peripheral
-    );
-    close(mem_fd);
-    if (gpio_map == MAP_FAILED) {
-        perror("mmap error");
-        exit(EXIT_FAILURE);
-    }
-
-    // volatile pointer to prevent compiler optimizations
-    gpio = (volatile uint32_t *)gpio_map;
-    gpio[0x5401] = 0; // disable UART/SPI1/SPI2
-
-    sel_reg = gpio;
-    set_reg = &gpio[7];
-    clr_reg = &gpio[10];
-
-    set_gpio_output(u8CS);
-    set_gpio_output(13); // RESET
-    *set_reg = (1 << 13); // RESET disabled
-    set_gpio_output(u8DC);
-    set_gpio_output(u8WR);
-    for (int i=14; i<22; i++) { // data pins
-        set_gpio_output(i);
-    }
-
+    linux_parallel_init(u32Freq);
     return;
 #endif // __LINUX__
 // old ESP32 only supports direct register parallelism
