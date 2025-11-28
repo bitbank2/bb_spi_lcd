@@ -6126,8 +6126,10 @@ int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD
 
 int BB_SPI_LCD::begin(int iDisplayType)
 {
+#ifndef __LINUX__
     int iCS=0, iDC=0, iMOSI=0, iSCK=0; // swap pins around for the different TinyPico boards
     int iLED=0, iRST = -1;
+#endif // __LINUX__
 
     memset(&_lcd, 0, sizeof(_lcd));
 #ifdef ARDUINO_TINYPICO
