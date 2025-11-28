@@ -15,7 +15,7 @@
 extern void pinMode(int pin, int mode);
 extern void digitalWrite(int pin, int value);
 
-extern void linux_parallel_init(uint32_t u32Freq);
+extern void linux_parallel_init(uint32_t u32Freq, uint8_t u8Bit0);
 extern void linux_parallel_write(uint8_t *pData, int len, int iMode);
 #endif
 #include <bb_spi_lcd.h>
@@ -320,7 +320,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
         digitalWrite(RD_PIN, HIGH); // RD deactivated
     }
 #ifdef __LINUX__
-    linux_parallel_init(u32Freq);
+    linux_parallel_init(u32Freq, data_pins[0]);
     return;
 #endif // __LINUX__
 // old ESP32 only supports direct register parallelism

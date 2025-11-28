@@ -42,6 +42,7 @@ static uint8_t transfer_is_done = 1;
 
 extern uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 static int spi_fd; // SPI handle
+static uint8_t gpio_bit_zero; // bit zero of parallel GPIO pins
 volatile uint32_t *gpio;
 volatile uint32_t *set_reg, *clr_reg, *sel_reg;
 #define GPIO_BLOCK_SIZE 4*1024
@@ -159,7 +160,7 @@ void linux_spi_init(int iMISOPin, int iMOSIPin)
     iGPIOChip = iMISOPin;
     char szTemp[32];
     snprintf(szTemp, sizeof(szTemp), "/dev/spidev%d.0", iMOSIPin);
-    spi_fd = open(szTemp, O_RDWR); // DEBUG - open SPI channel x
+    spi_fd = open(szTemp, O_RDWR);
     if (spi_fd <= 0) {
 	    printf("Error opening %s\n", szTemp);
     }
@@ -178,7 +179,7 @@ static void wait_cycles(unsigned int n)
 //
 void linux_parallel_write(uint8_t *pData, int len, int iMode)
 {
-        const uint32_t DATA_BIT_0 = 14; // DEBUG
+        const uint32_t DATA_BIT_0 = gpio_bit_zero;
         uint32_t c, e;
         const uint32_t u32WR = 1 << u8WR;
         const uint32_t xor_mask = (0xff << DATA_BIT_0);
@@ -222,12 +223,13 @@ void set_gpio_output(int pin) {
 // Map the RPI GPIO registers into virtual memory
 // and initialize the correct pins as output
 //
-void linux_parallel_init(uint32_t u32Freq)
+void linux_parallel_init(uint32_t u32Freq, uint8_t u8Bit0)
 {
    int mem_fd;
    void *gpio_map;
    uint32_t u32GPIO_BASE;
 
+   gpio_bit_zero = u8Bit0;
    u32Speed = u32Freq; // delay amount for parallel data too
    // Determine if we're on a RPI 2/3 or 4 based on the RAM size
    struct sysinfo info;
