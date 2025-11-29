@@ -352,7 +352,7 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 //  
 // This set of qspi functions is for RP2350 only
 //  
-#ifdef ARDUINO_ARCH_RP2040
+#ifdef ARDUINO_ARCH_RP2040_FUTURE
 #define qspi_4wire_data_wrap_target 0
 #define qspi_4wire_data_wrap 1
 #define qspi_4wire_data_pio_version 0
@@ -504,48 +504,6 @@ void qspiSendDATA(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags)
     gpio_put(pLCD->iCSPin,1); // deselect CS
 } /* qspiSendDATA() */
 
-const uint8_t u8_CO5300InitList[] = {
- 1, 0x11, // sleep out
- LCD_DELAY, 120,
- 3, 0x44, 0x01, 0xc5,
- 2, 0x35, 0x00,
- 2, 0x3a, 0x55, // pixel format RGB565
- 2, 0xc4, 0x80,
- 2, 0x53, 0x20,
- 2, 0x63, 0xff,
- 2, 0x51, 0x00,
- 1, 0x29,
- LCD_DELAY, 10,
- 2, 0x51, 0xff, // set max brightness
- 0,0 // end
-};
-
-void CO5300Init(SPILCD *pLCD)
-{
-int iCount;
-uint8_t *s, u8Temp[32];
-
-    pLCD->iCurrentWidth = pLCD->iWidth = 280;
-    pLCD->iCurrentHeight = pLCD->iHeight = 456;
-    pLCD->iLCDType = LCD_CO5300;
-    iCount = 1;
-    s = (uint8_t *)u8_CO5300InitList;
-    while (iCount) {
-        iCount = *s++;
-        if (iCount == LCD_DELAY) {
-            delay(*s++);
-        } else if (iCount > 0) {
-            qspiSendCMD(pLCD, s[0], &s[1], iCount-1);
-            s += iCount;
-        }
-    } // while commands to send
-    qspiSetPosition(pLCD, 32, 32, 32, 32);
-    memset(u8Temp, 0xff, sizeof(u8Temp));
-    for (int i=0; i<100; i++) {
-        qspiSendDATA(pLCD, u8Temp, sizeof(u8Temp), 0);
-    } 
-} /* CO5300Init() */
-
 // Initialize a Quad SPI display
 int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u8CS, uint8_t u8CLK, uint8_t u8D0, uint8_t u8D1, uint8_t u8D2, uint8_t u8D3, uint8_t u8RST, uint8_t u8LED)
 {
@@ -601,7 +559,7 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
     CO5300Init(pLCD);
     return 1;
 } /* qspiInit() */
-#endif // ARDUINO_ARCH_RP2040
+#endif // ARDUINO_ARCH_RP2040_FUTURE
 
 #ifdef __LINUX__
 // Return a pointer to a periphery subsystem register.

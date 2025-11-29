@@ -1994,12 +1994,10 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
        (*pLCD->pfnDataCallback)(pBuf, iLen, iMode);
        return;
     }
-#if defined( ARDUINO_ARCH_ESP32 ) || defined (ARDUINO_ARCH_RP2040)
     if (pLCD->iLCDType > LCD_QUAD_SPI) {
         qspiSendDATA(pLCD, pBuf, iLen, iFlags);
         return;
     }
-#endif // ESP32 / RP2040
     if (pLCD->iLCDFlags & FLAGS_BITBANG)
     {
         SPI_BitBang(pLCD, pBuf, iLen, iMode);
@@ -3875,8 +3873,56 @@ uint8_t * spilcdGetDMABuffer(void)
 {
   return (uint8_t *)pDMA;
 }
-
-#ifdef ARDUINO_ARCH_ESP32
+//
+// Bit Bang commands and pixel data to a QSPI device
+//
+void qspiSendByte(SPILCD *pLCD, uint8_t u8Data, uint8_t u8Lines)
+{
+//    Serial.print("qspiSendByte: 0x");
+//    Serial.println(u8Data, HEX);
+    
+#ifdef ARDUINO_ARCH_RP2040
+    if (u8Lines == 1) { // send it on D0
+        for (int i=0; i<8; i++) {
+            gpio_put(pLCD->iCLKPin, 0); // clock low to start
+            gpio_put(pLCD->iD0Pin, u8Data & 0x80); // MSB first
+            u8Data <<= 1;
+            gpio_put(pLCD->iCLKPin, 1); // clock high to latch data
+//            delayMicroseconds(0); // DEBUG - change to a few cycles
+        } // for i
+    } else { // send it on D0-D3
+        gpio_put(pLCD->iCLKPin, 0); // clock low
+        gpio_put_masked (0xf << pLCD->iD0Pin, u8Data << (pLCD->iD0Pin-4));
+        gpio_put(pLCD->iCLKPin, 1);
+        gpio_put(pLCD->iCLKPin, 0);
+        gpio_put_masked (0xf << pLCD->iD0Pin, u8Data << pLCD->iD0Pin);
+        gpio_put(pLCD->iCLKPin, 1);
+#else // generic GPIO
+    if (u8Lines == 1) { // send it on D0
+        for (int i=0; i<8; i++) {
+            digitalWrite(pLCD->iCLKPin, 0); // clock low to start
+            digitalWrite(pLCD->iD0Pin, u8Data & 0x80); // MSB first
+            u8Data <<= 1;
+            digitalWrite(pLCD->iCLKPin, 1); // clock high to latch data
+//            delayMicroseconds(0); // DEBUG - change to a few cycles
+        } // for i
+    } else { // send it on D0-D3
+        digitalWrite(pLCD->iCLKPin, 0); // clock low
+        digitalWrite(pLCD->iD3Pin, u8Data & 0x80);
+        digitalWrite(pLCD->iD2Pin, u8Data & 0x40);
+        digitalWrite(pLCD->iD1Pin, u8Data & 0x20);
+        digitalWrite(pLCD->iD0Pin, u8Data & 0x10);
+        digitalWrite(pLCD->iCLKPin, 1); // latch high nibble
+//        delayMicroseconds(0); // DEBUG
+        digitalWrite(pLCD->iCLKPin, 0); // clock low
+        digitalWrite(pLCD->iD3Pin, u8Data & 0x8);
+        digitalWrite(pLCD->iD2Pin, u8Data & 0x4);
+        digitalWrite(pLCD->iD1Pin, u8Data & 0x2);
+        digitalWrite(pLCD->iD0Pin, u8Data & 0x1);
+        digitalWrite(pLCD->iCLKPin, 1); // latch low nibble
+#endif
+    }
+} /* qspiSendByte() */
 //
 // In Quad SPI mode, commands are 16-bits and send only on D0
 // after a command "introducer"
@@ -3887,6 +3933,7 @@ uint8_t * spilcdGetDMABuffer(void)
 //
 void qspiSendCMD(SPILCD *pLCD, uint8_t u8CMD, uint8_t *pParams, int iLen)
 {
+#ifdef ESP_IDF_VERSION_MAJOR
     spi_transaction_t t;
     memset(&t, 0, sizeof(t));
     
@@ -3899,10 +3946,23 @@ void qspiSendCMD(SPILCD *pLCD, uint8_t u8CMD, uint8_t *pParams, int iLen)
         t.length = 8 * iLen; // length in bits
     }
     spi_device_polling_transmit(spi, &t);
+#else // use bit banging
+    digitalWrite(pLCD->iCLKPin, 0);
+    digitalWrite(pLCD->iCSPin, 0); // CS low = activate bus
+    qspiSendByte(pLCD, 0x02, 1); // send command byte on data bit 0
+    qspiSendByte(pLCD, 0, 1); // 2nd 8 bits of address
+    qspiSendByte(pLCD, u8CMD, 1); // 3rd 8 bits of address
+    qspiSendByte(pLCD, 0, 1); // final 8 bits of address
+    for (int i=0; i<iLen; i++) {
+        qspiSendByte(pLCD, pParams[i], 1); // send all command parameters on bit 0 also
+    }
+    digitalWrite(pLCD->iCSPin, 1); // CS high = deactivate bus
+#endif
 } /* qspiSendCMD() */
 
 void qspiSendDATA(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags)
 {
+#ifdef ESP_IDF_VERSION_MAJOR
 esp_err_t ret;
 int iCount;
 
@@ -3937,10 +3997,25 @@ int iCount;
         iLen -= iCount;
         pData += iCount;
     }
-} /* qspiSendDATA() */
+#else // Bit Bang
+    digitalWrite(pLCD->iCLKPin, 0);
+    digitalWrite(pLCD->iCSPin, 0); // CS low = activate bus
+    qspiSendByte(pLCD, 0x32, 1); // send command byte on data bit 0
+    qspiSendByte(pLCD, 0, 1); // 2nd 8 bits of address
+    if (bSetPosition) { // first data after a setPosition
+        qspiSendByte(pLCD, 0x2c, 1);
+        bSetPosition = 0;
+    } else { // all data after...
+        qspiSendByte(pLCD, 0x3c, 1);
+    }
+    qspiSendByte(pLCD, 0, 1); // final 8 bits of address
+    for (int i=0; i<iLen; i++) {
+        qspiSendByte(pLCD, pData[i], 4); // send all pixel data on bits 0-3
+    }
+    digitalWrite(pLCD->iCSPin, 1); // CS high = deactivate bus
 #endif
+} /* qspiSendDATA() */
 
-#if defined (ARDUINO_ARCH_ESP32) || defined (ARDUINO_ARCH_RP2040)
 void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h)
 {
     uint8_t u8Temp[8];
@@ -4002,9 +4077,6 @@ void qspiRotate(SPILCD *pLCD, int iOrient)
     }
     qspiSendCMD(pLCD, 0x36, &u8Mad, 1);
 } /* qspiRotate() */
-#endif // ESP32+RP2040
-
-#ifdef ARDUINO_ARCH_ESP32
 
 void ST77916Init(SPILCD *pLCD)
 {
@@ -4467,6 +4539,44 @@ void ICNA3311Init(SPILCD *pLCD)
 
     qspiSendCMD(pLCD, 0x20, NULL, 0); // inversion off
 } /* ICNA3311Init() */
+
+const uint8_t u8_CO5300InitList[] = {
+ 1, 0x11, // sleep out
+ LCD_DELAY, 120,
+ 3, 0x44, 0x01, 0xc5,
+ 2, 0x35, 0x00,
+ 2, 0x3a, 0x55, // pixel format RGB565
+ 2, 0xc4, 0x80,
+ 2, 0x53, 0x20,
+ 2, 0x63, 0xff,
+ 2, 0x51, 0x00,
+ 1, 0x29,
+ LCD_DELAY, 10,
+ 2, 0x51, 0xff, // set max brightness
+ 0,0 // end
+};
+
+void CO5300Init(SPILCD *pLCD)
+{
+int iCount;
+uint8_t *s, u8Temp[32];
+
+    pLCD->iCurrentWidth = pLCD->iWidth = 280;
+    pLCD->iCurrentHeight = pLCD->iHeight = 456;
+    pLCD->iMemoryX = 20; // memory window offset since controller is 320 wide (20 gap on each side)
+    pLCD->iLCDType = LCD_CO5300;
+    iCount = 1;
+    s = (uint8_t *)u8_CO5300InitList;
+    while (iCount) {
+        iCount = *s++;
+        if (iCount == LCD_DELAY) {
+            delay(*s++);
+        } else if (iCount > 0) {
+            qspiSendCMD(pLCD, s[0], &s[1], iCount-1);
+            s += iCount;
+        }
+    } // while commands to send
+} /* CO5300Init() */
 
 void RM67162Init(SPILCD *pLCD)
 {
@@ -5053,9 +5163,6 @@ void SPD2010Init(SPILCD *pLCD)
 // Initialize a Quad SPI display
 int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u8CS, uint8_t u8CLK, uint8_t u8D0, uint8_t u8D1, uint8_t u8D2, uint8_t u8D3, uint8_t u8RST, uint8_t u8LED)
 {
-#ifndef __LINUX__
-    esp_err_t ret;
-    
     if (u8CS != 0xff) {
         pinMode(u8CS, OUTPUT);
         digitalWrite(u8CS, HIGH);
@@ -5071,7 +5178,12 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
     }
     pLCD->iLEDPin = u8LED;
     pLCD->iCSPin = u8CS;
+    pLCD->iCLKPin = u8CLK;
     pLCD->iLCDType = iLCDType;
+    pLCD->iD0Pin = u8D0;
+    pLCD->iD1Pin = u8D1;
+    pLCD->iD2Pin = u8D2;
+    pLCD->iD3Pin = u8D3;
     if (u8RST != 0xff) { // has a reset GPIO?
       pinMode(u8RST, OUTPUT);
       digitalWrite(u8RST, HIGH);
@@ -5081,6 +5193,9 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
       digitalWrite(u8RST, HIGH);
       delay(300);
     }
+
+#ifdef ESP_IDF_VERSION_MAJOR
+    esp_err_t ret;
 
     spi_bus_config_t buscfg = {
         .data0_io_num = u8D0,
@@ -5109,8 +5224,18 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
     ESP_ERROR_CHECK(ret);
     ret = spi_bus_add_device(SPI2_HOST, &devcfg, &spi);
     ESP_ERROR_CHECK(ret);
-    
+#else // Bit Bang version
+    pinMode(u8CLK, OUTPUT);
+    pinMode(u8D0, OUTPUT);
+    pinMode(u8D1, OUTPUT);
+    pinMode(u8D2, OUTPUT);
+    pinMode(u8D3, OUTPUT);
+#endif // ESP32
+
     switch (iLCDType) {
+        case LCD_CO5300:
+            CO5300Init(pLCD);
+            break;
         case LCD_SPD2010:
             SPD2010Init(pLCD);
             break;
@@ -5145,10 +5270,10 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
             ST77916Init(pLCD);
             break;
     }
-#endif // !__LINUX__
     return 1;
 } /* qspiInit() */
 
+#ifdef ARDUINO_ARCH_ESP32
 //This function is called (in irq context!) just before a transmission starts. It will
 //set the D/C line to the value indicated in the user field.
 static void spi_pre_transfer_callback(spi_transaction_t *t)
@@ -7987,10 +8112,7 @@ int BB_SPI_LCD::beginQSPI(int iType, int iFlags, uint8_t CS_PIN, uint8_t CLK_PIN
 {
     memset(&_lcd, 0, sizeof(_lcd));
     _lcd.bUseDMA = 1; // allows DMA access
-#ifdef ARDUINO_ARCH_ESP32
     return qspiInit(&_lcd, iType, iFlags, u32Freq, CS_PIN, CLK_PIN, D0_PIN, D1_PIN, D2_PIN, D3_PIN, RST_PIN, -1);
-#endif
-    return 0;
 } /* beginQSPI() */
 
 int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq)
@@ -8165,6 +8287,7 @@ void PCA9535Write(uint8_t pin, uint8_t value)
 //
 void BB_SPI_LCD::spilcdBitBangRGBCommands(const uint8_t *pCMDList)
 {
+#ifndef ARDUINO_ARCH_RP2040
     Wire.end();
     Wire.begin(17, 18); // I2C to I/O expander
     Wire.setClock(400000);
@@ -8233,6 +8356,7 @@ void BB_SPI_LCD::spilcdBitBangRGBCommands(const uint8_t *pCMDList)
 		PCA9535Write(CS, HIGH); // end of SPI transaction
 	}
 	Wire.end();
+#endif // !rp2040
 } /* spilcdBitBangRGBCommands() */
 
 int BB_SPI_LCD::begin(int iDisplayType)
@@ -8854,8 +8978,10 @@ int BB_SPI_LCD::begin(int iDisplayType)
 #ifdef ARDUINO_ARCH_RP2040
         case DISPLAY_WS_RP2350_164:
             _lcd.bUseDMA = 1; // allows DMA access
+            pinMode(17, OUTPUT); // power enable
+            digitalWrite(17, 1);
 // int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u8CS, uint8_t u8CLK, uint8_t u8D0, uint8_t u8D1, uint8_t u8D2, uint8_t u8D3, uint8_t u8RST, uint8_t u8LED);
-            qspiInit(&_lcd, LCD_CO5300, FLAGS_NONE, 40000000, 9,10,11,12,13,14,15,17);
+            qspiInit(&_lcd, LCD_CO5300, FLAGS_NONE, 40000000, 9,10,11,12,13,14,15,-1);
            break;
 #endif // ARDUINO_ARCH_RP2040
         default:

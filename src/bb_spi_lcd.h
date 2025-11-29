@@ -153,6 +153,7 @@ typedef struct tagSPILCD
    int iCurrentWidth, iCurrentHeight; // rotated size
    int iWriteFlags; // flags specifically for printing (write)
    int iCSPin, iCLKPin, iMOSIPin, iDCPin, iResetPin, iLEDPin;
+   int iD0Pin, iD1Pin, iD2Pin, iD3Pin; // for QSPI
 #ifdef ARDUINO
    SPIClass *pSPI;
 #else
