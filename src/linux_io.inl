@@ -27,18 +27,6 @@ struct gpiod_line *lines[64];
 #else
 struct gpiod_line_request *lines[64];
 #endif
-uint8_t ucTXBuf[4096];
-uint8_t *pDMA = ucTXBuf;
-static uint8_t transfer_is_done = 1;
-#define false 0
-#define true 1
-#define PROGMEM
-#define memcpy_P memcpy
-#define OUTPUT 1
-#define INPUT 0
-#define INPUT_PULLUP 2
-#define HIGH 1
-#define LOW 0
 
 extern uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 static int spi_fd; // SPI handle
@@ -92,7 +80,7 @@ void pinMode(int iPin, int iMode)
    struct gpiod_request_config *req_cfg;
    char szTemp[32];
    snprintf(szTemp, sizeof(szTemp), "/dev/gpiochip%d", iGPIOChip);
-   printf("opening %s\n", szTemp);
+   //printf("opening %s\n", szTemp);
    chip = gpiod_chip_open(szTemp);
    if (!chip) {
         printf("chip open failed\n");
@@ -127,16 +115,6 @@ static void delayMicroseconds(int iMS)
   usleep(iMS);
 } /* delayMicroseconds() */
 
-static uint8_t pgm_read_byte(uint8_t *ptr)
-{
-  return *ptr;
-}
-#ifdef FUTURE
-static int16_t pgm_read_word(uint8_t *ptr)
-{
-  return ptr[0] + (ptr[1]<<8);
-}
-#endif // FUTURE
 void linux_spi_write(uint8_t *pBuf, int iLen, uint32_t iSPISpeed)
 {
 struct spi_ioc_transfer spi;
@@ -155,11 +133,11 @@ struct spi_ioc_transfer spi;
    }
 } /* linux_spi_write() */
 
-void linux_spi_init(int iMISOPin, int iMOSIPin)
+void linux_spi_init(int iMISOPin, int iMOSIPin, int iCLKPin)
 {
     iGPIOChip = iMISOPin;
     char szTemp[32];
-    snprintf(szTemp, sizeof(szTemp), "/dev/spidev%d.0", iMOSIPin);
+    snprintf(szTemp, sizeof(szTemp), "/dev/spidev%d.%d", iMOSIPin, iCLKPin);
     spi_fd = open(szTemp, O_RDWR);
     if (spi_fd <= 0) {
 	    printf("Error opening %s\n", szTemp);

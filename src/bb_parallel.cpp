@@ -21,30 +21,20 @@
 
 #include <bb_spi_lcd.h>
 
-static uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
+uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 static uint8_t *_data_pins;
 void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h);
 
 #ifdef __LINUX__
+#include <fcntl.h>
+#include <sys/sysinfo.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
-volatile uint32_t *gpio_port, *set_reg, *clr_reg;
-// ---- GPIO specific defines
-#define GPIO_REGISTER_BASE 0x200000
-#define GPIO_SET_OFFSET 0x1C
-#define GPIO_CLR_OFFSET 0x28
-#define PHYSICAL_GPIO_BUS (0x7E000000 + GPIO_REGISTER_BASE)
-#define BCM2708_PI1_PERI_BASE  0x20000000
-#define BCM2709_PI2_PERI_BASE  0x3F000000
-#define BCM2711_PI4_PERI_BASE  0xFE000000
-#define PERI_BASE BCM2709_PI2_PERI_BASE
-#define PAGE_SIZE 4096
+#include <unistd.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-#define INPUT 0
-#define OUTPUT 1
-#define LOW 0
-#define HIGH 1
 extern void pinMode(int pin, int mode);
 extern void digitalWrite(int pin, int value);
 
@@ -554,35 +544,6 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
 } /* qspiInit() */
 #endif // ARDUINO_ARCH_RP2040_FUTURE
 
-#ifdef __LINUX__
-// Return a pointer to a periphery subsystem register.
-static void *mmap_bcm_register(off_t register_offset) {
-  const off_t base = PERI_BASE;
-
-  int mem_fd;
-  if ((mem_fd = open("/dev/mem", O_RDWR|O_SYNC) ) < 0) {
-    perror("can't open /dev/mem: ");
-    fprintf(stderr, "You need to run this as root!\n");
-    return NULL;
-  }
-
-  uint32_t *result =
-    (uint32_t*) mmap(NULL,                  // Any adddress in our space will do
-                     PAGE_SIZE,
-                     PROT_READ|PROT_WRITE,  // Enable r/w on GPIO registers.
-                     MAP_SHARED,
-                     mem_fd,                // File to map
-                     base + register_offset // Offset to bcm register
-                     );
-  close(mem_fd);
-
-  if (result == MAP_FAILED) {
-    fprintf(stderr, "mmap error %p\n", result);
-    return NULL;
-  }
-  return result;
-} /* mmap_bcm_register() */
-#endif // __LINUX__
 //
 // Update the RGB panel frequency after creating it
 //
@@ -684,10 +645,6 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
         pinMode(data_pins[i], OUTPUT);
     }
     _data_pins = data_pins;
-  // Prepare GPIO
-  gpio_port = mmap_bcm_register(GPIO_REGISTER_BASE);
-  set_reg = gpio_port + (GPIO_SET_OFFSET / sizeof(uint32_t));
-  clr_reg = gpio_port + (GPIO_CLR_OFFSET / sizeof(uint32_t));
 #ifdef CONFIG_IDF_TARGET_ESP32
 // Create a bit mask and lookup table to allow fast 8-bit writes
 // to the 32-bit GPIO register

@@ -12,22 +12,23 @@
 #define PIMORONI_HAT
 
 #ifdef PIMORONI_HAT
-//#define MISO_PIN 0
-//#define MOSI_PIN 0
-//#define DC_PIN 9
-//#define RESET_PIN -1
-//#define CS_PIN 7
-//#define LED_PIN 13
+#define MISO_PIN 0
+#define MOSI_PIN 0
+#define CLK_PIN 1
+#define DC_PIN 9
+#define RESET_PIN -1
+#define CS_PIN 7
+#define LED_PIN 13
 #define LCD_TYPE LCD_ST7789
 // For Radxa Dragon Q6A
 // GPIO CHIP number
-#define MISO_PIN 4
+//#define MISO_PIN 4
 // SPI bus number
-#define MOSI_PIN 12
-#define DC_PIN 48
-#define RESET_PIN -1
-#define CS_PIN 55
-#define LED_PIN 56
+//#define MOSI_PIN 12
+//#define DC_PIN 48
+//#define RESET_PIN -1
+//#define CS_PIN 55
+//#define LED_PIN 56
 #else
 // Pin definitions for Adafruit PiTFT HAT
 uint8_t u8DataPins[8] = {14,15,16,17,18,19,20,21};
@@ -54,7 +55,7 @@ int i;
 
 #ifdef PIMORONI_HAT
 // int spilcdInit(int iLCDType, int bFlipRGB, int bInvert, int bFlipped, int32_t iSPIFreq, int iCSPin, int iDCPin, int iResetPin, int iLEDPin, int iMISOPin, int iMOSIPin, int iCLKPin);
-    i = lcd.begin(LCD_TYPE, FLAGS_NONE, 30000000, CS_PIN, DC_PIN, RESET_PIN, LED_PIN, MISO_PIN, MOSI_PIN,-1);
+    i = lcd.begin(LCD_TYPE, FLAGS_NONE, 20000000, CS_PIN, DC_PIN, RESET_PIN, LED_PIN, MISO_PIN, MOSI_PIN, CLK_PIN);
 #else
     i = lcd.beginParallel(LCD_TYPE, FLAGS_NONE, RESET_PIN, RD_PIN, WR_PIN, CS_PIN
 , DC_PIN, BUS_WIDTH, u8DataPins, 0);

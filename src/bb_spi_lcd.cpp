@@ -95,13 +95,9 @@ SPIClass mySPI(
 #ifndef CONSUMER
 #define CONSUMER "Consumer"
 #endif
-struct gpiod_chip *chip = NULL;
-struct gpiod_line *lines[256];
 //uint8_t ucTXBuf[4096];
 //volatile uint8_t *pDMA = ucTXBuf;
 //static uint8_t transfer_is_done = 1;
-static int spi_fd; // SPI handle
-#include "linux_io.inl"
 #else // Arduino
 #ifndef ARDUINO_ARCH_RP2040
 SPIClass *pSPI;
@@ -124,6 +120,9 @@ SPIClassRP2040 *pSPI = &SPI;
 #endif // ARDUINO
 
 #include <bb_spi_lcd.h>
+#ifdef __LINUX__
+#include "linux_io.inl"
+#endif // __LINUX__
 
 #if defined( ESP_PLATFORM )
 #ifdef ARDUINO_ESP32P4_DEV
@@ -2338,7 +2337,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
     } // bUseDMA
 #else
 #ifdef __LINUX__
-    linux_spi_init(iMISOPin, iMOSIPin);
+    linux_spi_init(iMISOPin, iMOSIPin, iCLKPin);
 #else
 #ifdef ARDUINO_ARCH_RP2040
     pSPI->begin();
@@ -8177,6 +8176,7 @@ const uint8_t st7701s_init_commands[] = {
    1, 0x29, // display on
 0
 };
+#ifdef ARDUINO_ARCH_ESP32
 //
 // Set a specific pin's mode
 //
@@ -8219,7 +8219,6 @@ void PCA9535Write(uint8_t pin, uint8_t value)
 //
 void BB_SPI_LCD::spilcdBitBangRGBCommands(const uint8_t *pCMDList)
 {
-#ifndef ARDUINO_ARCH_RP2040
     Wire.end();
     Wire.begin(17, 18); // I2C to I/O expander
     Wire.setClock(400000);
@@ -8288,8 +8287,8 @@ void BB_SPI_LCD::spilcdBitBangRGBCommands(const uint8_t *pCMDList)
 		PCA9535Write(CS, HIGH); // end of SPI transaction
 	}
 	Wire.end();
-#endif // !rp2040
 } /* spilcdBitBangRGBCommands() */
+#endif // ESP32
 
 int BB_SPI_LCD::begin(int iDisplayType)
 {
@@ -9173,10 +9172,12 @@ uint8_t szExtMsg[80];
    pRect->h = maxy - miny + 1;
 } /* getStringBox() */
 
+#ifdef ARDUINO
 void BB_SPI_LCD::getStringBox(const String &str, BB_RECT *pRect)
 {
     getStringBox(str.c_str(), pRect); 
 }
+#endif
 
 bool BB_SPI_LCD::allocBuffer(void)
 {
@@ -9537,7 +9538,11 @@ void BB_SPI_LCD::drawString(const char *pText, int x, int y, int size, int iFlag
    else if (size == 2) setFont(FONT_12x16);
    setCursor(x,y);
    for (int i=0; i<(int)strlen(pText); i++) {
+#ifdef __LINUX__
+      linux_write(pText[i]);
+#else
       write(pText[i]);
+#endif
    }
 } /* drawString() */
 #ifndef __LINUX__
@@ -9904,11 +9909,14 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
     }
     return BB_ERROR_SUCCESS;
 } /* drawSprite() */
-#ifdef ARDUINO
 //
 // write (Print friend class)
 //
+#ifdef ARDUINO
 size_t BB_SPI_LCD::write(uint8_t c) {
+#else
+int BB_SPI_LCD::linux_write(uint8_t c) {
+#endif
 char szTemp[2]; // used to draw 1 character at a time to the C methods
 int w, h;
 static int iUnicodeCount = 0;
@@ -10019,7 +10027,6 @@ static uint8_t u8Unicode0, u8Unicode1;
   }
   return 1;
 } /* write() */
-#endif // ARDUINO
  
 void BB_SPI_LCD::display(void)
 {

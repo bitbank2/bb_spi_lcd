@@ -52,6 +52,12 @@ void s3_alphatrans_be(uint16_t *pFG, uint16_t *pBG, uint16_t *pDest, uint32_t co
 #define INPUT_PULLUP 2
 #define HIGH 1
 #define LOW 0
+#define pgm_read_byte(a) (*(uint8_t *)(a))
+#define pgm_read_word(a) (*(uint16_t *)(a))
+#include <stdint.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 void pinMode(int iPin, int iMode);
 void digitalWrite(int iPin, int iValue);
 int digitalRead(int iPin);
@@ -192,7 +198,7 @@ class BB_SPI_LCD
 {
   public:
     BB_SPI_LCD() {memset(&_lcd, 0, sizeof(_lcd));}
-    int createVirtual(int iWidth, int iHeight, void *pBuffer = NULL, bool bUsePSRAM = false);
+    int createVirtual(int iWidth, int iHeight, void *pBuffer = nullptr, bool bUsePSRAM = false);
     int freeVirtual(void);
     int captureArea(int dst_x, int dst_y, int src_x, int src_y, int src_w, int src_h, uint16_t *pPixels, int bSwap565 = 1);
     int merge(uint16_t *pSrc, uint16_t usTrans, int bSwap565);
@@ -221,7 +227,9 @@ class BB_SPI_LCD
     void setCursor(int x, int y);
     void setAddrWindow(int x, int y, int w, int h);
     void getStringBox(const char *string, BB_RECT *pRect);
+#ifdef ARDUINO
     void getStringBox(const String &str, BB_RECT *pRect);
+#endif
     int16_t getCursorX(void);
     int16_t getCursorY(void);
     int fontHeight(void);
@@ -278,6 +286,8 @@ class BB_SPI_LCD
     int rtInit(uint8_t u8MOSI = 255, uint8_t uiMISO = 255, uint8_t u8CLK = 255, uint8_t u8CS = 255);
     int rtInit(SPIClass &pSPI, uint8_t u8CS = 0xff);
     int rtReadTouch(TOUCHINFO *ti);
+#else
+    int linux_write(uint8_t);
 #endif // !__LINUX__
 
   private:
