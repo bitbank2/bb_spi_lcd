@@ -35,14 +35,14 @@ void s3_alphatrans_be(uint16_t *pFG, uint16_t *pBG, uint16_t *pDest, uint32_t co
 #endif // ESP32
 
 // these are defined the same in the OLED library
-#ifndef __LINUX__
+#ifdef ARDUINO
 #include <Arduino.h>
 #include <SPI.h>
 #include <Print.h>
 #if defined( ARDUINO_M5Stick_C ) || defined (ARDUINO_M5STACK_Core2) || defined(ARDUINO_M5STACK_CORES3)
 #include <Wire.h>
 #endif
-#else
+#else // !ARDUINO
 #define false 0
 #define true 1
 #define PROGMEM
@@ -203,10 +203,10 @@ class BB_SPI_LCD
     int begin(int iType, int iFlags, SPIClassRP2040 *pSPI, int iCSPin, int iDCPin, int iResetPin, int iLEDPin);
 #else
     int begin(int iType, int iFlags, SPIClass *pSPI, int iCSPin, int iDCPin, int iResetPin, int iLEDPin);
-#endif
+#endif // RP2040
+#endif // !__LINUX__
     int beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC_PIN, int iBusWidth, uint8_t *data_pins, uint32_t u32Freq);
     int beginQSPI(int iType, int iFlags, uint8_t CS_PIN, uint8_t CLK_PIN, uint8_t D0_PIN, uint8_t D1_PIN, uint8_t D2_PIN, uint8_t D3_PIN, uint8_t RST_PIN, uint32_t u32Freq);
-#endif // !__LINUX__
     void setBrightness(uint8_t u8Brightness); // 0-FF = off to brightest
     void setRotation(int iAngle);
     void setWordwrap(int bWrap);
@@ -254,8 +254,8 @@ class BB_SPI_LCD
     void pushImage(int x, int y, int w, int h, uint16_t *pixels, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void readImage(int x, int y, int w, int h, uint16_t *pixels);
     void pushPixels(uint16_t *pixels, int count, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
-#ifdef ARDUINO
     void drawString(const char *pText, int x, int y, int size=-1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
+#ifdef ARDUINO
     void drawString(String text, int x, int y, int size=-1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
 #endif
     void drawStringFast(const char *szText, int x, int y, int size = -1, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
@@ -271,16 +271,14 @@ class BB_SPI_LCD
     void fillEllipse(int16_t x, int16_t y, int32_t rx, int32_t ry, uint16_t color, int iFlags = DRAW_TO_LCD | DRAW_TO_RAM);
     void drawPattern(uint8_t *pPattern, int iSrcPitch, int iDestX, int iDestY, int iCX, int iCY, uint16_t usColor, int iTranslucency);
     int drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale = 1.0f, int iTransparent = -1, int iFlags = DRAW_TO_LCD);
-#ifdef ARDUINO
+#ifndef __LINUX__
     using Print::write;
     virtual size_t write(uint8_t);
-#endif
     // Resistive Touch methods
     int rtInit(uint8_t u8MOSI = 255, uint8_t uiMISO = 255, uint8_t u8CLK = 255, uint8_t u8CS = 255);
-#ifdef ARDUINO
     int rtInit(SPIClass &pSPI, uint8_t u8CS = 0xff);
-#endif
     int rtReadTouch(TOUCHINFO *ti);
+#endif // !__LINUX__
 
   private:
     void spilcdBitBangRGBCommands(const uint8_t *pCMDList);
@@ -390,7 +388,7 @@ typedef enum
 uint16_t * RGBInit(BB_RGB *pRGB);
 void RGBChangeFreq(uint32_t u32Freq);
 
-#if defined(__LINUX__) && defined(__cplusplus)
+#if defined(__cplusplus)
 extern "C" {
 #endif
 
@@ -654,7 +652,7 @@ enum {
 // touch panel types
 #define TOUCH_XPT2046 1
 
-#if defined(__LINUX__) && defined(__cplusplus)
+#if defined(__cplusplus)
 }
 #endif
 

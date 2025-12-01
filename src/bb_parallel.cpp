@@ -14,10 +14,10 @@
 // limitations under the License.
 //===========================================================================
 //
-#ifndef __LINUX__
+#ifdef ARDUINO
 #include <Arduino.h>
 #include <SPI.h>
-#endif // __LINUX__
+#endif
 
 #include <bb_spi_lcd.h>
 
@@ -38,7 +38,19 @@ volatile uint32_t *gpio_port, *set_reg, *clr_reg;
 #define BCM2711_PI4_PERI_BASE  0xFE000000
 #define PERI_BASE BCM2709_PI2_PERI_BASE
 #define PAGE_SIZE 4096
-#endif // __LINUX__
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#define INPUT 0
+#define OUTPUT 1
+#define LOW 0
+#define HIGH 1
+extern void pinMode(int pin, int mode);
+extern void digitalWrite(int pin, int value);
+
+extern void linux_parallel_init(uint32_t u32Freq, uint8_t u8Bit0);
+extern void linux_parallel_write(uint8_t *pData, int len, int iMode);
+#endif
 //#define USE_ESP32_GPIO
 extern int bSetPosition;
 #if defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C6)
@@ -216,28 +228,9 @@ void ParallelReset(void) {
 void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 {
 #ifdef __LINUX__
-    uint32_t c;
-    *clr_reg = (1 << u8CS); // activate CS
-    if (iMode == MODE_DATA) {
-	    *set_reg = (1 << u8DC);
-    } else {
-	    *clr_reg = (1 << u8DC);
-    }
-    for (int i=0; i<len; i++) {
-	*clr_reg = (1 << u8WR); // WR low
-	c = *pData++;
-	*set_reg = (c << 14); // set 1 bits
-	c ^= 0xff; // invert for zero bits
-	*clr_reg = (c << 14); // set 0 bits
-	for (int j=0; j<1; j++) { // add some delay
-           iMode |= (c << j);
-	}
-	transfer_is_done = iMode; // force compiler to actually use the code
-        *set_reg = (1 << u8WR); // WR high to latch new data
-    } // for i
-    *set_reg = (1 << u8CS); // deactivate CS
+    linux_parallel_write(pData, len, iMode);
     return;
-#endif // __LINUX__
+#endif //__LINUX__
 
 #ifdef ARDUINO_TEENSY41
     uint32_t c, old = pData[0] -1;
@@ -678,7 +671,12 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
         digitalWrite(RD_PIN, HIGH); // RD deactivated
     }
 // Linux and Teensy 4.x use parallel GPIO for now
-#if defined ( __LINUX__ ) // || defined( ARDUINO_TEENSY41 )
+#ifdef __LINUX__
+    linux_parallel_init(u32Freq, data_pins[0]);
+    return;
+#endif // __LINUX__
+// old ESP32 only supports direct register parallelism
+#if defined( ARDUINO_TEENSY41 )// || defined ( CONFIG_IDF_TARGET_ESP32 )
     pinMode(u8WR, OUTPUT);
     pinMode(u8CS, OUTPUT);
     pinMode(u8DC, OUTPUT);

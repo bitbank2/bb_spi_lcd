@@ -30,6 +30,7 @@
 // GPIO 27 = Pin 13
 #define RESET_PIN -1
 // GPIO 8 = Pin 24
+<<<<<<< HEAD:linux/sample.c
 #define CS_PIN -1
 // GPIO 24 = Pin 18
 #define LED_PIN 18
@@ -48,6 +49,12 @@
 #define CS_PIN 22
 #define DC_PIN 4
 uint8_t u8DataPins[8] = {14,15,16,17,18,19,20,21};
+=======
+#define CS_PIN 8
+// GPIO 24 = Pin 18
+#define LED_PIN -1
+#define LCD_TYPE LCD_ILI9341
+>>>>>>> linux:linux/examples/simple_text/main.c
 #endif
 
 SPILCD lcd;
