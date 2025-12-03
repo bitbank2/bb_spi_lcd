@@ -26,10 +26,12 @@ static uint8_t *_data_pins;
 void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h);
 
 #ifdef __LINUX__
+#ifndef __MEM_ONLY__
 #include <fcntl.h>
 #include <sys/sysinfo.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#endif // !__MEM_ONLY__
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>

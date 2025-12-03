@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
+#ifndef __MEM_ONLY__
 #include <fcntl.h>
 #include <sys/sysinfo.h>
 #include <sys/ioctl.h>
@@ -16,7 +18,6 @@
 #include <linux/i2c-dev.h>
 #include <linux/spi/spidev.h>
 #include <gpiod.h>
-#include <math.h>
 #ifndef CONSUMER
 #define CONSUMER "Consumer"
 #endif
@@ -27,6 +28,7 @@ struct gpiod_line *lines[64];
 #else
 struct gpiod_line_request *lines[64];
 #endif
+#endif // !__MEM_ONLY__
 
 extern uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 static int spi_fd; // SPI handle
@@ -40,26 +42,37 @@ static uint32_t u32Speed;
 // wrapper/adapter functions to make the code work on Linux
 int digitalRead(int iPin)
 {
+#ifdef __MEM_ONLY__
+    (void)iPin;
+#else
     if (lines[iPin] == 0) return 0;
 #ifdef GPIOD_API // 1.x (old) API
     return gpiod_line_get_value(lines[iPin]);
 #else // 2.x (new)
     return gpiod_line_request_get_value(lines[iPin], iPin) == GPIOD_LINE_VALUE_ACTIVE;
 #endif
+#endif // __MEM_ONLY__
 } /* digitalRead() */
 
 void digitalWrite(int iPin, int iState)
 {
+#ifdef __MEM_ONLY__
+    (void)iPin; (void)iState;
+#else
     if (lines[iPin] == 0) return;
 #ifdef GPIOD_API // old 1.6 API
     gpiod_line_set_value(lines[iPin], iState);
 #else // new 2.x API
    gpiod_line_request_set_value(lines[iPin], iPin, (iState) ? GPIOD_LINE_VALUE_ACTIVE : GPIOD_LINE_VALUE_INACTIVE);
 #endif
+#endif // __MEM_ONLY__
 } /* digitalWrite() */
 
 void pinMode(int iPin, int iMode)
 {
+#ifdef __MEM_ONLY__
+    (void)iPin; (void)iMode;
+#else
 #ifdef GPIOD_API // old 1.6 API
    if (chip == NULL) {
        char szTemp[32];
@@ -103,20 +116,32 @@ void pinMode(int iPin, int iMode)
    gpiod_line_settings_free(settings);
    gpiod_chip_close(chip);
 #endif
+#endif // __MEM_ONLY__
 } /* pinMode() */
 
 static void delay(int iMS)
 {
+#ifdef __MEM_ONLY__
+    (void)iMS;
+#else
   usleep(iMS * 1000);
+#endif
 } /* delay() */
 
 static void delayMicroseconds(int iMS)
 {
+#ifdef __MEM_ONLY__
+    (void)iMS;
+#else
   usleep(iMS);
+#endif
 } /* delayMicroseconds() */
 
 void linux_spi_write(uint8_t *pBuf, int iLen, uint32_t iSPISpeed)
 {
+#ifdef __MEM_ONLY__
+    (void)pBuf; (void)iLen; (void)iSPISpeed;
+#else
 struct spi_ioc_transfer spi;
    memset(&spi, 0, sizeof(spi));
    while (iLen) { // max 64k transfers (default is 4k)
@@ -131,10 +156,14 @@ struct spi_ioc_transfer spi;
        iLen -= j;
        pBuf += j;
    }
+#endif
 } /* linux_spi_write() */
 
 void linux_spi_init(int iMISOPin, int iMOSIPin, int iCLKPin)
 {
+#ifdef __MEM_ONLY__
+    (void)iMISOPin; (void)iMOSIPin; (void)iCLKPin;
+#else
     iGPIOChip = iMISOPin;
     char szTemp[32];
     snprintf(szTemp, sizeof(szTemp), "/dev/spidev%d.%d", iMOSIPin, iCLKPin);
@@ -142,6 +171,7 @@ void linux_spi_init(int iMISOPin, int iMOSIPin, int iCLKPin)
     if (spi_fd <= 0) {
 	    printf("Error opening %s\n", szTemp);
     }
+#endif
 } /* linux_spi_init() */
 
 /**
@@ -157,6 +187,9 @@ static void wait_cycles(unsigned int n)
 //
 void linux_parallel_write(uint8_t *pData, int len, int iMode)
 {
+#ifdef __MEM_ONLY__
+    (void)pData; (void)len; (void)iMode;
+#else
         const uint32_t DATA_BIT_0 = gpio_bit_zero;
         uint32_t c, e;
         const uint32_t u32WR = 1 << u8WR;
@@ -184,18 +217,23 @@ void linux_parallel_write(uint8_t *pData, int len, int iMode)
             wait_cycles(u32Speed/2);
         } // for i
         *set_reg = (1 << u8CS); // de-activate CS
+#endif
 } /* linux_parallel_write() */
 
 //
 // Configure a GPIO pin on the Raspberry Pi as an OUTPUT
 //
 void set_gpio_output(int pin) {
+#ifdef __MEM_ONLY__
+    (void)pin;
+#else
     // The pin in GPIOSEL0 goes from 0-9 and next pins 10-19
     // is on reg GPIOSEL1 and so on
     int reg = pin / 10;
     int shift = (pin % 10) * 3;
     // Clear the 3 bits for the pin and set it to 001 (output)
     gpio[reg] = (gpio[reg] & ~(7 << shift)) | (1 << shift);
+#endif
 } /* set_gpio_output() */
 //
 // Map the RPI GPIO registers into virtual memory
@@ -203,6 +241,9 @@ void set_gpio_output(int pin) {
 //
 void linux_parallel_init(uint32_t u32Freq, uint8_t u8Bit0)
 {
+#ifdef __MEM_ONLY__
+    (void)u32Freq; (void)u8Bit0;
+#else
    int mem_fd;
    void *gpio_map;
    uint32_t u32GPIO_BASE;
@@ -256,5 +297,6 @@ void linux_parallel_init(uint32_t u32Freq, uint8_t u8Bit0)
     for (int i=14; i<22; i++) { // data pins
         set_gpio_output(i);
     }
+#endif
 } /* linux_parallel_init() */
 #endif // __BB_LINUX_IO__

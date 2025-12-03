@@ -86,11 +86,13 @@ SPIClass mySPI(
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#ifndef __MEM_ONLY__
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/i2c-dev.h>
 #include <linux/spi/spidev.h>
 #include <gpiod.h>
+#endif // !__MEM_ONLY__
 #include <math.h>
 #ifndef CONSUMER
 #define CONSUMER "Consumer"
@@ -1827,6 +1829,7 @@ int spilcdIsDMABusy(void)
 //
 // Send the data by bit-banging the GPIO ports
 //
+#ifndef __MEM_ONLY__
 void SPI_BitBang(SPILCD *pLCD, uint8_t *pData, int iLen, int iMode)
 {
     int iMOSI, iCLK; // local vars to speed access
@@ -1871,6 +1874,7 @@ void SPI_BitBang(SPILCD *pLCD, uint8_t *pData, int iLen, int iMode)
     if (iMode == MODE_COMMAND) // restore it to MODE_DATA before leaving
         myPinWrite(pLCD->iDCPin, 1);
 } /* SPI_BitBang() */
+#endif // !__MEM_ONLY__
 //
 // Wrapper function for writing to SPI
 //
@@ -1935,6 +1939,7 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
     }
     if (!(iFlags & DRAW_TO_LCD) || pLCD->iLCDType == LCD_VIRTUAL_MEM)
         return; // don't write it to spi
+#ifndef __MEM_ONLY__
 #if defined( ARDUINO_ARCH_ESP32 )// && !defined ( CONFIG_IDF_TARGET_ESP32 )
     if (pLCD->pfnDataCallback) { // only ESP32-S2 and S3
         spilcdParallelData(pBuf, iLen);
@@ -2045,6 +2050,7 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
        myPinWrite(pLCD->iCSPin, 1);
 #endif
     }
+#endif // !__MEM_ONLY__
 } /* myspiWrite() */
 
 //
