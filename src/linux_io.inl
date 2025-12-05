@@ -236,6 +236,70 @@ void set_gpio_output(int pin) {
 #endif
 } /* set_gpio_output() */
 //
+// Use parallel GPIO to bit bang QSPI protocol
+//
+void linux_qspi_init(uint32_t u32Freq, uint8_t u8Bit0, uint8_t u8RST, uint8_t u8CS, uint8_t u8BL, uint8_t u8CLK)
+{
+#ifdef __MEM_ONLY__
+    (void)u32Freq; (void)u8Bit0;
+#else
+   int mem_fd;
+   void *gpio_map;
+   uint32_t u32GPIO_BASE;
+
+   gpio_bit_zero = u8Bit0;
+   u32Speed = u32Freq; // delay amount for parallel data too
+   // Determine if we're on a RPI 2/3 or 4 based on the RAM size
+   struct sysinfo info;
+   sysinfo(&info);
+//printf("ram size = %d\n", info.totalram);
+   if (info.totalram < 950000000) { // must be Zero2W or RPI 3B
+//       printf("RPI 2/3\n");
+       u32GPIO_BASE = 0x3f000000+0x00200000;
+   } else { // RPI 4B
+//       printf("RPI 4B\n");
+       u32GPIO_BASE = 0xfe000000+0x00200000;
+   }
+    if ((mem_fd = open("/dev/mem", O_RDWR | O_SYNC)) < 0) {
+        perror("Failed to open /dev/mem, try running as root");
+        exit(EXIT_FAILURE);
+    }
+    // Map GPIO memory to our address space
+    gpio_map = mmap(
+        NULL,                 // Any address in our space will do
+        GPIO_BLOCK_SIZE,      // Map length = 4K
+        PROT_READ | PROT_WRITE, // Enable reading & writing to mapped memory
+        MAP_SHARED,           // Shared with other processes
+        mem_fd,               // File descriptor for /dev/mem
+        u32GPIO_BASE          // Offset to GPIO peripheral
+    );
+    close(mem_fd);
+    if (gpio_map == MAP_FAILED) {
+        perror("mmap error");
+        exit(EXIT_FAILURE);
+    }
+
+    // volatile pointer to prevent compiler optimizations
+    gpio = (volatile uint32_t *)gpio_map;
+    sel_reg = gpio;
+    set_reg = &gpio[7];
+    clr_reg = &gpio[10];
+
+    set_gpio_output(u8CS);
+    set_gpio_output(u8RST);
+    *set_reg = (1 << u8RST); // RESET disabled
+    set_gpio_output(u8CLK);
+    if (u8BL != 0xff) {
+       set_gpio_output(u8BL);
+       *set_reg = (1 << u8BL);
+    }
+    for (int i=u8Bit0; i<u8Bit0+4; i++) { // data pins
+        set_gpio_output(i);
+    }
+#endif
+} /* linux_qspi_init() */
+
+//
 // Map the RPI GPIO registers into virtual memory
 // and initialize the correct pins as output
 //
@@ -268,8 +332,8 @@ void linux_parallel_init(uint32_t u32Freq, uint8_t u8Bit0)
     // Map GPIO memory to our address space
     gpio_map = mmap(
         NULL,                 // Any address in our space will do
-        0x150010,
-//        GPIO_BLOCK_SIZE,      // Map length = 4K
+//        0x150010,
+        GPIO_BLOCK_SIZE,      // Map length = 4K
         PROT_READ | PROT_WRITE, // Enable reading & writing to mapped memory
         MAP_SHARED,           // Shared with other processes
         mem_fd,               // File descriptor for /dev/mem
@@ -283,7 +347,7 @@ void linux_parallel_init(uint32_t u32Freq, uint8_t u8Bit0)
 
     // volatile pointer to prevent compiler optimizations
     gpio = (volatile uint32_t *)gpio_map;
-    gpio[0x5401] = 0; // disable UART/SPI1/SPI2
+//    gpio[0x5401] = 0; // disable UART/SPI1/SPI2
 
     sel_reg = gpio;
     set_reg = &gpio[7];
