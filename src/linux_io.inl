@@ -253,7 +253,7 @@ void set_gpio_output(int pin) {
 //
 // Use parallel GPIO to bit bang QSPI protocol
 //
-void linux_qspi_init(uint32_t u32Freq, uint8_t u8Bit0, uint8_t u8RST, uint8_t u8CS, uint8_t u8CLK)
+void linux_qspi_init(uint32_t u32Freq, uint8_t u8Bit0, uint8_t u8RSTPin, uint8_t u8CSPin, uint8_t u8CLKPin)
 {
 #ifdef __MEM_ONLY__
     (void)u32Freq; (void)u8Bit0;
@@ -263,7 +263,8 @@ void linux_qspi_init(uint32_t u32Freq, uint8_t u8Bit0, uint8_t u8RST, uint8_t u8
    uint32_t u32GPIO_BASE;
 
    gpio_bit_zero = u8Bit0;
-   u8WR = u8CLK;
+   u8WR = u8CLKPin;
+   u8CS = u8CSPin;
    u32Speed = u32Freq; // delay amount for parallel data too
    // Determine if we're on a RPI 2/3 or 4 based on the RAM size
    struct sysinfo info;
@@ -314,19 +315,22 @@ uint32_t u32, u32Not;
 
     for (int i=0; i<iLen; i++) {
         u32 = *pData++;
+        u32 <<= (gpio_bit_zero-4); // position high nibble first
         u32Not = ~u32;
         // high nibble first
         *clr_reg = (1 << u8WR); // clock low
-        *set_reg = ((u32 << (gpio_bit_zero-4)) & u32Mask); // high nibble
-        *clr_reg = ((u32Not << (gpio_bit_zero-4)) & u32Mask);
-        wait_cycles(1);
+        *set_reg = (u32 & u32Mask); // high nibble
+        *clr_reg = (u32Not & u32Mask);
+        u32 <<= 4; u32Not <<= 4; // shift low nibble into position
+        wait_cycles(u32Speed);
         *set_reg = (1 << u8WR); // clock high
-        wait_cycles(1);
+        wait_cycles(u32Speed);
         *clr_reg = (1 << u8WR); // clock low
-        *set_reg = ((u32 << gpio_bit_zero) & u32Mask); // low nibble
-        *clr_reg = ((u32Not << gpio_bit_zero) & u32Mask);
-        wait_cycles(1);
+        *set_reg = (u32 & u32Mask); // low nibble
+        *clr_reg = (u32Not & u32Mask);
+        wait_cycles(u32Speed);
         *set_reg = (1 << u8WR); // clock high
+        wait_cycles(u32Speed);
     }
 } /* linux_qspi_send_bytes() */
 
@@ -344,15 +348,16 @@ void linux_qspi_send_byte(uint8_t u8)
             *clr_reg = (1 << gpio_bit_zero);
         }
         u8 <<= 1;
-        wait_cycles(1);
+        wait_cycles(u32Speed);
         *set_reg = (1 << u8WR); // clock high
-        wait_cycles(1); 
+        wait_cycles(u32Speed); 
     }
 } /* linux_qspi_send_byte() */
 
 void linux_qspi_send_cmd(uint8_t u8CMD, uint8_t *pParams, int iLen)
 {
     *clr_reg = (1 << u8CS) | (1 << u8WR); // CLK & CS low
+    wait_cycles(u32Speed);
     linux_qspi_send_byte(0x02); // send command byte on data bit 0
     linux_qspi_send_byte(0); // 2nd 8 bits of address
     linux_qspi_send_byte(u8CMD); // 3rd 8 bits of address
@@ -366,6 +371,7 @@ void linux_qspi_send_cmd(uint8_t u8CMD, uint8_t *pParams, int iLen)
 void linux_qspi_send_data(uint8_t *pData, int iLen)
 {
     *clr_reg = (1 << u8CS) | (1 << u8WR); // CLK+CS low
+    wait_cycles(u32Speed);
     linux_qspi_send_byte(0x32); // send command byte on data bit 0
     linux_qspi_send_byte(0); // 2nd 8 bits of address
     if (bSetPosition) { // first data after a setPosition

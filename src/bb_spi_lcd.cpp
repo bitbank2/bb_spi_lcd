@@ -198,7 +198,7 @@ static uint8_t ucRXBuf[1024];
 //static int iTXBufSize = sizeof(ucTXBuf);
 uint8_t *pDMA0 = ucTXBuf;
 uint8_t *pDMA1 = &ucTXBuf[sizeof(ucTXBuf)/2]; // 2 ping-pong buffers
-volatile uint8_t *pDMA;
+volatile uint8_t *pDMA = pDMA0;
 volatile bool transfer_is_done = true; // Done yet?
 #endif // AVR | RP2040
 #endif // !ESP32
@@ -3575,12 +3575,10 @@ int iLen;
 
     if (!(iFlags & DRAW_TO_LCD) || pLCD->iLCDType == LCD_VIRTUAL_MEM) return; // nothing to do
     // Only ESP32 supports QSPI for now
-#if defined ( ARDUINO_ARCH_ESP32 ) || defined ( ARDUINO_ARCH_RP2040 )
     if (pLCD->iLCDType > LCD_QUAD_SPI) {
         qspiSetPosition(pLCD, x, y, w, h);
         return;
     }
-#endif
     bSetPosition = 1; // flag to let myspiWrite know to ignore data writes
     y = (y + pLCD->iScrollOffset) % pLCD->iHeight; // scroll offset affects writing position
 
@@ -3969,6 +3967,7 @@ void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h)
     uint8_t u8Temp[8];
     int x2, y2;
     
+
     if (x != pLCD->iOldX || w != pLCD->iOldCX)
     {
         x2 = x + w - 1;
@@ -3981,7 +3980,8 @@ void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h)
         u8Temp[3] = (uint8_t)x2;
         qspiSendCMD(pLCD, 0x2a, u8Temp, 4); // set x1/x2
     }
-    if (y != pLCD->iOldY || h != pLCD->iOldCY) {
+    if (y != pLCD->iOldY || h != pLCD->iOldCY) 
+    {
         pLCD->iOldY = y; pLCD->iOldCY = h;
         y2 = y + h - 1;
         y += pLCD->iMemoryY;
@@ -4462,6 +4462,7 @@ const uint8_t st77916_init_b[] = {
 
     pLCD->iCurrentWidth = pLCD->iWidth = 360;
     pLCD->iCurrentHeight = pLCD->iHeight = 360;
+    pLCD->iMemoryX = pLCD->iMemoryY = 0;
     iCount = 1;
     s = (bVariant) ? (uint8_t *)st77916_init_b : (uint8_t *)st77916_init;
     while (iCount) {
@@ -5423,7 +5424,7 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
             ST77916Init(pLCD, 1);
             break;
     }
-    return 1;
+    return 0;
 } /* qspiInit() */
 
 #ifdef ARDUINO_ARCH_ESP32
