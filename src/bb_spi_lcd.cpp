@@ -24,7 +24,7 @@ static G5DECIMAGE g5dec;
 
 //#if defined(ADAFRUIT_PYBADGE_M4_EXPRESS)
 //#define SPI SPI1
-#ifndef __LINUX__
+#ifdef ARDUINO
 #include <SPI.h>
 #include <Wire.h>
 #endif
@@ -86,21 +86,20 @@ SPIClass mySPI(
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#ifndef __MEM_ONLY__
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/i2c-dev.h>
 #include <linux/spi/spidev.h>
 #include <gpiod.h>
+#endif // !__MEM_ONLY__
 #include <math.h>
 #ifndef CONSUMER
 #define CONSUMER "Consumer"
 #endif
-struct gpiod_chip *chip = NULL;
-struct gpiod_line *lines[64];
 //uint8_t ucTXBuf[4096];
 //volatile uint8_t *pDMA = ucTXBuf;
 //static uint8_t transfer_is_done = 1;
-static int spi_fd; // SPI handle
 #else // Arduino
 #ifndef ARDUINO_ARCH_RP2040
 SPIClass *pSPI;
@@ -120,9 +119,12 @@ SPIClassRP2040 *pSPI = &SPI;
 
 #include <Arduino.h>
 #include <SPI.h>
-#endif // LINUX
+#endif // ARDUINO
 
 #include <bb_spi_lcd.h>
+#ifdef __LINUX__
+#include "linux_io.inl"
+#endif // __LINUX__
 
 #if defined( ESP_PLATFORM )
 #ifdef ARDUINO_ESP32P4_DEV
@@ -903,54 +905,6 @@ const uint8_t ucSmallFont[]PROGMEM = {
     0x4c,0x00,0x00,0x08,0x3e,0x41,0x41,0x00,0x00,0x00,0x00,0x77,0x00,0x00,0x00,0x00,
     0x41,0x41,0x3e,0x08,0x00,0x02,0x01,0x02,0x01,0x00,0x00,0x3c,0x26,0x23,0x26,0x3c};
 
-// wrapper/adapter functions to make the code work on Linux
-#ifdef __LINUX__
-int digitalRead(int iPin)
-{
-  return gpiod_line_get_value(lines[iPin]);
-} /* digitalRead() */
-
-void digitalWrite(int iPin, int iState)
-{
-   gpiod_line_set_value(lines[iPin], iState);
-} /* digitalWrite() */
-
-void pinMode(int iPin, int iMode)
-{
-   if (chip == NULL) {
-       chip = gpiod_chip_open_by_name("gpiochip0");
-   }
-   lines[iPin] = gpiod_chip_get_line(chip, iPin);
-   if (iMode == OUTPUT) {
-       gpiod_line_request_output(lines[iPin], CONSUMER, 0);
-   } else if (iMode == INPUT_PULLUP) {
-       gpiod_line_request_input_flags(lines[iPin], CONSUMER, GPIOD_LINE_REQUEST_FLAG_BIAS_PULL_UP);
-   } else { // plain input
-       gpiod_line_request_input(lines[iPin], CONSUMER);
-   }
-} /* pinMode() */
-
-static void delay(int iMS)
-{
-  usleep(iMS * 1000);
-} /* delay() */
-
-static void delayMicroseconds(int iMS)
-{
-  usleep(iMS);
-} /* delayMicroseconds() */
-
-static uint8_t pgm_read_byte(uint8_t *ptr)
-{
-  return *ptr;
-}
-#ifdef FUTURE
-static int16_t pgm_read_word(uint8_t *ptr)
-{
-  return ptr[0] + (ptr[1]<<8);
-}
-#endif // FUTURE
-#endif // __LINUX__
 //
 // Provide a small temporary buffer for use by the graphics functions
 //
@@ -1875,6 +1829,7 @@ int spilcdIsDMABusy(void)
 //
 // Send the data by bit-banging the GPIO ports
 //
+#ifndef __MEM_ONLY__
 void SPI_BitBang(SPILCD *pLCD, uint8_t *pData, int iLen, int iMode)
 {
     int iMOSI, iCLK; // local vars to speed access
@@ -1919,6 +1874,7 @@ void SPI_BitBang(SPILCD *pLCD, uint8_t *pData, int iLen, int iMode)
     if (iMode == MODE_COMMAND) // restore it to MODE_DATA before leaving
         myPinWrite(pLCD->iDCPin, 1);
 } /* SPI_BitBang() */
+#endif // !__MEM_ONLY__
 //
 // Wrapper function for writing to SPI
 //
@@ -1983,6 +1939,7 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
     }
     if (!(iFlags & DRAW_TO_LCD) || pLCD->iLCDType == LCD_VIRTUAL_MEM)
         return; // don't write it to spi
+#ifndef __MEM_ONLY__
 #if defined( ARDUINO_ARCH_ESP32 )// && !defined ( CONFIG_IDF_TARGET_ESP32 )
     if (pLCD->pfnDataCallback) { // only ESP32-S2 and S3
         spilcdParallelData(pBuf, iLen);
@@ -2073,22 +2030,7 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
         
 // No DMA requested or available, fall through to here
 #ifdef __LINUX__
-{
-struct spi_ioc_transfer spi;
-int i;
-   memset(&spi, 0, sizeof(spi));
-   while (iLen) {
-      i = iLen;
-      if (i > 4096) i = 4096; // max default buffer size on Linux SPI driver
-      spi.tx_buf = (unsigned long)pBuf;
-      spi.len = i;
-      spi.speed_hz = pLCD->iSPISpeed;
-      spi.bits_per_word = 8;
-      ioctl(spi_fd, SPI_IOC_MESSAGE(1), &spi);
-      iLen -= i;
-      pBuf += i;
-   } // while
-}
+    linux_spi_write(pBuf, iLen, pLCD->iSPISpeed);
 #else
     pSPI->beginTransaction(SPISettings(pLCD->iSPISpeed, MSBFIRST, pLCD->iSPIMode));
 #ifdef ARDUINO_ARCH_ESP32
@@ -2108,6 +2050,7 @@ int i;
        myPinWrite(pLCD->iCSPin, 1);
 #endif
     }
+#endif // !__MEM_ONLY__
 } /* myspiWrite() */
 
 //
@@ -2317,7 +2260,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
       bitCS = digitalPinToBitMask(iCS);
     }
 }
-#endif
+#endif // __AVR__
 
     pLCD->iLEDPin = -1; // assume it's not defined
 	if (iType <= LCD_INVALID || iType >= LCD_VALID_MAX)
@@ -2400,11 +2343,7 @@ static int iStarted = 0; // indicates if the master driver has already been init
     } // bUseDMA
 #else
 #ifdef __LINUX__
-{
-char szTemp[32];
-    sprintf(szTemp, "/dev/spidev%d.%d", iMOSIPin, iMISOPin);
-    spi_fd = open(szTemp, O_RDWR); 
-}
+    linux_spi_init(iMISOPin, iMOSIPin, iCLKPin);
 #else
 #ifdef ARDUINO_ARCH_RP2040
     pSPI->begin();
@@ -3933,6 +3872,10 @@ void qspiSendByte(SPILCD *pLCD, uint8_t u8Data, uint8_t u8Lines)
 //
 void qspiSendCMD(SPILCD *pLCD, uint8_t u8CMD, uint8_t *pParams, int iLen)
 {
+#ifdef __LINUX__
+    linux_qspi_send_cmd(u8CMD, pParams, iLen);
+    return;
+#endif // __LINUX__
 #ifdef ESP_IDF_VERSION_MAJOR
     spi_transaction_t t;
     memset(&t, 0, sizeof(t));
@@ -3962,6 +3905,11 @@ void qspiSendCMD(SPILCD *pLCD, uint8_t u8CMD, uint8_t *pParams, int iLen)
 
 void qspiSendDATA(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags)
 {
+#ifdef __LINUX__
+    linux_qspi_send_data(pData, iLen);
+    return;
+#endif // __LINUX__
+
 #ifdef ESP_IDF_VERSION_MAJOR
 esp_err_t ret;
 int iCount;
@@ -4655,7 +4603,7 @@ static const uint8_t u8ScrollInit[4] = {0,0,1,16};
 
     pLCD->iCurrentWidth = pLCD->iWidth = 480;
     pLCD->iCurrentHeight = pLCD->iHeight = 272;
-    for (int i=0; i<sizeof(nv3041a_init); i += 2) {
+    for (int i=0; i<(int)sizeof(nv3041a_init); i += 2) {
         qspiSendCMD(pLCD, nv3041a_init[i], (uint8_t*)&nv3041a_init[i+1], 1);
     }
     qspiSendCMD(pLCD, 0x20, NULL, 0); // invert off
@@ -4757,7 +4705,7 @@ const uint8_t u8_CO5300InitList[] = {
 void CO5300Init(SPILCD *pLCD)
 {
 int iCount;
-uint8_t *s, u8Temp[32];
+uint8_t *s;
 
     pLCD->iCurrentWidth = pLCD->iWidth = 280;
     pLCD->iCurrentHeight = pLCD->iHeight = 456;
@@ -5430,6 +5378,10 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
     pinMode(u8D3, OUTPUT);
 #endif // ESP32
 
+#ifdef __LINUX__
+    linux_qspi_init(u32Freq, u8D0, u8RST, u8CS, u8CLK);
+#endif // __LINUX__
+
     switch (iLCDType) {
         case LCD_CO5300:
             CO5300Init(pLCD);
@@ -5909,8 +5861,8 @@ int tx, ty, iSkip;
 uint8_t first, last, *s, bits, uc, *pBits;
 BB_FONT *pBBF;
 BB_FONT_SMALL *pBBFS;
-BB_GLYPH *pGlyph;
-BB_GLYPH_SMALL *pSmallGlyph;
+BB_GLYPH *pGlyph=NULL;
+BB_GLYPH_SMALL *pSmallGlyph=NULL;
 uint16_t *d;
 uint8_t szExtMsg[256];
 uint16_t u16FontType;
@@ -8068,9 +8020,7 @@ uint8_t ucTemp[4];
     ucTemp[1] = (uint8_t)iLines;
 
     if (_lcd.iLCDType > LCD_QUAD_SPI) {
-#ifdef ARDUINO_ARCH_ESP32
        qspiSendCMD(&_lcd, 0x37, ucTemp, 2);
-#endif // ESP32
     } else { // SPI and parallel LCDs
         if (_lcd.iLCDType == LCD_SSD1351) {
             spilcdWriteCommand(&_lcd, 0xa1); // set scroll start line
@@ -8100,7 +8050,6 @@ int BB_SPI_LCD::rtInit(SPIClass &spi, uint8_t u8CS)
     pinMode(_lcd.iRTCS, OUTPUT);
     return 1;
 }
-#endif // ARDUINO
 //
 // C++ Class implementation
 //
@@ -8242,6 +8191,7 @@ const int iOrients[4] = {0,90,180,270};
     //delay(10); // don't let the user try to read samples too quickly
     return 1;
 } /* rtReadTouch() */
+#endif // ARDUINO
 
 void Write9Bits(const BB_RGB *pPanel, uint8_t dc, uint8_t *pData, int iCount)
 {
@@ -8308,7 +8258,8 @@ int BB_SPI_LCD::begin(int iType, int iFlags, SPIClass *pExtSPI, int iCSPin, int 
     pSPI = pExtSPI; // already initialized
     return spilcdInit(&_lcd, iType, iFlags, -1, iCSPin, iDCPin, iResetPin, iLEDPin, -1, -1, -1, 0); 
 } /* begin() */
-
+#endif // !__LINUX__
+    
 int BB_SPI_LCD::beginQSPI(int iType, int iFlags, uint8_t CS_PIN, uint8_t CLK_PIN, uint8_t D0_PIN, uint8_t D1_PIN, uint8_t D2_PIN, uint8_t D3_PIN, uint8_t RST_PIN, uint32_t u32Freq)
 {
     memset(&_lcd, 0, sizeof(_lcd));
@@ -8330,7 +8281,6 @@ int BB_SPI_LCD::beginParallel(int iType, int iFlags, uint8_t RST_PIN, uint8_t RD
     spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
     return spilcdInit(&_lcd, iType, iFlags, 0,0,0,0,0,0,0,0,0);
 } /* beginParallel() */
-#endif // !__LINUX__
  
 #ifdef CONFIG_IDF_TARGET_ESP32P4
 #include "esp_lcd_panel_ops.h"
@@ -8446,6 +8396,7 @@ const uint8_t st7701s_init_commands[] = {
    1, 0x29, // display on
 0
 };
+#ifdef ARDUINO_ARCH_ESP32
 //
 // Set a specific pin's mode
 //
@@ -8488,7 +8439,6 @@ void PCA9535Write(uint8_t pin, uint8_t value)
 //
 void BB_SPI_LCD::spilcdBitBangRGBCommands(const uint8_t *pCMDList)
 {
-#ifndef ARDUINO_ARCH_RP2040
     Wire.end();
     Wire.begin(17, 18); // I2C to I/O expander
     Wire.setClock(400000);
@@ -8557,13 +8507,15 @@ void BB_SPI_LCD::spilcdBitBangRGBCommands(const uint8_t *pCMDList)
 		PCA9535Write(CS, HIGH); // end of SPI transaction
 	}
 	Wire.end();
-#endif // !rp2040
 } /* spilcdBitBangRGBCommands() */
+#endif // ESP32
 
 int BB_SPI_LCD::begin(int iDisplayType)
 {
+#ifndef __LINUX__
     int iCS=0, iDC=0, iMOSI=0, iSCK=0; // swap pins around for the different TinyPico boards
     int iLED=0, iRST = -1;
+#endif // __LINUX__
 
     memset(&_lcd, 0, sizeof(_lcd));
 #ifdef ARDUINO_TINYPICO
@@ -8603,6 +8555,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
         iLED = -1;
     }
 #endif
+#ifndef __LINUX__
     switch (iDisplayType)
     {
         case DISPLAY_TINYPICO_IPS_SHIELD:
@@ -9188,6 +9141,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
         default:
             return -1;
     }
+#endif // !__LINUX__
     return 0;
 }
 //
@@ -9377,7 +9331,7 @@ BB_FONT *pBBF;
 BB_FONT_SMALL *pBBFS;
 BB_GLYPH *pGlyph;
 BB_GLYPH_SMALL *pSmallGlyph;
-int miny, maxy;
+int miny, maxy=0;
 uint8_t szExtMsg[80];
 
    if (pRect == NULL || szMsg == NULL) return; // bad pointers
@@ -9438,10 +9392,12 @@ uint8_t szExtMsg[80];
    pRect->h = maxy - miny + 1;
 } /* getStringBox() */
 
+#ifdef ARDUINO
 void BB_SPI_LCD::getStringBox(const String &str, BB_RECT *pRect)
 {
     getStringBox(str.c_str(), pRect); 
 }
+#endif
 
 bool BB_SPI_LCD::allocBuffer(void)
 {
@@ -9706,7 +9662,6 @@ int BB_SPI_LCD::drawG5Image(const uint8_t *pG5, int x, int y, uint16_t iFG, uint
     uint16_t rc, tx, ty, cx, cy, dx, dy, size;
     uint8_t *s, u8, src_mask;
     uint16_t *d;
-    int width, height;
     BB_BITMAP *pbbb;
     uint32_t u32Frac, u32XAcc, u32YAcc; // integer fraction vars
 
@@ -9720,8 +9675,6 @@ int BB_SPI_LCD::drawG5Image(const uint8_t *pG5, int x, int y, uint16_t iFG, uint
     u32Frac = (uint32_t)(65536.0f / fScale); // calculate the fraction to advance the destination x/y
     cx = pgm_read_word(&pbbb->width);
     cy = pgm_read_word(&pbbb->height);
-    width = _lcd.iCurrentWidth;
-    height =_lcd.iCurrentHeight;
     // Calculate scaled destination size
     dx = (int)(fScale * (float)cx);
     dy = (int)(fScale * (float)cy);
@@ -9795,7 +9748,6 @@ void BB_SPI_LCD::setPrintFlags(int iFlags)
 {
     _lcd.iWriteFlags = iFlags;
 }
-#ifdef ARDUINO
 void BB_SPI_LCD::drawString(const char *pText, int x, int y, int size, int iFlags)
 {
     _lcd.iWriteFlags = iFlags;
@@ -9803,20 +9755,26 @@ void BB_SPI_LCD::drawString(const char *pText, int x, int y, int size, int iFlag
    else if (size == 2) setFont(FONT_12x16);
    setCursor(x,y);
    for (int i=0; i<(int)strlen(pText); i++) {
+#ifdef __LINUX__
+      linux_write(pText[i]);
+#else
       write(pText[i]);
-   } 
+#endif
+   }
 } /* drawString() */
+#ifndef __LINUX__
 void BB_SPI_LCD::drawString(String text, int x, int y, int size, int iFlags)
 {
     drawString(text.c_str(), x, y, size, iFlags);
 } /* drawString() */
 #endif
-void BB_SPI_LCD::drawLine(int x1, int y1, int x2, int y2, int iColor, int iFlags)
+
+    void BB_SPI_LCD::drawLine(int x1, int y1, int x2, int y2, int iColor, int iFlags)
 {
   spilcdDrawLine(&_lcd, x1, y1, x2, y2, iColor, iFlags);
 } /* drawLine() */
 
-#ifdef CONFIG_IDF_TARGET_ESP32S3 
+#ifdef CONFIG_IDF_TARGET_ESP32S3
     const uint16_t u16RGBMasks[4] = {0x001f, 0x07e0, 0x07c0, 0xf800}; // B, G, R bitmasks for SIMD code
 #endif
 const uint32_t u32BlurMasks[2] = {0x07e0f81f, 0x01004008};
@@ -10168,11 +10126,14 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
     }
     return BB_ERROR_SUCCESS;
 } /* drawSprite() */
-#ifdef ARDUINO
 //
 // write (Print friend class)
 //
+#ifdef ARDUINO
 size_t BB_SPI_LCD::write(uint8_t c) {
+#else
+int BB_SPI_LCD::linux_write(uint8_t c) {
+#endif
 char szTemp[2]; // used to draw 1 character at a time to the C methods
 int w, h;
 static int iUnicodeCount = 0;
@@ -10241,8 +10202,8 @@ static uint8_t u8Unicode0, u8Unicode1;
   } else { // Custom font
       BB_FONT *pBBF;
       BB_FONT_SMALL *pBBFS;
-      BB_GLYPH *pGlyph;
-      BB_GLYPH_SMALL *pGlyphSmall;
+      BB_GLYPH *pGlyph=NULL;
+      BB_GLYPH_SMALL *pGlyphSmall=NULL;
       int first, last, height;
       if (*(uint16_t *)_lcd.pFont == BB_FONT_MARKER) {
           pBBF = (BB_FONT *)_lcd.pFont; pBBFS = NULL;
@@ -10283,7 +10244,6 @@ static uint8_t u8Unicode0, u8Unicode1;
   }
   return 1;
 } /* write() */
-#endif // ARDUINO
  
 void BB_SPI_LCD::display(void)
 {

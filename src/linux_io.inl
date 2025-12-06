@@ -18,9 +18,24 @@
 #include <linux/i2c-dev.h>
 #include <linux/spi/spidev.h>
 #include <gpiod.h>
+#ifndef OUTPUT
+#define false 0
+#define true 1
+#define PROGMEM
+#define memcpy_P memcpy
+#define OUTPUT 1
+#define INPUT 0
+#define INPUT_PULLUP 2
+#define HIGH 1
+#define LOW 0
+#define pgm_read_byte(a) (*(uint8_t*)(a))
+#endif // !OUTPUT
 #ifndef CONSUMER
 #define CONSUMER "Consumer"
 #endif
+//uint8_t *pDMA, ucTXBuf[4096];
+//static uint8_t transfer_is_done = true;
+extern volatile int bSetPosition;
 static int iGPIOChip;
 struct gpiod_chip *chip = NULL;
 #ifdef GPIOD_API
@@ -238,7 +253,7 @@ void set_gpio_output(int pin) {
 //
 // Use parallel GPIO to bit bang QSPI protocol
 //
-void linux_qspi_init(uint32_t u32Freq, uint8_t u8Bit0, uint8_t u8RST, uint8_t u8CS, uint8_t u8BL, uint8_t u8CLK)
+void linux_qspi_init(uint32_t u32Freq, uint8_t u8Bit0, uint8_t u8RST, uint8_t u8CS, uint8_t u8CLK)
 {
 #ifdef __MEM_ONLY__
     (void)u32Freq; (void)u8Bit0;
@@ -248,6 +263,7 @@ void linux_qspi_init(uint32_t u32Freq, uint8_t u8Bit0, uint8_t u8RST, uint8_t u8
    uint32_t u32GPIO_BASE;
 
    gpio_bit_zero = u8Bit0;
+   u8WR = u8CLK;
    u32Speed = u32Freq; // delay amount for parallel data too
    // Determine if we're on a RPI 2/3 or 4 based on the RAM size
    struct sysinfo info;
@@ -285,20 +301,83 @@ void linux_qspi_init(uint32_t u32Freq, uint8_t u8Bit0, uint8_t u8RST, uint8_t u8
     set_reg = &gpio[7];
     clr_reg = &gpio[10];
 
-    set_gpio_output(u8CS);
-    set_gpio_output(u8RST);
-    *set_reg = (1 << u8RST); // RESET disabled
-    set_gpio_output(u8CLK);
-    if (u8BL != 0xff) {
-       set_gpio_output(u8BL);
-       *set_reg = (1 << u8BL);
-    }
-    for (int i=u8Bit0; i<u8Bit0+4; i++) { // data pins
-        set_gpio_output(i);
-    }
 #endif
 } /* linux_qspi_init() */
 
+//
+// Send bytes (pixels) on bits 0-3
+//
+void linux_qspi_send_bytes(uint8_t *pData, int iLen)
+{
+const uint32_t u32Mask = (0xf << gpio_bit_zero);
+uint32_t u32, u32Not;
+
+    for (int i=0; i<iLen; i++) {
+        u32 = *pData++;
+        u32Not = ~u32;
+        // high nibble first
+        *clr_reg = (1 << u8WR); // clock low
+        *set_reg = ((u32 << (gpio_bit_zero-4)) & u32Mask); // high nibble
+        *clr_reg = ((u32Not << (gpio_bit_zero-4)) & u32Mask);
+        wait_cycles(1);
+        *set_reg = (1 << u8WR); // clock high
+        wait_cycles(1);
+        *clr_reg = (1 << u8WR); // clock low
+        *set_reg = ((u32 << gpio_bit_zero) & u32Mask); // low nibble
+        *clr_reg = ((u32Not << gpio_bit_zero) & u32Mask);
+        wait_cycles(1);
+        *set_reg = (1 << u8WR); // clock high
+    }
+} /* linux_qspi_send_bytes() */
+
+//
+// Send a byte (command or parameter)
+// on bit 0 only
+//
+void linux_qspi_send_byte(uint8_t u8)
+{
+    for (int i=0; i<8; i++) {
+        *clr_reg = (1 << u8WR); // clock low
+        if (u8 & 0x80) { // msb first
+            *set_reg = (1 << gpio_bit_zero);
+        } else {
+            *clr_reg = (1 << gpio_bit_zero);
+        }
+        u8 <<= 1;
+        wait_cycles(1);
+        *set_reg = (1 << u8WR); // clock high
+        wait_cycles(1); 
+    }
+} /* linux_qspi_send_byte() */
+
+void linux_qspi_send_cmd(uint8_t u8CMD, uint8_t *pParams, int iLen)
+{
+    *clr_reg = (1 << u8CS) | (1 << u8WR); // CLK & CS low
+    linux_qspi_send_byte(0x02); // send command byte on data bit 0
+    linux_qspi_send_byte(0); // 2nd 8 bits of address
+    linux_qspi_send_byte(u8CMD); // 3rd 8 bits of address
+    linux_qspi_send_byte(0); // final 8 bits of address
+    for (int i=0; i<iLen; i++) {
+        linux_qspi_send_byte(pParams[i]); // send all command parameters on bit 0 also
+    }
+    *set_reg = (1 << u8CS); // CS high = deactivate bus
+} /* linux_qspi_send_cmd() */
+
+void linux_qspi_send_data(uint8_t *pData, int iLen)
+{
+    *clr_reg = (1 << u8CS) | (1 << u8WR); // CLK+CS low
+    linux_qspi_send_byte(0x32); // send command byte on data bit 0
+    linux_qspi_send_byte(0); // 2nd 8 bits of address
+    if (bSetPosition) { // first data after a setPosition
+        linux_qspi_send_byte(0x2c);
+        bSetPosition = 0;
+    } else { // all data after...
+        linux_qspi_send_byte(0x3c);
+    }
+    linux_qspi_send_byte(0); // final 8 bits of address
+    linux_qspi_send_bytes(pData, iLen); // send 4 bits of pixel data
+    *set_reg = (1 << u8CS); // CS high = deactivate bus
+} /* linux_qspi_send_data() */
 //
 // Map the RPI GPIO registers into virtual memory
 // and initialize the correct pins as output

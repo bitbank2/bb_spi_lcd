@@ -1,58 +1,31 @@
 //
 // Parallel LCD support for bb_spi_lcd
-// written by Larry Bank
-//
-// Copyright 2017 BitBank Software, Inc. All Rights Reserved.
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//    http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//===========================================================================
 //
 #ifdef ARDUINO
 #include <Arduino.h>
 #include <SPI.h>
-#endif
-
-#include <bb_spi_lcd.h>
-
-uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
-static uint8_t *_data_pins;
-void qspiSetPosition(SPILCD *pLCD, int x, int y, int w, int h);
-
-#ifdef __LINUX__
-#ifndef __MEM_ONLY__
-#include <fcntl.h>
-#include <sys/sysinfo.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#endif // !__MEM_ONLY__
-#include <unistd.h>
-#include <stdlib.h>
+#else
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#ifndef LOW
+#define LOW 0
+#define HIGH 1
+#endif // LOW
 extern void pinMode(int pin, int mode);
 extern void digitalWrite(int pin, int value);
 
 extern void linux_parallel_init(uint32_t u32Freq, uint8_t u8Bit0);
 extern void linux_parallel_write(uint8_t *pData, int len, int iMode);
 #endif
+#include <bb_spi_lcd.h>
+
+uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 //#define USE_ESP32_GPIO
-extern int bSetPosition;
-#if defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C6)
+#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
 #if __has_include (<esp_lcd_panel_io.h>)
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
-#if __has_include (<esp_lcd_panel_rgb.h>)
-#include <esp_lcd_panel_rgb.h>
-#endif
-#include <esp_lcd_panel_vendor.h>
 #include <driver/gpio.h>
 #include <esp_private/gdma.h>
 #include <hal/dma_types.h>
@@ -64,9 +37,11 @@ extern int bSetPosition;
 //#include <soc/lcd_cam_struct.h>
 #include <hal/lcd_types.h>
 //extern DMA_ATTR uint8_t *ucTXBuf;
+extern int bSetPosition;
 extern volatile bool transfer_is_done;
 #ifdef CONFIG_IDF_TARGET_ESP32
 uint32_t u32IOMask, u32IOMask2, u32IOLookup[256], u32IOLookup2[256]; // for old ESP32
+uint8_t *_data_pins;
 #endif // CONFIG_IDF_TARGET_ESP32
 void spilcdParallelData(uint8_t *pData, int iLen);
 static bool s3_notify_dma_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
@@ -77,7 +52,6 @@ static bool s3_notify_dma_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_pane
     return false;
 }
 // from esp-idf/components/esp_lcd/src/esp_lcd_panel_io_i80.c
-esp_lcd_panel_handle_t panel_handle = NULL;
 esp_lcd_i80_bus_handle_t i80_bus = NULL;
 esp_lcd_panel_io_handle_t io_handle = NULL;
 struct esp_lcd_i80_bus_t {
@@ -206,9 +180,6 @@ static inline pio_sm_config st7789_parallel_program_get_default_config(uint offs
 }
 uint32_t parallel_sm;
 PIO parallel_pio;
-PIO qspi_pio = pio0;
-dma_channel_config dma_cc;
-uint8_t sm_4wire = 0, sm_1wire = 1;
 uint32_t parallel_offset;
 uint32_t parallel_dma;
 #endif // ARDUINO_ARCH_RP2040
@@ -309,7 +280,7 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 //  } // for i
 //  gpio_put(10, 1); // deactivate CS
 #endif // ARDUINO_ARCH_RP2040
-#if defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C6)
+#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
 #ifdef FUTURE
     uint8_t c, old = pData[0] -1;
         
@@ -333,291 +304,6 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
 #endif // FUTURE
 #endif // ARDUINO_ARCH_ESP32
 } /* ParallelDataWrite() */
-
-//  
-// This set of qspi functions is for RP2350 only
-//  
-#ifdef ARDUINO_ARCH_RP2040_FUTURE
-#define qspi_4wire_data_wrap_target 0
-#define qspi_4wire_data_wrap 1
-#define qspi_4wire_data_pio_version 0
-
-static const uint16_t qspi_4wire_data_program_instructions[] = {
-            //     .wrap_target
-    0x7004, //  0: out    pins, 4         side 0
-    0xb842, //  1: nop                    side 1
-            //     .wrap
-};
-static const struct pio_program qspi_4wire_data_program = {
-    .instructions = qspi_4wire_data_program_instructions,
-    .length = 2,
-    .origin = -1,
-    .pio_version = qspi_4wire_data_pio_version,
-#if PICO_PIO_VERSION > 0
-    .used_gpio_ranges = 0x0
-#endif
-};
-
-static inline pio_sm_config qspi_4wire_data_program_get_default_config(uint offset) {
-    pio_sm_config c = pio_get_default_sm_config();
-    sm_config_set_wrap(&c, offset + qspi_4wire_data_wrap_target, offset + qspi_4wire_data_wrap);
-    sm_config_set_sideset(&c, 2, true, false);
-    return c;
-}
-
-#define qspi_1write_cmd_wrap_target 0
-#define qspi_1write_cmd_wrap 1
-#define qspi_1write_cmd_pio_version 0
-
-static const uint16_t qspi_1write_cmd_program_instructions[] = {
-            //     .wrap_target
-    0x7001, //  0: out    pins, 1         side 0
-    0xb842, //  1: nop                    side 1
-            //     .wrap
-};
-static const struct pio_program qspi_1write_cmd_program = {
-    .instructions = qspi_1write_cmd_program_instructions,
-    .length = 2,
-    .origin = -1,
-    .pio_version = qspi_1write_cmd_pio_version,
-#if PICO_PIO_VERSION > 0
-    .used_gpio_ranges = 0x0
-#endif
-};
-
-static inline pio_sm_config qspi_1write_cmd_program_get_default_config(uint offset) {
-    pio_sm_config c = pio_get_default_sm_config();
-    sm_config_set_wrap(&c, offset + qspi_1write_cmd_wrap_target, offset + qspi_1write_cmd_wrap);
-    sm_config_set_sideset(&c, 2, true, false);
-    return c;
-}
-
-static inline void qspi_4wire_data_program_init(PIO pio, uint sm, uint offset, uint pin_scl, uint out_base, uint out_pin_num) {
-    pio_sm_config c = qspi_4wire_data_program_get_default_config( offset );  
-    // CLK
-    pio_gpio_init(pio, pin_scl);
-    pio_sm_set_consecutive_pindirs(pio, sm, pin_scl, 1, true);
-    sm_config_set_sideset_pins(&c, pin_scl);
-    // DAT
-    sm_config_set_out_pins(&c, out_base, out_pin_num);
-    sm_config_set_out_shift(&c, false, true, 8);
-    for (uint32_t pin_offset = 0; pin_offset < out_pin_num; pin_offset++) {
-        pio_gpio_init(pio, out_base + pin_offset);
-    }
-    pio_sm_set_consecutive_pindirs(pio, sm, out_base, out_pin_num, true);
-    // PIO CLK
-    sm_config_set_clkdiv( &c, 1.0f);
-    // INIT
-    pio_sm_init( pio, sm, offset, &c );
-    pio_sm_clear_fifos( pio , sm);
-    pio_sm_set_enabled( pio, sm, true );
-}
-
-static inline void qspi_1write_cmd_program_init(PIO pio, uint sm, uint offset, uint pin_scl, uint out_base, uint out_pin_num) {
-    pio_sm_config c = qspi_1write_cmd_program_get_default_config( offset );
-    // CLK
-    pio_gpio_init(pio, pin_scl);
-    pio_sm_set_consecutive_pindirs(pio, sm, pin_scl, 1, true);
-    sm_config_set_sideset_pins(&c, pin_scl);
-    // DAT
-    sm_config_set_out_pins(&c, out_base, out_pin_num);
-    sm_config_set_out_shift(&c, false, true, 8);
-    for (uint32_t pin_offset = 0; pin_offset < out_pin_num; pin_offset++) {
-        pio_gpio_init(pio, out_base + pin_offset);
-    }
-    pio_sm_set_consecutive_pindirs(pio, sm, out_base, out_pin_num, true);
-    // PIO CLK
-    sm_config_set_clkdiv( &c, 1.0f);
-    // INIT
-    pio_sm_init( pio, sm, offset, &c );
-    pio_sm_clear_fifos( pio , sm);
-    pio_sm_set_enabled( pio, sm, true );
-}
-
-void qspiSendCMD(SPILCD *pLCD, uint8_t u8CMD, uint8_t *pParams, int iCount)
-{
-uint32_t u32;
-Serial.printf("qspiSendCMD: 0x%02x\n", u8CMD);
-// enable 1wire mode
-    pio_sm_set_enabled(qspi_pio, sm_4wire, false);
-    pio_sm_set_enabled(qspi_pio, sm_1wire, true);
-    gpio_put(pLCD->iCSPin,0); // select CS
-    // write command 0x02 for most commands, 0x32 if pixels will follow
-    if (u8CMD == 0x3c || u8CMD == 0x2c) { // pixels
-        pio_sm_put_blocking(qspi_pio, sm_1wire, (0x32 << 24));
-    } else { // regular command
-        pio_sm_put_blocking(qspi_pio, sm_1wire, (0x02 << 24));
-    }
-    // 1 wire address
-    pio_sm_put_blocking(qspi_pio, sm_1wire, 0);
-    u32 = u8CMD;
-    pio_sm_put_blocking(qspi_pio, sm_1wire, (u32 << 24));
-    pio_sm_put_blocking(qspi_pio, sm_1wire, 0);
-    while (iCount) { // write the params in 1 wire mode too
-        u32 = *pParams++;
-        pio_sm_put_blocking(qspi_pio, sm_1wire, u32 << 24);
-        iCount--;
-    }
-    if (u8CMD != 0x3c) { // deselect if command only
-        gpio_put(pLCD->iCSPin,1); // deselect CS
-    }
-
-} /* qspiSendCMD() */
-
-void qspiSendDATA(SPILCD *pLCD, uint8_t *pData, int iLen, int iFlags)
-{
-// Wait for previous DMA transfer to complete
-//    while(dma_channel_is_busy(parallel_dma));
-    if (bSetPosition) { // first data after a setPosition()
-        qspiSendCMD(pLCD, 0x2c, NULL, 0);
-        bSetPosition = 0;
-    } else {
-        qspiSendCMD(pLCD, 0x3c, NULL, 0);
-    }
-//    delayMicroseconds(0); // small delay needed here?
-    gpio_put(pLCD->iCSPin, 0);
-    // switch to 4wire mode for pixel data
-    pio_sm_set_enabled(qspi_pio, sm_4wire, true);
-    pio_sm_set_enabled(qspi_pio, sm_1wire, false);
-    channel_config_set_dreq(&dma_cc, pio_get_dreq(qspi_pio, sm_4wire, true));
-    dma_channel_configure(parallel_dma, &dma_cc,
-                            &qspi_pio->txf[sm_4wire],  // Destination pointer (PIO TX FIFO)
-                            pData,            // Source pointer (data buffer)
-                            iLen,      // Data length (unit: number of transmissions)
-                            true);                    // Start transferring immediately
-    while(dma_channel_is_busy(parallel_dma));
-    gpio_put(pLCD->iCSPin,1); // deselect CS
-} /* qspiSendDATA() */
-
-// Initialize a Quad SPI display
-int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u8CS, uint8_t u8CLK, uint8_t u8D0, uint8_t u8D1, uint8_t u8D2, uint8_t u8D3, uint8_t u8RST, uint8_t u8LED)
-{
-    // Initialize Clock (RP2350 default 150MHz clock)
-#define PLL_SYS_KHZ 150 * 1000
-    set_sys_clock_khz(PLL_SYS_KHZ, true);
-    clock_configure(
-        clk_peri,
-        0,
-        CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS,
-        PLL_SYS_KHZ * 1000,
-        PLL_SYS_KHZ * 1000
-    );
-    // Initialize DMA
-    parallel_dma = dma_claim_unused_channel(true);
-    dma_cc = dma_channel_get_default_config(parallel_dma);
-    channel_config_set_transfer_data_size(&dma_cc, DMA_SIZE_8);
-    channel_config_set_read_increment(&dma_cc, true);
-    channel_config_set_write_increment(&dma_cc, false);
-    channel_config_set_dreq(&dma_cc, pio_get_dreq(qspi_pio, sm_4wire, false));
-    irq_set_enabled(DMA_IRQ_0, false);
-// Init GPIO
-    pLCD->iCSPin = u8CS;
-    gpio_init(u8CS);
-    gpio_pull_down(u8CS);
-    gpio_set_dir(u8CS,GPIO_OUT);
-    gpio_put(u8CS,1);
-
-    if (u8LED != 0xff) {
-        gpio_init(u8LED); // AMOLED power enable
-        gpio_set_dir(u8LED,GPIO_OUT);
-        gpio_put(u8LED,1);
-    }
-
-    gpio_init(u8RST);
-    gpio_set_dir(u8RST,GPIO_OUT);
-    gpio_put(u8RST,1);
-    delay(50);
-    gpio_put(u8RST,0);
-    delay(50);
-    gpio_put(u8RST,1);
-    delay(300);
-// Init PIO
-    uint offset = pio_add_program(qspi_pio, &qspi_4wire_data_program);
-    qspi_4wire_data_program_init(qspi_pio, sm_4wire, offset, u8CLK, u8D0, 4);
-
-    offset = pio_add_program(qspi_pio, &qspi_1write_cmd_program);
-    qspi_1write_cmd_program_init(qspi_pio, sm_1wire, offset, u8CLK, u8D0, 1);
-    pio_sm_clear_fifos(qspi_pio, sm_1wire);
-
-    pio_sm_set_enabled(qspi_pio, sm_4wire, false);
-    pio_sm_set_enabled(qspi_pio, sm_1wire, false);
-    CO5300Init(pLCD);
-    return 1;
-} /* qspiInit() */
-#endif // ARDUINO_ARCH_RP2040_FUTURE
-
-//
-// Update the RGB panel frequency after creating it
-//
-void RGBChangeFreq(uint32_t u32Freq)
-{
-#if defined CONFIG_IDF_TARGET_ESP32S3
-   esp_lcd_rgb_panel_set_pclk(panel_handle, u32Freq);
-   vTaskDelay(2); // wait 1 frame time for the update to occur
-#endif
-} /* RGBChange() */
-
-//
-// Initialize a RGB parallel panel (needs continuous pixels)
-//
-uint16_t * RGBInit(BB_RGB *pRGB)
-{
-#if defined CONFIG_IDF_TARGET_ESP32S3 
-esp_lcd_rgb_panel_config_t panel_config;
-
-   memset(&panel_config, 0, sizeof(panel_config));
-   panel_config.num_fbs = 1; // single framebuffer
-   panel_config.psram_trans_align = 64;
-   panel_config.sram_trans_align = 8;
-   panel_config.data_width = 16;
-   panel_config.bits_per_pixel = 16;
-   panel_config.clk_src = LCD_CLK_SRC_PLL160M;
-   panel_config.disp_gpio_num = -1; // reset?
-   panel_config.pclk_gpio_num = pRGB->pclk; // pixel clock
-   panel_config.vsync_gpio_num = pRGB->vsync;
-   panel_config.hsync_gpio_num = pRGB->hsync;  
-   panel_config.de_gpio_num = pRGB->de;
-   panel_config.data_gpio_nums[0] = pRGB->g3;
-   panel_config.data_gpio_nums[1] = pRGB->g4;
-   panel_config.data_gpio_nums[2] = pRGB->g5;
-   panel_config.data_gpio_nums[3] = pRGB->r0;
-   panel_config.data_gpio_nums[4] = pRGB->r1;
-   panel_config.data_gpio_nums[5] = pRGB->r2;
-   panel_config.data_gpio_nums[6] = pRGB->r3;
-   panel_config.data_gpio_nums[7] = pRGB->r4;
-   panel_config.data_gpio_nums[8] = pRGB->b0;
-   panel_config.data_gpio_nums[9] = pRGB->b1;
-   panel_config.data_gpio_nums[10] = pRGB->b2;
-   panel_config.data_gpio_nums[11] = pRGB->b3;
-   panel_config.data_gpio_nums[12] = pRGB->b4;
-   panel_config.data_gpio_nums[13] = pRGB->g0;
-   panel_config.data_gpio_nums[14] = pRGB->g1;
-   panel_config.data_gpio_nums[15] = pRGB->g2;
-   panel_config.flags.fb_in_psram = 1; // use PSRAM
-   panel_config.timings.pclk_hz = pRGB->speed;
-   panel_config.timings.h_res = pRGB->width;
-   panel_config.timings.v_res = pRGB->height;
-   panel_config.timings.flags.hsync_idle_low = (pRGB->hsync_polarity == 0) ? 1: 0;
-   panel_config.timings.flags.vsync_idle_low = (pRGB->vsync_polarity == 0) ? 1: 0;
-   panel_config.timings.hsync_back_porch = pRGB->hsync_back_porch;
-   panel_config.timings.hsync_front_porch = pRGB->hsync_front_porch;
-   panel_config.timings.hsync_pulse_width = pRGB->hsync_pulse_width;
-   panel_config.timings.vsync_back_porch = pRGB->vsync_back_porch;
-   panel_config.timings.vsync_front_porch = pRGB->vsync_front_porch;
-   panel_config.timings.vsync_pulse_width = pRGB->vsync_pulse_width;
-// DEBUG
-//   panel_config.timings.flags.pclk_active_neg = 10;
-   ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &panel_handle));
-   ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
-   ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
-   uint16_t *p;
-   esp_lcd_rgb_panel_get_frame_buffer(panel_handle, 1, (void **)&p);
-   return p;
-#else // not S3
-   return NULL;
-#endif // CONFIG_IDF_TARGET_ESP32S3 
-} /* RGBInit() */
-
 //
 // Initialize the parallel bus info
 //
@@ -633,7 +319,6 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
         pinMode(RD_PIN, OUTPUT); // RD
         digitalWrite(RD_PIN, HIGH); // RD deactivated
     }
-// Linux and Teensy 4.x use parallel GPIO for now
 #ifdef __LINUX__
     linux_parallel_init(u32Freq, data_pins[0]);
     return;
@@ -646,8 +331,8 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
     for (int i=0; i<8; i++) {
         pinMode(data_pins[i], OUTPUT);
     }
-    _data_pins = data_pins;
 #ifdef CONFIG_IDF_TARGET_ESP32
+    _data_pins = data_pins;
 // Create a bit mask and lookup table to allow fast 8-bit writes
 // to the 32-bit GPIO register
    u32IOMask = u32IOMask2 = 0;
@@ -675,7 +360,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
    } // for i
 #endif // CONFIG_IDF_TARGET_ESP32
    return;
-#endif // __LINUX__ || ARDUINO_TEENSY41
+#endif // ARDUINO_TEENSY41 || CONFIG_IDF_TARGET_ESP32
 #ifdef ARDUINO_ARCH_RP2040
 
 // Set up GPIO for output mode
@@ -724,7 +409,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
       channel_config_set_dreq(&config, pio_get_dreq(parallel_pio, parallel_sm, true));
       dma_channel_configure(parallel_dma, &config, &parallel_pio->txf[parallel_sm], NULL, 0, false);
 #endif // ARDUINO_ARCH_RP2040
-#if defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C6)
+#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
     if (iFlags & FLAGS_SWAP_COLOR) {
         s3_io_config.flags.swap_color_bytes = 1;
     }
@@ -766,7 +451,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
 
 void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
 {
-#if defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C6)
+#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
 #ifdef USE_ESP32_GPIO
     esp32_gpio_clear(u8DC); // clear DC
     spilcdParallelData(&ucCMD, 1);
@@ -786,7 +471,7 @@ void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
 
 void spilcdParallelData(uint8_t *pData, int iLen)
 {
-#if defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32C6)
+#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
 #ifdef USE_ESP32_GPIO
     uint8_t c, old = pData[0] -1;
         
