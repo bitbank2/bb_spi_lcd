@@ -59,6 +59,7 @@ int digitalRead(int iPin)
 {
 #ifdef __MEM_ONLY__
     (void)iPin;
+    return 0;
 #else
     if (lines[iPin] == 0) return 0;
 #ifdef GPIOD_API // 1.x (old) API
@@ -356,6 +357,7 @@ void linux_qspi_send_byte(uint8_t u8)
 
 void linux_qspi_send_cmd(uint8_t u8CMD, uint8_t *pParams, int iLen)
 {
+#ifndef __MEM_ONLY__
     *clr_reg = (1 << u8CS) | (1 << u8WR); // CLK & CS low
     wait_cycles(u32Speed);
     linux_qspi_send_byte(0x02); // send command byte on data bit 0
@@ -366,10 +368,12 @@ void linux_qspi_send_cmd(uint8_t u8CMD, uint8_t *pParams, int iLen)
         linux_qspi_send_byte(pParams[i]); // send all command parameters on bit 0 also
     }
     *set_reg = (1 << u8CS); // CS high = deactivate bus
+#endif
 } /* linux_qspi_send_cmd() */
 
 void linux_qspi_send_data(uint8_t *pData, int iLen)
 {
+#ifndef __MEM_ONLY__
     *clr_reg = (1 << u8CS) | (1 << u8WR); // CLK+CS low
     wait_cycles(u32Speed);
     linux_qspi_send_byte(0x32); // send command byte on data bit 0
@@ -383,6 +387,7 @@ void linux_qspi_send_data(uint8_t *pData, int iLen)
     linux_qspi_send_byte(0); // final 8 bits of address
     linux_qspi_send_bytes(pData, iLen); // send 4 bits of pixel data
     *set_reg = (1 << u8CS); // CS high = deactivate bus
+#endif
 } /* linux_qspi_send_data() */
 //
 // Map the RPI GPIO registers into virtual memory

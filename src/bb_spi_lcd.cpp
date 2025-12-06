@@ -240,6 +240,7 @@ static void spilcdWriteData8(SPILCD *pLCD, unsigned char c);
 static void spilcdWriteData16(SPILCD *pLCD, unsigned short us, int iFlags);
 void spilcdSetPosition(SPILCD *pLCD, int x, int y, int w, int h, int iFlags);
 int spilcdFill(SPILCD *pLCD, unsigned short usData, int iFlags);
+#ifndef __MEM_ONLY__
 // commands to initialize st7701 parallel display controller
 // for the Makerfabs 4" 480x480 board
 const uint8_t st7701list[] = {
@@ -346,6 +347,7 @@ const BB_RGB rgbpanel_800x480 = {
     800, 480,
     14000000 // speed
 };
+#endif // !__MEM_ONLY__
 // 8-bit parallel pins for the CYD 2.2" ST7789
 uint8_t u8_22C_Pins[8] = {15,13,12,14,27,25,33,32};
 // 8-bit parallel pins for the WT32-SC01-PLUS
@@ -5887,7 +5889,7 @@ uint16_t u16FontType;
         first = pgm_read_byte(&pBBFS->first);
         last = pgm_read_byte(&pBBFS->last);
     }
-    if (szMsg[1] == 0 && szMsg[0] >= 0x80) { // single byte means we're coming from the Arduino write() method with pre-converted extended ASCII
+    if (szMsg[1] == 0 && szMsg[0] & 0x80) { // single byte means we're coming from the Arduino write() method with pre-converted extended ASCII
         szExtMsg[0] = szMsg[0]; szExtMsg[1] = 0;
     } else {
         spilcdUnicodeString(szMsg, szExtMsg); // convert to extended ASCII
@@ -8358,6 +8360,7 @@ uint16_t *jd9165_init(void)
     return pFrameBuffer;
 } /* jd9165_init() */
 #endif // ESP32P4
+#ifndef __MEM_ONLY__
 const uint8_t st7701s_init_commands[] = {
    6, 0xff, 0x77, 0x01, 0x00, 0x00, 0x13,
    2, 0xef, 0x08,
@@ -8397,6 +8400,7 @@ const uint8_t st7701s_init_commands[] = {
    1, 0x29, // display on
 0
 };
+#endif // !__MEM_ONLY__
 #ifdef ARDUINO_ARCH_ESP32
 //
 // Set a specific pin's mode
