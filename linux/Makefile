@@ -1,6 +1,9 @@
 # Allow building as memory-only on MacOS
 OPSYS:=$(shell uname)
+PROC:=$(shell uname -p)
 ifeq ($(OPSYS), Darwin)
+CFLAGS=-c -ggdb -Wall -O2 -D__MEM_ONLY__ -D__LINUX__ -I../src
+else ifeq ($(PROC), x86_64)
 CFLAGS=-c -ggdb -Wall -O2 -D__MEM_ONLY__ -D__LINUX__ -I../src
 else
 CFLAGS=-c -ggdb -Wall -O2 -D__LINUX__ -I../src
