@@ -26,6 +26,7 @@ uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 #if __has_include (<esp_lcd_panel_io.h>)
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
+#include <esp_lcd_panel_rgb.h>
 #include <driver/gpio.h>
 #include <esp_private/gdma.h>
 #include <hal/dma_types.h>
@@ -52,6 +53,7 @@ static bool s3_notify_dma_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_pane
     return false;
 }
 // from esp-idf/components/esp_lcd/src/esp_lcd_panel_io_i80.c
+esp_lcd_panel_handle_t panel_handle = NULL;
 esp_lcd_i80_bus_handle_t i80_bus = NULL;
 esp_lcd_panel_io_handle_t io_handle = NULL;
 struct esp_lcd_i80_bus_t {
@@ -509,3 +511,61 @@ void spilcdParallelData(uint8_t *pData, int iLen)
 #endif // USE_ESP32_GPIO
 #endif // ARDUINO_ARCH_ESP32
 } /* spilcdParallelData() */
+//
+// Initialize a RGB parallel panel (needs continuous pixels)
+//
+uint16_t * RGBInit(BB_RGB *pRGB)
+{
+#if defined ARDUINO_ESP32S3_DEV
+esp_lcd_rgb_panel_config_t panel_config;
+
+   memset(&panel_config, 0, sizeof(panel_config));
+   panel_config.num_fbs = 1; // single framebuffer
+   panel_config.psram_trans_align = 64;
+   panel_config.sram_trans_align = 8;
+   panel_config.data_width = 16;
+   panel_config.bits_per_pixel = 16;
+   panel_config.clk_src = LCD_CLK_SRC_PLL160M;
+   panel_config.disp_gpio_num = -1; // reset?
+   panel_config.pclk_gpio_num = pRGB->pclk; // pixel clock
+   panel_config.vsync_gpio_num = pRGB->vsync;
+   panel_config.hsync_gpio_num = pRGB->hsync;  
+   panel_config.de_gpio_num = pRGB->de;
+   panel_config.data_gpio_nums[0] = pRGB->g3;
+   panel_config.data_gpio_nums[1] = pRGB->g4;
+   panel_config.data_gpio_nums[2] = pRGB->g5;
+   panel_config.data_gpio_nums[3] = pRGB->r0;
+   panel_config.data_gpio_nums[4] = pRGB->r1;
+   panel_config.data_gpio_nums[5] = pRGB->r2;
+   panel_config.data_gpio_nums[6] = pRGB->r3;
+   panel_config.data_gpio_nums[7] = pRGB->r4;
+   panel_config.data_gpio_nums[8] = pRGB->b0;
+   panel_config.data_gpio_nums[9] = pRGB->b1;
+   panel_config.data_gpio_nums[10] = pRGB->b2;
+   panel_config.data_gpio_nums[11] = pRGB->b3;
+   panel_config.data_gpio_nums[12] = pRGB->b4;
+   panel_config.data_gpio_nums[13] = pRGB->g0;
+   panel_config.data_gpio_nums[14] = pRGB->g1;
+   panel_config.data_gpio_nums[15] = pRGB->g2;
+   panel_config.flags.fb_in_psram = 1; // use PSRAM
+   panel_config.timings.pclk_hz = pRGB->speed;
+   panel_config.timings.h_res = pRGB->width;
+   panel_config.timings.v_res = pRGB->height;
+   panel_config.timings.flags.hsync_idle_low = (pRGB->hsync_polarity == 0) ? 1: 0;
+   panel_config.timings.flags.vsync_idle_low = (pRGB->vsync_polarity == 0) ? 1: 0;
+   panel_config.timings.hsync_back_porch = pRGB->hsync_back_porch;
+   panel_config.timings.hsync_front_porch = pRGB->hsync_front_porch;
+   panel_config.timings.hsync_pulse_width = pRGB->hsync_pulse_width;
+   panel_config.timings.vsync_back_porch = pRGB->vsync_back_porch;
+   panel_config.timings.vsync_front_porch = pRGB->vsync_front_porch;
+   panel_config.timings.vsync_pulse_width = pRGB->vsync_pulse_width;
+   ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &panel_handle));
+   ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
+   ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
+   uint16_t *p;
+   esp_lcd_rgb_panel_get_frame_buffer(panel_handle, 1, (void **)&p);
+   return p;
+#else // not S3
+   return NULL;
+#endif // ARDUINO_ESP32S3_DEV
+} /* RGBInit() */
