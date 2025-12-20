@@ -2740,6 +2740,19 @@ start_of_init:
         }
        }
        break;
+    case LCD_ST7735_128B:
+       s = (unsigned char *)uc128InitList;
+       memcpy_P(d, s, sizeof(uc128InitList));
+       s = d;
+       pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
+       pLCD->iCurrentWidth = pLCD->iWidth = 128;
+       pLCD->iCurrentHeight = pLCD->iHeight = 128;
+       pLCD->iColStart = pLCD->iMemoryX = 2;
+       pLCD->iRowStart = pLCD->iMemoryY = 0;
+       s[5] = 0xc0; // SWAP_RB
+       pLCD->iLCDFlags = FLAGS_SWAP_RB;
+       pLCD->iLCDType = LCD_ST7735R; // switch type for command compatibility
+       break;
     case LCD_ST7735R:
     case LCD_ST7735_128:
 	{
