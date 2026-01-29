@@ -4718,14 +4718,19 @@ const uint8_t u8_CO5300InitList[] = {
  0,0 // end
 };
 
-void CO5300Init(SPILCD *pLCD)
+void CO5300Init(SPILCD *pLCD, int iOption)
 {
 int iCount;
 uint8_t *s;
 
-    pLCD->iCurrentWidth = pLCD->iWidth = 280;
-    pLCD->iCurrentHeight = pLCD->iHeight = 456;
-    pLCD->iMemoryX = 20; // memory window offset since controller is 320 wide (20 gap on each side)
+    if (iOption == 0) { // 1.64" 280x456
+        pLCD->iCurrentWidth = pLCD->iWidth = 280;
+        pLCD->iCurrentHeight = pLCD->iHeight = 456;
+        pLCD->iMemoryX = 20; // memory window offset since controller is 320 wide (20 gap on each side)
+    } else {
+        pLCD->iCurrentWidth = pLCD->iWidth = 460;
+        pLCD->iCurrentHeight = pLCD->iHeight = 460;
+    }
     pLCD->iLCDType = LCD_CO5300;
     iCount = 1;
     s = (uint8_t *)u8_CO5300InitList;
@@ -5400,7 +5405,10 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
 
     switch (iLCDType) {
         case LCD_CO5300:
-            CO5300Init(pLCD);
+            CO5300Init(pLCD, 0);
+            break;
+        case LCD_CO5300B:
+            CO5300Init(pLCD, 1);
             break;
         case LCD_SPD2010:
             SPD2010Init(pLCD);
