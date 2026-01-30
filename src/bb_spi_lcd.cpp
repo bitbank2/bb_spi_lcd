@@ -4730,6 +4730,7 @@ uint8_t *s;
     } else {
         pLCD->iCurrentWidth = pLCD->iWidth = 460;
         pLCD->iCurrentHeight = pLCD->iHeight = 460;
+        pLCD->iMemoryX = 10;
     }
     pLCD->iLCDType = LCD_CO5300;
     iCount = 1;
