@@ -19,6 +19,7 @@
 #define RESET_PIN 71
 #define LED_PIN 72
 #define CS_PIN PIN_SPI3_SS
+
 // No need to define these since the Adafruit_ZeroDMA lib manages them
 #define MOSI_PIN -1
 #define MISO_PIN -1
