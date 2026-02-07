@@ -296,6 +296,20 @@ const BB_RGB rgbpanel_480x480 = {
     12000000 // speed
 };
 
+// 16-bit RGB panel 480x272 for JC4827B043 (4.3" 480x272)
+const BB_RGB rgbpanel_480x272_43 = {
+    -1 /* CS */, -1 /* SCK */, -1 /* SDA */,
+    40 /* DE */, 41 /* VSYNC */, 39 /* HSYNC */, 42 /* PCLK */,
+    45 /* R0 */, 48 /* R1 */, 47 /* R2 */, 21 /* R3 */, 14 /* R4 */,
+    5 /* G0 */, 6 /* G1 */, 7 /* G2 */, 15 /* G3 */, 16 /* G4 */, 4 /* G5 */,
+    8 /* B0 */, 3 /* B1 */, 46 /* B2 */, 9 /* B3 */, 1 /* B4 */,
+    43 /* hsync_back_porch */, 8 /* hsync_front_porch */, 4 /* hsync_pulse_width */,
+    12 /* vsync_back_porch */, 8 /* vsync_front_porch */, 4 /* vsync_pulse_width */,
+    0 /* hsync_polarity */, 0 /* vsync_polarity */,
+    480, 272,
+    9000000 // speed
+};
+
 const BB_RGB rgbpanel_lilygo = {
     -1 /* CS */, -1 /* SCK */, -1 /* SDA */,
     -1 /* DE */, 40 /* VSYNC */, 39 /* HSYNC */, 41 /* PCLK */,
@@ -8092,7 +8106,7 @@ int BB_SPI_LCD::rtInit(uint8_t u8MOSI, uint8_t u8MISO, uint8_t u8CLK, uint8_t u8
    if (u8CS != 255) {
       _lcd.iRTCS = u8CS;
    }
-   //Serial.printf("rtInit on pins %d, %d, %d, %d\n", _lcd.iRTMOSI, _lcd.iRTMISO, _lcd.iRTCLK, _lcd.iRTCS);
+   // Serial.printf("rtInit on pins %d, %d, %d, %d\n", _lcd.iRTMOSI, _lcd.iRTMISO, _lcd.iRTCLK, _lcd.iRTCS);
    if (_lcd.iRTMOSI != _lcd.iMOSIPin) { // use bit bang for the touch controller
        //Serial.println("Resistive touch bit bang");
        pinMode(_lcd.iRTMOSI, OUTPUT);
@@ -8132,7 +8146,6 @@ int BB_SPI_LCD::rtReadTouch(TOUCHINFO *ti)
 uint8_t ucTemp[4] = {0}; // suppress compiler warning
 int iOrient, x, y, xa[3], ya[3], x1, y1, z, z1, z2;
 const int iOrients[4] = {0,90,180,270};
-
     iOrient = iOrients[_lcd.iOrientation];
     iOrient += _lcd.iRTOrientation; // touch sensor relative to default angle
     iOrient %= 360;
@@ -8154,6 +8167,7 @@ const int iOrients[4] = {0,90,180,270};
         ti->count = 0;
         if (_lcd.iRTCS >= 0 && _lcd.iRTCS < 99)
             digitalWrite(_lcd.iRTCS, 1); // inactive CS
+	// Serial.println("Not a valid pressure reading");
         return 0; // not a valid pressure reading
     } else {
       //Serial.printf("pressure = %d\n", z);
@@ -8751,6 +8765,23 @@ int BB_SPI_LCD::begin(int iDisplayType)
             _lcd.iHeight = _lcd.iCurrentHeight = 480;
             spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_800x480_7));
             break;
+        case DISPLAY_CYD_4827: // 4.3" 480x272 ESP32-S3 JC4827B043
+            memset(&_lcd, 0, sizeof(_lcd));
+            _lcd.iLEDPin = 2;
+            pinMode(2, OUTPUT);
+            digitalWrite(2, HIGH);
+            _lcd.iRTMOSI = 11;
+            _lcd.iRTMISO = 13; // pre-configure resistive touch
+            _lcd.iRTCLK = 12;
+            _lcd.iRTCS = 38;
+            _lcd.iRTOrientation = 0;
+	    _lcd.iRTThreshold = 7500;
+            _lcd.iLCDType = LCD_VIRTUAL_MEM;
+            _lcd.iWidth = _lcd.iCurrentWidth = 480;
+            _lcd.iHeight = _lcd.iCurrentHeight = 272;
+            spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_480x272_43));
+            break;
+
 #endif // !__LINUX__
 
 #ifdef CONFIG_IDF_TARGET_ESP32P4
