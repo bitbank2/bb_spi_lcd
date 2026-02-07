@@ -16,6 +16,7 @@ uint8_t *pFrameBuffer;
 // CYD_22C = 240x320 2.2" cap touch
 // CYD_128 = 240x240 round 1.28" ESP32-C3
 // CYD_MF35 = 320x480 3.5" MakerFabs 16-bit parallel w/cap touch
+// CYD_4827  480x270 ESP32-4827S043 resistive touch XPT2046 and ST7262 
 
 #define CYD_MF35
 //#define CYD_35C
@@ -24,6 +25,7 @@ uint8_t *pFrameBuffer;
 //#define CYD_28R
 //#define CYD_28R_2USB
 //#define CYD_22C
+//#define CYD_4827
 
 // 3.5" 320x480 ILI9488 parallel MakerFabs 3.5"
 #ifdef CYD_MF35
@@ -50,6 +52,7 @@ uint8_t *pFrameBuffer;
 #define TOUCH_RESISTIVE
 #define LCD DISPLAY_CYD
 #endif
+
 // 3.5" 320x480 LCD w/capacitive touch
 #ifdef CYD_28R_2USB
 #define TOUCH_RESISTIVE
@@ -86,6 +89,16 @@ uint8_t *pFrameBuffer;
 #define QWIIC_SDA 21
 #define QWIIC_SCL 20
 #define LCD DISPLAY_CYD_128
+#endif
+
+// 4.3" 480x272 LCD w/resistive touch
+#ifdef CYD_4827
+#define TOUCH_RESISTIVE
+#define TOUCH_MISO 13
+#define TOUCH_MOSI 11
+#define TOUCH_CLK 12
+#define TOUCH_CS 38
+#define LCD DISPLAY_CYD_4827
 #endif
 
 #ifdef TOUCH_CAPACITIVE
