@@ -26,17 +26,21 @@ uint8_t u8BW, u8WR, u8RD, u8DC, u8CS, u8CMD;
 #if __has_include (<esp_lcd_panel_io.h>)
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
+#if defined ( ARDUINO_ESP32S3_DEV ) || defined ( ARDUINO_ESP32P4_DEV )
 #include <esp_lcd_panel_rgb.h>
+#endif
 #include <driver/gpio.h>
 #include <esp_private/gdma.h>
 #include <hal/dma_types.h>
 #include <driver/dedic_gpio.h>
 #include <esp32-hal-gpio.h>
+#if defined ( ARDUINO_ESP32S3_DEV ) || defined ( ARDUINO_ESP32P4_DEV )
 #include <hal/gpio_ll.h>
 #include <hal/lcd_hal.h>
 //#include <soc/lcd_cam_reg.h>
 //#include <soc/lcd_cam_struct.h>
 #include <hal/lcd_types.h>
+#endif // ESP32S3_DEV
 //extern DMA_ATTR uint8_t *ucTXBuf;
 extern int bSetPosition;
 extern volatile bool transfer_is_done;
@@ -52,6 +56,10 @@ static bool s3_notify_dma_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_pane
     transfer_is_done = true;
     return false;
 }
+#define MAX_TX_SIZE 4096
+
+#if defined ( ARDUINO_ESP32S3_DEV ) || defined ( ARDUINO_ESP32P4_DEV )
+
 // from esp-idf/components/esp_lcd/src/esp_lcd_panel_io_i80.c
 esp_lcd_panel_handle_t panel_handle = NULL;
 esp_lcd_i80_bus_handle_t i80_bus = NULL;
@@ -68,7 +76,6 @@ struct esp_lcd_i80_bus_t {
     size_t resolution_hz;    // LCD_CLK resolution, determined by selected clock source
     gdma_channel_handle_t dma_chan; // DMA channel handle
 };
-#define MAX_TX_SIZE 4096
 esp_lcd_i80_bus_config_t s3_bus_config = {
     .dc_gpio_num = 0,
     .wr_gpio_num = 0,
@@ -111,7 +118,7 @@ esp_lcd_panel_io_i80_config_t s3_io_config = {
 //    gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
 //  }
 //}
-
+#endif // ESP32S3
 #endif // has lcd panel include
 
 #ifdef USE_ESP32_GPIO
@@ -128,8 +135,10 @@ dedic_gpio_bundle_config_t bundleA_config = {
     },
 };
 #endif // USE_ESP32_GPIO
+#if defined ARDUINO_ESP32S3_DEV
 volatile lcd_cam_dev_t* _dev;
 esp_lcd_i80_bus_handle_t _i80_bus = nullptr;
+#endif // ESP32S3_DEV
 #ifdef USE_ESP32_GPIO
 static void esp32_gpio_clear(int8_t pin)
 {
@@ -411,7 +420,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
       channel_config_set_dreq(&config, pio_get_dreq(parallel_pio, parallel_sm, true));
       dma_channel_configure(parallel_dma, &config, &parallel_pio->txf[parallel_sm], NULL, 0, false);
 #endif // ARDUINO_ARCH_RP2040
-#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
+#if defined(ARDUINO_ARCH_ESP32) && !(defined(ARDUINO_ESP32C3_DEV) || defined(ARDUINO_ESP32C5_DEV))
     if (iFlags & FLAGS_SWAP_COLOR) {
         s3_io_config.flags.swap_color_bytes = 1;
     }
@@ -453,7 +462,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
 
 void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
 {
-#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
+#if defined(ARDUINO_ARCH_ESP32) && !(defined(ARDUINO_ESP32C3_DEV) || defined(ARDUINO_ESP32C5_DEV))
 #ifdef USE_ESP32_GPIO
     esp32_gpio_clear(u8DC); // clear DC
     spilcdParallelData(&ucCMD, 1);
@@ -473,7 +482,7 @@ void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
 
 void spilcdParallelData(uint8_t *pData, int iLen)
 {
-#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
+#if defined(ARDUINO_ARCH_ESP32) && !(defined(ARDUINO_ESP32C3_DEV) || defined(ARDUINO_ESP32C5_DEV))
 #ifdef USE_ESP32_GPIO
     uint8_t c, old = pData[0] -1;
         
@@ -516,7 +525,7 @@ void spilcdParallelData(uint8_t *pData, int iLen)
 //
 uint16_t * RGBInit(BB_RGB *pRGB)
 {
-#if defined ARDUINO_ESP32S3_DEV
+#if defined ( ARDUINO_ESP32S3_DEV ) || defined ( ARDUINO_ESP32P4_DEV )
 esp_lcd_rgb_panel_config_t panel_config;
 
    memset(&panel_config, 0, sizeof(panel_config));
@@ -525,7 +534,7 @@ esp_lcd_rgb_panel_config_t panel_config;
    panel_config.sram_trans_align = 8;
    panel_config.data_width = 16;
    panel_config.bits_per_pixel = 16;
-   panel_config.clk_src = LCD_CLK_SRC_PLL160M;
+   panel_config.clk_src = LCD_CLK_SRC_DEFAULT; //LCD_CLK_SRC_PLL160M;
    panel_config.disp_gpio_num = -1; // reset?
    panel_config.pclk_gpio_num = pRGB->pclk; // pixel clock
    panel_config.vsync_gpio_num = pRGB->vsync;
@@ -565,7 +574,7 @@ esp_lcd_rgb_panel_config_t panel_config;
    uint16_t *p;
    esp_lcd_rgb_panel_get_frame_buffer(panel_handle, 1, (void **)&p);
    return p;
-#else // not S3
+#else // not S3 or P4
    return NULL;
-#endif // ARDUINO_ESP32S3_DEV
+#endif // ARDUINO_ESP32S3_DEV / ARDUINO_ESP32P4_DEV
 } /* RGBInit() */

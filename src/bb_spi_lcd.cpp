@@ -296,6 +296,32 @@ const BB_RGB rgbpanel_480x480 = {
     12000000 // speed
 };
 
+const BB_RGB rgbpanel_elecrow_s3 = {
+    -1 /* CS */, -1 /* SCK */, -1 /* SDA */,
+    42 /* DE */, 41 /* VSYNC */, 40 /* HSYNC */, 39 /* PCLK */,
+    7 /* R0 */, 17 /* R1 */, 18 /* R2 */, 3 /* R3 */, 46 /* R4 */,
+    9 /* G0 */, 10 /* G1 */, 11 /* G2 */, 12 /* G3 */, 13 /* G4 */, 14 /* G5 */,
+    21 /* B0 */, 47 /* B1 */, 48 /* B2 */, 45 /* B3 */, 38 /* B4 */,
+    43 /* hsync_back_porch */, 8 /* hsync_front_porch */, 4 /* hsync_pulse_width */,         
+    12 /* vsync_back_porch */, 8 /* vsync_front_porch */, 4 /* vsync_pulse_width */,       
+    0 /* hsync_polarity */, 0 /* vsync_polarity */,
+    800, 480,
+    16000000 // speed
+};          
+
+const BB_RGB rgbpanel_elecrow = {
+    -1 /* CS */, 26 /* SCK */, 47 /* SDA */,
+    2 /* DE */, 41 /* VSYNC */, 40 /* HSYNC */, 3 /* PCLK */,
+    19 /* R0 */, 18 /* R1 */, 17 /* R2 */, 16 /* R3 */, 15 /* R4 */,
+    14 /* G0 */, 13 /* G1 */, 12 /* G2 */, 11 /* G3 */, 10 /* G4 */, 9 /* G5 */,
+    8 /* B0 */, 7 /* B1 */, 6 /* B2 */, 5 /* B3 */, 4 /* B4 */,
+    8 /* hsync_back_porch */, 8 /* hsync_front_porch */, 4 /* hsync_pulse_width */,
+    16 /* vsync_back_porch */, 16 /* vsync_front_porch */, 4 /* vsync_pulse_width */,
+    1 /* hsync_polarity */, 1 /* vsync_polarity */,
+    800, 480,
+    18000000 // speed
+};
+
 const BB_RGB rgbpanel_lilygo = {
     -1 /* CS */, -1 /* SCK */, -1 /* SDA */,
     -1 /* DE */, 40 /* VSYNC */, 39 /* HSYNC */, 41 /* PCLK */,
@@ -1920,10 +1946,10 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
             {
                 *d++ = *s++;
             }
-#if defined CONFIG_IDF_TARGET_ESP32S3 
+#if defined (CONFIG_IDF_TARGET_ESP32S3) || defined (ARDUINO_ESP32S3_DEV)
             Cache_WriteBack_Addr((uint32_t)&pLCD->pBackBuffer[pLCD->iOffset], iStrip*2);
 #endif
-#if defined CONFIG_IDF_TARGET_ESP32P4
+#if defined (CONFIG_IDF_TARGET_ESP32P4) || defined (ARDUINO_ESP32P4_DEV)
             esp_cache_msync(&pLCD->pBackBuffer[pLCD->iOffset], iStrip*2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 #endif
             pLCD->iOffset += iStrip*2; iOff += iStrip*2;
@@ -2296,6 +2322,11 @@ static int iStarted = 0; // indicates if the master driver has already been init
         goto skip_spi_init;
     }
 #ifdef ARDUINO_ARCH_ESP32
+if (iMISOPin != -1 && iMISOPin != 0xff) {
+   // if MISO pin defined, we assume that the user wants a shared SPI setup
+   pLCD->bUseDMA = 0; // disable DMA and use the static SPI class instance
+   bUseDMA = 0;
+}
     if (!iStarted && bUseDMA) {
     esp_err_t ret;
 
@@ -6200,7 +6231,7 @@ uint8_t *pFont;
         spilcdSetPosition(pLCD, x, y, iStride, 16, iFlags);
         for (k = 0; k<8; k++) { // create a pair of scanlines from each original
            uint8_t ucMask = (1 << k);
-           usD = (uint16_t *)pDMA;
+           usD = (uint16_t *)ucTXBuf;
            for (i=0; i<iStride*2; i++)
               usD[i] = usBG; // set to background color first
            for (i=0; i<iLen; i++)
@@ -6243,7 +6274,6 @@ uint8_t *pFont;
 	if (iLen <=0) return -1; // can't use this function
 
     if ((cx*iLen) + x > pLCD->iCurrentWidth) iLen = (pLCD->iCurrentWidth - x)/cx; // can't display it all
-    if (iLen > 32) iLen = 32;
     iStride = iLen * cx*2;
     for (i=0; i<iLen; i++)
     {
@@ -6251,7 +6281,7 @@ uint8_t *pFont;
         uint8_t ucMask = 1;
         for (k=0; k<8; k++) // for each scanline
         {
-            usD = (uint16_t *)&pDMA[(k*iStride) + (i * cx*2)];
+            usD = (uint16_t *)&ucTXBuf[(k*iStride) + (i * cx*2)];
             for (j=0; j<cx; j++)
             {
                 if (s[j] & ucMask)
@@ -6264,7 +6294,7 @@ uint8_t *pFont;
     } // for i
     // write the data in one shot
     spilcdSetPosition(pLCD, x, y, cx*iLen, 8, iFlags);
-    myspiWrite(pLCD, (uint8_t *)pDMA, iLen*cx*16, MODE_DATA, iFlags);
+    myspiWrite(pLCD, (uint8_t *)ucTXBuf, iLen*cx*16, MODE_DATA, iFlags);
     pLCD->iCursorX = x + (cx*iLen);
     pLCD->iCursorY = y;
 	return 0;
@@ -8383,6 +8413,11 @@ uint16_t *jd9165_init(void)
 } /* jd9165_init() */
 #endif // ESP32P4
 #ifndef __MEM_ONLY__
+const uint8_t st7262_init_commands[] = {
+    1, 0x01,
+    2, 0x3a,0x66,
+    0
+};
 const uint8_t st7701s_init_commands[] = {
    6, 0xff, 0x77, 0x01, 0x00, 0x00, 0x13,
    2, 0xef, 0x08,
@@ -8753,7 +8788,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             break;
 #endif // !__LINUX__
 
-#ifdef CONFIG_IDF_TARGET_ESP32P4
+#if defined (CONFIG_IDF_TARGET_ESP32P4) || defined (ARDUINO_ESP32P4_DEV)
         case DISPLAY_CYD_P4_1024x600:
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.iLCDFlags = FLAGS_SWAP_COLOR; // little endian byte order
@@ -8774,9 +8809,40 @@ int BB_SPI_LCD::begin(int iDisplayType)
             _lcd.iHeight = _lcd.iCurrentHeight = 800;
             spilcdSetBuffer(&_lcd, (uint8_t *)jd9165_init());
             break;
-
+        case DISPLAY_ELECROW_P4_800x480:
+            _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
+            _lcd.iLEDPin = -1;
+            // Turn on backlight (ST8H MCU)
+            Wire.begin(45, 46);
+            Wire.beginTransmission(0x2f);
+            Wire.write(0x20); // backlight command
+            Wire.write(100); // brightness
+            Wire.endTransmission();
+            _lcd.iLCDType = LCD_VIRTUAL_MEM;
+            _lcd.iWidth = _lcd.iCurrentWidth = 800;
+            _lcd.iHeight = _lcd.iCurrentHeight = 480;
+            //spilcdBitBangRGBCommands(st7262_init_commands);
+            spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_elecrow));
+            break;
 #endif // ESP32-P4
 #ifndef __LINUX__ 
+        case DISPLAY_ELECROW_S3_800x480:
+            _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
+            _lcd.iLEDPin = -1;
+            // Turn on backlight (ST8H MCU) 
+            Wire.begin(15, 16); 
+            Wire.beginTransmission(0x30);
+            Wire.write(250); // backlight on command
+            Wire.endTransmission(); 
+            Wire.beginTransmission(0x30);
+            Wire.write(0);
+            Wire.endTransmission();
+            _lcd.iLCDType = LCD_VIRTUAL_MEM;
+            _lcd.iWidth = _lcd.iCurrentWidth = 800;
+            _lcd.iHeight = _lcd.iCurrentHeight = 480;
+            //spilcdBitBangRGBCommands(st7262_init_commands);
+            spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_elecrow_s3));
+            break;
         case DISPLAY_CYD_8048: // 4.3" and 5.5" 800x480 ESP32-S3
             memset(&_lcd, 0, sizeof(_lcd));
             _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
@@ -8960,6 +9026,10 @@ int BB_SPI_LCD::begin(int iDisplayType)
             digitalWrite(38, LOW); // turn on LCD
             begin(LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 40000000, 4, 2, 1, -1, -1, 3, 5);
             break;
+        case DISPLAY_T_DONGLE_C5:
+            begin(LCD_ST7735S_B, FLAGS_SWAP_RB | FLAGS_INVERT, 40000000, 10, 3, 1, 0, 7, 2, 6);
+            setRotation(90);
+            break;
         case DISPLAY_T_DISPLAY_S3_PRO: // 222x480 ST7796
             memset(&_lcd, 0, sizeof(_lcd));
             // MISO=8, MOSI=17,CLK=18,CS=39,DC=9,RST=47,BL=48
@@ -9027,6 +9097,24 @@ int BB_SPI_LCD::begin(int iDisplayType)
             _lcd.bUseDMA = 1;
 // iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin
             begin(LCD_ST7789_280, FLAGS_NONE, 40000000, 5, 4, 8, 15, -1, 7, 6);
+            break;
+
+        case DISPLAY_LILYGO_T_PAGER: // 2.84" 480x222 ST7796
+            _lcd.bUseDMA = 0;
+            begin(LCD_ST7796_222, FLAGS_SWAP_RB | FLAGS_FLIPX | FLAGS_INVERT, 40000000, 38, 37, -1, 42, 33, 34, 35);
+            setRotation(270);
+            break;
+
+        case DISPLAY_LILYGO_T_DECK_PLUS: // 2.8" ST7789
+            _lcd.bUseDMA = 1;
+            pinMode(42, OUTPUT);
+            digitalWrite(42, HIGH); // enable LED backlight
+            pinMode(10, OUTPUT); // peripheral power enable
+            digitalWrite(10, HIGH);
+
+// iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin
+            begin(LCD_ST7789, FLAGS_NONE, 40000000, 12, 11, -1, -1, 38, 41, 40);
+            setRotation(90);
             break;
 
         case DISPLAY_LILYGO_T_ENCODER_PRO: // 1.2" AMOLED round 390x390
@@ -9861,10 +9949,10 @@ void BB_SPI_LCD::maskedTint(BB_SPI_LCD *pSrc, BB_SPI_LCD *pMask, int x, int y, u
 // If the source and destination are the same size, use SIMD code
     if (_lcd.iCurrentWidth == pSrc->_lcd.iCurrentWidth && _lcd.iCurrentHeight == pSrc->_lcd.iCurrentHeight) { // use SIMD code
         s3_masked_tint_be((uint16_t *)_lcd.pBackBuffer, (uint16_t *)pSrc->_lcd.pBackBuffer, (uint16_t *)pMask->_lcd.pBackBuffer, u16Tint, pSrc->_lcd.iCurrentWidth * pSrc->_lcd.iCurrentHeight, u8Alpha, u16RGBMasks);
-#if defined CONFIG_IDF_TARGET_ESP32S3 
+#if defined ( CONFIG_IDF_TARGET_ESP32S3 ) || defined (ARDUINO_ESP32S3_DEV)
             Cache_WriteBack_Addr((uint32_t)pSrc->_lcd.pBackBuffer, pSrc->_lcd.iCurrentWidth * pSrc->_lcd.iCurrentHeight*2);
 #endif
-#if defined CONFIG_IDF_TARGET_ESP32P4
+#if defined (CONFIG_IDF_TARGET_ESP32P4) || defined (ARDUINO_ESP32P4_DEV)
             esp_cache_msync(pSrc->_lcd.pBackBuffer, pSrc->_lcd.iCurrentWidth * pSrc->_lcd.iCurrentHeight*2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 #endif
         return;
@@ -10142,10 +10230,10 @@ int BB_SPI_LCD::drawSprite(int x, int y, BB_SPI_LCD *pSprite, float fScale, int 
                 }
             }
             u32YAcc += u32Frac;
-#if defined CONFIG_IDF_TARGET_ESP32S3 
+#if defined (CONFIG_IDF_TARGET_ESP32S3) || defined (ARDUINO_ESP32S3_DEV)
             Cache_WriteBack_Addr((uint32_t)d, cx*2);
 #endif
-#if defined CONFIG_IDF_TARGET_ESP32P4
+#if defined (CONFIG_IDF_TARGET_ESP32P4) || defined (ARDUINO_ESP32P4_DEV)
             esp_cache_msync(d, cx*2, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 #endif
             d += _lcd.iCurrentWidth;
