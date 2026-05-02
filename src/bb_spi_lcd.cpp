@@ -1503,8 +1503,32 @@ const uint16_t u16ST7793_Init[]PROGMEM = {
             0 // end
 }; // ST7793 240x400
 
+const unsigned char ucTufty2350[] PROGMEM = {
+    1, 0x1, // software reset
+    LCD_DELAY, 150,
+    2, 0x3a, 0x05, // RGB565
+    6, 0xb2, 0x0c, 0x0c, 0x00, 0x33, 0x33,
+    2, 0xc0, 0x2c,    // LCM
+    2, 0xc2, 0x01,    // VDV & VRH command enable
+    2, 0xc3, 0x0f, // VRHS
+    2, 0xc4, 0x20, // VDVS
+    3, 0xd0, 0xa4, 0xa1, // Power ctrl 1
+    2, 0xc6, 0x0f, // FR ctrl 2
+    3, 0xb0, 0x00, 0xc0, // RAMCTRL
+    2, 0xb7, 0x35,    // gate control
+    2, 0xbb, 0x1b, // VCOMS
+    15, 0xe0, 0xf0,0x00,0x06,0x04,0x05,0x05,0x31,0x44,0x48,0x36,0x12,0x12,0x2b,0x34,
+    15, 0xe1, 0xf0,0x0b,0x0f,0x0f,0x0d,0x26,0x31,0x43,0x47,0x38,0x14,0x14,0x2c,0x32,
+    1, 0x21, // invert on
+    1, 0x11, // sleep out
+    LCD_DELAY, 100,
+    2, 0x36,0x08,
+    0
+};
 // List of command/parameters to initialize the ST7789 LCD
 const unsigned char uc240x240InitList[]PROGMEM = {
+    1, 0x1, // Software reset
+    LCD_DELAY, 150,
     1, 0x13, // partial mode off
     1, 0x21, // display inversion off
     2, 0x36,0x08,    // memory access 0xc0 for 180 degree flipped
@@ -2487,6 +2511,14 @@ start_of_init:
             pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
            }
            break;
+        case LCD_ST7789_TUFTY:
+            s = (unsigned char *)ucTufty2350;
+            memcpy_P(d, s, sizeof(ucTufty2350));
+            pLCD->iCMDType = CMD_TYPE_SITRONIX_8BIT;
+            pLCD->iCurrentWidth = pLCD->iWidth = 240;
+            pLCD->iCurrentHeight = pLCD->iHeight = 320;
+            pLCD->iLCDType = LCD_ST7789;
+            break;
 	case LCD_ST7789:
         case LCD_ST7789_172:
         case LCD_ST7789_280:
@@ -2859,7 +2891,7 @@ start_of_init:
 		delayMicroseconds(10000);
 	}
 //	spilcdFill(0, 1); // erase memory
-	spilcdScrollReset(pLCD);
+//	spilcdScrollReset(pLCD);
 	return 0;
 
 } /* spilcdInit() */
@@ -3526,7 +3558,7 @@ void spilcdShutdown(SPILCD *pLCD)
 //
 void spilcdWriteCmdParams(SPILCD *pLCD, uint8_t ucCMD, uint8_t *pParams, int iLen)
 {
-#if defined ( ARDUINO_ARCH_ESP32 )// && !defined( CONFIG_IDF_TARGET_ESP32 )
+#if defined ( ARDUINO_ARCH_ESP32 ) && !defined( CONFIG_IDF_TARGET_ESP32 )
     if (pLCD->pfnDataCallback) { // only ESP32-S2 and S3
         spilcdParallelCMDParams(ucCMD, pParams, iLen);
         return;
@@ -8738,7 +8770,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ILI9341, FLAGS_NONE, 40000000, 15, 2, -1, 27, 12, 13, 14, 1); // Cheap Yellow Display (2.4 and 2.8 w/cap touch)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
-#ifndef __LINUX__
+#if !defined( __LINUX__ ) && !defined(ARDUINO_ARCH_RP2040)
         case DISPLAY_T_WATCH:
 // iType, iFlags, iFreq, iCSPin, iDCPin, iResetPin, iLEDPin, iMISOPin, iMOSIPin, iCLKPin, DMA
             spilcdInit(&_lcd, LCD_ST7789_240, FLAGS_NONE, 40000000, 12, 38, -1, 45, -1, 13, 18, 1); 
@@ -8825,7 +8857,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_elecrow));
             break;
 #endif // ESP32-P4
-#ifndef __LINUX__ 
+#if !defined( __LINUX__ ) && !defined(ARDUINO_ARCH_RP2040)
         case DISPLAY_ELECROW_S3_800x480:
             _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
             _lcd.iLEDPin = -1;
@@ -9008,6 +9040,18 @@ int BB_SPI_LCD::begin(int iDisplayType)
             ParallelDataInit(8,10, -1, 9, 8, ucRXBuf, 0, 0);
             spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
             spilcdInit(&_lcd, LCD_ST7789_172, 0,0,0,0,0,0,0,0,0,0);
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
+            break;
+        case DISPLAY_TUFTY2350: // ST7789 240x320 8-bit parallel
+            pinMode(26, OUTPUT); // backlight
+            digitalWrite(26, HIGH);
+            pinMode(41, OUTPUT); // power enable
+            digitalWrite(41, HIGH);
+            ucRXBuf[0] = 32; // D0
+            // RD, WR, CS, DC, BusWidth, data_pins, flags, freq
+            ParallelDataInit(31, 30, 27, 28, 8, ucRXBuf, 0, 0);
+            spilcdSetCallbacks(&_lcd, ParallelReset, ParallelDataWrite);
+            spilcdInit(&_lcd, LCD_ST7789_TUFTY, 0,0,0,0,0,0,0,0,0,0);
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_TUFTY2040: // ST7789 240x320 8-bit parallel

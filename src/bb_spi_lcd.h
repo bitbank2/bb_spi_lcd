@@ -181,12 +181,15 @@ typedef struct tagSPILCD
    DATACALLBACK pfnDataCallback;
 } SPILCD;
 
+#ifndef __BB_RECT__
+#define __BB_RECT__
 typedef struct {
     int x; 
     int y;
     int w;
     int h;
-} BB_RECT;  
+} BB_RECT;
+#endif // __BB_RECT__
     
 #ifdef __cplusplus
 
@@ -332,6 +335,7 @@ enum
     DISPLAY_T_QT_C6,
     DISPLAY_T_TRACK,
     DISPLAY_TUFTY2040,
+    DISPLAY_TUFTY2350,
     DISPLAY_RP2040_C3, // 172x320 ST7789 8-bit parallel
     DISPLAY_KUMAN_35,
     DISPLAY_KUMAN_24,
@@ -620,6 +624,7 @@ enum {
    LCD_ILI9342, // 320x240 IPS
    LCD_ST7793, // 240x400
    LCD_ST7789, // 240x320
+   LCD_ST7789_TUFTY,
    LCD_ST7789_240,  // 240x240
    LCD_ST7789_135, // 135x240
    LCD_ST7789_NOCS, // 240x240 without CS, vertical offset of 80, MODE3

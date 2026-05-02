@@ -274,22 +274,34 @@ void ParallelDataWrite(uint8_t *pData, int len, int iMode)
     while (dma_channel_is_busy(parallel_dma))
       ;
     gpio_put(u8DC, (iMode == MODE_DATA)); // DC pin (change after last DMA action completes)
+    gpio_put(u8CS, 0);
+delayMicroseconds(0);
     dma_channel_set_trans_count(parallel_dma, len, false);
     dma_channel_set_read_addr(parallel_dma, pData, true);
-
+// DEBUG
+//dma_channel_wait_for_finish_blocking(parallel_dma);
+//gpio_put(u8CS, 1);
+//pio_sm_block_until_stalled(parallel_pio, parallel_sm);
 // If we didn't use the PIO state machine, this is how we would do it
 // (I used this first before enabling the state machine code)
-//  for (int i=0; i<len; i++) {
-//     uint32_t c = pData[i];
-//     if (c != old) {
-//        gpio_clr_mask(u32Mask); // clear bits 14-21
-//        gpio_set_mask(c << 14);
-//        old = c;
+#ifdef FUTURE
+    gpio_put(u8DC, (iMode == MODE_DATA)); // DC pin (change after last DMA action completes)
+    gpio_put(u8CS, 0);
+uint32_t c, old = pData[0] -1;
+  for (int i=0; i<len; i++) {
+     digitalWrite(u8WR, LOW); // toggle WR low to high to latch the data
+     c = pData[i];
+ //    if (c != old) {
+//         old = c;
+         for (int j=0; j<8; j++) {
+             gpio_put(32+j, c & 1);
+             c >>= 1;
+         }
 //     }
-//     digitalWrite(12, LOW); // toggle WR low to high to latch the data
-//     digitalWrite(12, HIGH);
-//  } // for i
-//  gpio_put(10, 1); // deactivate CS
+     digitalWrite(u8WR, HIGH);
+  } // for i
+  gpio_put(u8CS, 1); // deactivate CS
+#endif // FUTURE
 #endif // ARDUINO_ARCH_RP2040
 #if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32C3_DEV)
 #ifdef FUTURE
@@ -373,26 +385,29 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
    return;
 #endif // ARDUINO_TEENSY41 || CONFIG_IDF_TARGET_ESP32
 #ifdef ARDUINO_ARCH_RP2040
-
+// also RP2350
+#ifdef FUTURE
 // Set up GPIO for output mode
-//  for (int i=10; i<=21; i++) { // I/O lines
-//     pinMode(i, OUTPUT);
-//  }
-//  digitalWrite(12, HIGH); // WR deactivated
-//  pinMode(10, OUTPUT); // CS
-//  digitalWrite(10, HIGH); // CS deactivated
+  for (int i=data_pins[0]; i<data_pins[0]+8; i++) { // I/O lines
+     pinMode(i, OUTPUT);
+  }
+#endif // FUTURE
     gpio_set_function(DC_PIN, GPIO_FUNC_SIO);
     gpio_set_dir(DC_PIN, GPIO_OUT);
     gpio_set_function(WR_PIN, GPIO_FUNC_SIO);
     gpio_set_dir(WR_PIN, GPIO_OUT);
+      gpio_set_function(RD_PIN, GPIO_FUNC_SIO);
+      gpio_set_dir(RD_PIN, GPIO_OUT);
+      gpio_put(RD_PIN, 1);
 
-    if (CS_PIN >= 0 && CS_PIN < 40) {
+    if (CS_PIN >= 0 && CS_PIN < 99) {
         gpio_set_function(CS_PIN, GPIO_FUNC_SIO);
         gpio_set_dir(CS_PIN, GPIO_OUT);
-        gpio_put(CS_PIN, 0); // CS always active
+        //gpio_put(CS_PIN, 0); // CS always active
     }
 
       parallel_pio = pio1;
+      pio_set_gpio_base(parallel_pio, data_pins[0]+8 >=32 ? 16: 0);
       parallel_sm = pio_claim_unused_sm(parallel_pio, true);
       parallel_offset = pio_add_program(parallel_pio, &st7789_parallel_program);
       pio_gpio_init(parallel_pio, WR_PIN);
@@ -408,8 +423,10 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
       sm_config_set_sideset_pins(&c, WR_PIN);
       sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
       sm_config_set_out_shift(&c, false, true, 8);
-      sm_config_set_clkdiv(&c, 4);
-      
+      // Determine clock divider
+      uint32_t startup_hz = clock_get_hz(clk_sys);
+      sm_config_set_clkdiv(&c, ceil(2.f * fmax(1.0f, float(startup_hz) / 44000000)) * 0.5f);
+ //     sm_config_set_clkdiv(&c, 4);
       pio_sm_init(parallel_pio, parallel_sm, parallel_offset, &c);
       pio_sm_set_enabled(parallel_pio, parallel_sm, true);
 
