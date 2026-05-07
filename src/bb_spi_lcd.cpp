@@ -1527,8 +1527,8 @@ const unsigned char ucTufty2350[] PROGMEM = {
 };
 // List of command/parameters to initialize the ST7789 LCD
 const unsigned char uc240x240InitList[]PROGMEM = {
-    1, 0x1, // Software reset
-    LCD_DELAY, 150,
+//    1, 0x1, // Software reset
+//    LCD_DELAY, 150,
     1, 0x13, // partial mode off
     1, 0x21, // display inversion off
     2, 0x36,0x08,    // memory access 0xc0 for 180 degree flipped
