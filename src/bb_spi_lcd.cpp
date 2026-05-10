@@ -4790,10 +4790,14 @@ uint8_t *s;
         pLCD->iCurrentWidth = pLCD->iWidth = 280;
         pLCD->iCurrentHeight = pLCD->iHeight = 456;
         pLCD->iMemoryX = 20; // memory window offset since controller is 320 wide (20 gap on each side)
-    } else {
+    } else if (iOption == 1) { // 460x460
         pLCD->iCurrentWidth = pLCD->iWidth = 460;
         pLCD->iCurrentHeight = pLCD->iHeight = 460;
         pLCD->iMemoryX = 10;
+    } else { // 480x480
+        pLCD->iCurrentWidth = pLCD->iWidth = 480;
+        pLCD->iCurrentHeight = pLCD->iHeight = 480;
+        pLCD->iMemoryX = 0;
     }
     pLCD->iLCDType = LCD_CO5300;
     iCount = 1;
@@ -5473,6 +5477,9 @@ int qspiInit(SPILCD *pLCD, int iLCDType, int iFLAGS, uint32_t u32Freq, uint8_t u
             break;
         case LCD_CO5300B:
             CO5300Init(pLCD, 1);
+            break;
+        case LCD_CO5300C:
+            CO5300Init(pLCD, 2);
             break;
         case LCD_SPD2010:
             SPD2010Init(pLCD);
@@ -9208,6 +9215,13 @@ int BB_SPI_LCD::begin(int iDisplayType)
             // CS=11, SCK=15, D0=14, D1=10, D2=16, D3=12, RST=13, BL=-1
             qspiInit(&_lcd, LCD_RM690B0, FLAGS_NONE, 40000000, 11,15,14,10,16,12,13,-1);
             break;
+
+        case DISPLAY_WS_AMOLED_216: // ESP32-S3 + 480x480 AMOLED
+            memset(&_lcd, 0, sizeof(_lcd));
+            _lcd.bUseDMA = 1;
+            // CS=12, SCK=38, D0=4, D1=5, D2=6, D3=7, RST=39, BL=-1
+            qspiInit(&_lcd, LCD_CO5300C, FLAGS_NONE, 40000000, 12,38,4,5,6,7,39,-1);
+           break;
 
         case DISPLAY_WS_AMOLED_241: // Waveshare 2.41" 450x600 AMOLED
             memset(&_lcd, 0, sizeof(_lcd));
