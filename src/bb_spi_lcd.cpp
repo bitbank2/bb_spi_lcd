@@ -8685,6 +8685,15 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdInit(&_lcd, LCD_ST7789_135, FLAGS_NONE, 40000000, 4, 21, 22, 26, -1, 23, 18,1); // Mike's coin cell pin numbering
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
+        case DISPLAY_CYD_C5:
+            spilcdInit(&_lcd, LCD_ST7789, FLAGS_INVERT, 40000000, 23, 24, -1, 25, 2, 7, 6, 0); // Cheap Yellow Display (2.8 w/resistive touch, 2 USB ports)
+            spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
+            _lcd.pSPI = &SPI; // shared SPI 
+            _lcd.iRTMOSI = 255;
+            _lcd.iRTCS = 1;
+            _lcd.iRTOrientation = 0;
+            _lcd.iRTThreshold = 6300;
+            break;
         case DISPLAY_CYD_2USB:
             spilcdInit(&_lcd, LCD_ST7789, FLAGS_INVERT, 40000000, 15, 2, -1, 21, 12, 13, 14, 1); // Cheap Yellow Display 2 USB (2.8 w/resistive touch, 2 USB ports)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
