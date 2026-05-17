@@ -15,7 +15,7 @@
 // limitations under the License.
 //===========================================================================
 //
-#define LOG_OUTPUT
+//#define LOG_OUTPUT
 
 // For decompressing compressed fonts and images
 #include "Group5.h"
