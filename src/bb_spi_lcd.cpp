@@ -15,7 +15,7 @@
 // limitations under the License.
 //===========================================================================
 //
-//#define LOG_OUTPUT
+#define LOG_OUTPUT
 
 // For decompressing compressed fonts and images
 #include "Group5.h"
@@ -947,17 +947,20 @@ void spilcdSetTXBuffer(uint8_t *pBuf, int iSize)
 // Sets the D/C pin to data or command mode
 void spilcdSetMode(SPILCD *pLCD, int iMode)
 {
+    if (iMode != pLCD->iMode) {
 #ifdef __AVR__
-    if (iMode == MODE_DATA)
-       *outDC |= bitDC;
-    else
-       *outDC &= ~bitDC;
+        if (iMode == MODE_DATA)
+            *outDC |= bitDC;
+        else
+            *outDC &= ~bitDC;
 #else
-	myPinWrite(pLCD->iDCPin, iMode == MODE_DATA);
+        myPinWrite(pLCD->iDCPin, iMode == MODE_DATA);
 #endif
 #ifdef ARDUINO_ARCH_ESP32
-	delayMicroseconds(1); // some systems are so fast that it needs to be delayed
+        delayMicroseconds(1); // some systems are so fast that it needs to be delayed
 #endif
+        pLCD->iMode = iMode;
+    }
 } /* spilcdSetMode() */
 
 const unsigned char ucST7796InitList[] PROGMEM = {
@@ -2184,8 +2187,13 @@ void spilcdWritePixelsMasked(SPILCD *pLCD, int x, int y, uint8_t *pData, uint8_t
 //
 static void myPinWrite(int iPin, int iValue)
 {
-    if (iPin != -1)
+    if (iPin != -1) {
+#ifdef ARDUINO_ARCH_ESP32 // faster than digitalWrite() on ESP32s
+        gpio_set_level((gpio_num_t)iPin, (iValue) ? HIGH: LOW);
+#else
         digitalWrite(iPin, (iValue) ? HIGH: LOW);
+#endif
+    }
 } /* myPinWrite() */
 
 //
@@ -2283,7 +2291,8 @@ static int iStarted = 0; // indicates if the master driver has already been init
 
     if (pLCD->pFont != NULL && iSPIFreq != 0) { // the structure is probably not initialized
         memset(pLCD, 0, sizeof(SPILCD));
-    }   
+    }
+    pLCD->iMode = -1; // force first mode change
     pLCD->iFG = 0xffff; // default to white text color
     pDMA = pDMA0;
     pLCD->bUseDMA = bUseDMA;
@@ -8078,16 +8087,16 @@ uint8_t ucTemp[4];
            ucIn = 0;
            for (j=0; j<8; j++) { // for each bit
                ucIn <<= 1;
-               digitalWrite(pLCD->iRTMOSI, (ucOut & 0x80) >> 7);
+               myPinWrite(pLCD->iRTMOSI, (ucOut & 0x80) >> 7);
                __asm__ __volatile__ ("nop");
                __asm__ __volatile__ ("nop");
 //               delayMicroseconds(1);
-               digitalWrite(pLCD->iRTCLK, 1);
+               myPinWrite(pLCD->iRTCLK, 1);
                __asm__ __volatile__ ("nop");
                __asm__ __volatile__ ("nop");
 //               delayMicroseconds(1);
                ucIn |= digitalRead(pLCD->iRTMISO);
-               digitalWrite(pLCD->iRTCLK, 0);
+               myPinWrite(pLCD->iRTCLK, 0);
                ucOut <<= 1;
            } // for each bit
         pRXBuf[i] = ucIn; // store the received data
@@ -8095,11 +8104,11 @@ uint8_t ucTemp[4];
     } else { // shared SPI bus
 #ifdef ARDUINO
         memcpy(pRXBuf, ucTemp, iLen); // Arduino only allows duplex overwrite
-        digitalWrite(pLCD->iRTCS, LOW);
+//        myPinWrite(pLCD->iRTCS, LOW);
         pLCD->pSPI->beginTransaction(SPISettings(2000000, MSBFIRST, 0));
         pLCD->pSPI->transfer(pRXBuf, iLen);
         pLCD->pSPI->endTransaction();
-        digitalWrite(pLCD->iRTCS, HIGH);
+//        myPinWrite(pLCD->iRTCS, HIGH);
 #endif // ARDUINO
     }
 #endif // !__LINUX__   
@@ -8209,8 +8218,9 @@ const int iOrients[4] = {0,90,180,270};
     if (ti == NULL)
         return 0;
     x1 = y1 = 0; // suppress compiler warning
-    if (_lcd.iRTCS >= 0 && _lcd.iRTCS < 99)
-        digitalWrite(_lcd.iRTCS, 0); // active CS
+    if (_lcd.iRTCS >= 0 && _lcd.iRTCS < 99) {
+        myPinWrite(_lcd.iRTCS, 0); // activate CS
+    }
     // read the "pressure" value to see if there is a touch
     rtSPIXfer(&_lcd, 0xb1, ucTemp, 3);
     rtSPIXfer(&_lcd, 0xc1, ucTemp, 3);
@@ -8221,8 +8231,9 @@ const int iOrients[4] = {0,90,180,270};
     z -= z2;
     if (z > _lcd.iRTThreshold) {
         ti->count = 0;
-        if (_lcd.iRTCS >= 0 && _lcd.iRTCS < 99)
-            digitalWrite(_lcd.iRTCS, 1); // inactive CS
+        if (_lcd.iRTCS >= 0 && _lcd.iRTCS < 99) {
+            myPinWrite(_lcd.iRTCS, 1); // de-activate CS
+        }
         return 0; // not a valid pressure reading
     } else {
       //Serial.printf("pressure = %d\n", z);
@@ -8281,7 +8292,7 @@ const int iOrients[4] = {0,90,180,270};
     ti->x[0] = x1;
     ti->y[0] = y1;
     if (_lcd.iRTCS >= 0 && _lcd.iRTCS < 99)
-        digitalWrite(_lcd.iRTCS, 1); // inactive CS
+        myPinWrite(_lcd.iRTCS, 1); // de-activate CS
     //delay(10); // don't let the user try to read samples too quickly
     return 1;
 } /* rtReadTouch() */
@@ -8693,6 +8704,8 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_270);
             break;
         case DISPLAY_CYD_C5:
+            pinMode(1, OUTPUT);
+            digitalWrite(1, HIGH); // disable touch CS
             spilcdInit(&_lcd, LCD_ST7789, FLAGS_INVERT, 40000000, 23, 24, -1, 25, 2, 7, 6, 0); // Cheap Yellow Display (2.8 w/resistive touch, 2 USB ports)
             spilcdSetOrientation(&_lcd, LCD_ORIENTATION_90);
             _lcd.pSPI = &SPI; // shared SPI 

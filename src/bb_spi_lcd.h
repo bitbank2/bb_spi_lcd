@@ -176,7 +176,7 @@ typedef struct tagSPILCD
    int iFont, iWrap, iFG, iBG, iAntialias;
    void *pFont;
    int iOldX, iOldY, iOldCX, iOldCY; // to optimize spilcdSetPosition()
-
+   int iMode; // to avoid extra LCD mode setting
    RESETCALLBACK pfnResetCallback;
    DATACALLBACK pfnDataCallback;
 } SPILCD;
