@@ -9,8 +9,8 @@
 #include <bb_spi_lcd.h>
 #include <AnimatedGIF.h>
 //#include "matrix_320x176.h"
-//#include "this_is_fine_240x240.h"
-#include "homer_car_240x135.h"
+#include "this_is_fine_240x240.h"
+//#include "homer_car_240x135.h"
 
 BB_SPI_LCD lcd;
 AnimatedGIF gif;
