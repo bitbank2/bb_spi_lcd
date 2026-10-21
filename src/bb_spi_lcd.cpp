@@ -8886,7 +8886,7 @@ int BB_SPI_LCD::begin(int iDisplayType)
             spilcdSetBuffer(&_lcd, (uint8_t *)RGBInit((BB_RGB *)&rgbpanel_elecrow));
             break;
 #endif // ESP32-P4
-#if !defined( __LINUX__ ) && !defined(ARDUINO_ARCH_RP2040)
+#if defined(ARDUINO_ARCH_ESP32)
         case DISPLAY_ELECROW_S3_800x480:
             _lcd.iDCPin = _lcd.iCSPin = -1; // make sure we don't try to toggle these
             _lcd.iLEDPin = -1;
