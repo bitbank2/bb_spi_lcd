@@ -2091,6 +2091,9 @@ static void myspiWrite(SPILCD *pLCD, unsigned char *pBuf, int iLen, int iMode, i
 #ifdef ARDUINO_ARCH_ESP32
     pSPI->transferBytes(pBuf, NULL, iLen);
 #else
+#ifdef ARDUINO_ARCH_NRF52
+    delayMicroseconds(4); // for some reason this needs an extra delay here
+#endif
     pSPI->transfer(pBuf, iLen);
 #endif
     pSPI->endTransaction();

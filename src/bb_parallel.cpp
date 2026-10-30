@@ -77,10 +77,13 @@ struct esp_lcd_i80_bus_t {
     gdma_channel_handle_t dma_chan; // DMA channel handle
 };
 esp_lcd_i80_bus_config_t s3_bus_config = {
-    .dc_gpio_num = 0,
-    .wr_gpio_num = 0,
+    .dc_gpio_num = (gpio_num_t)0,
+    .wr_gpio_num = (gpio_num_t)0,
     .clk_src = LCD_CLK_SRC_PLL160M,
-    .data_gpio_nums = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    .data_gpio_nums = {(gpio_num_t)0,(gpio_num_t)0,(gpio_num_t)0,(gpio_num_t)0,
+              (gpio_num_t)0,(gpio_num_t)0,(gpio_num_t)0,(gpio_num_t)0,(gpio_num_t)0,
+              (gpio_num_t)0,(gpio_num_t)0,(gpio_num_t)0,(gpio_num_t)0,(gpio_num_t)0,
+              (gpio_num_t)0,(gpio_num_t)0},
     .bus_width = 0,
     .max_transfer_bytes = MAX_TX_SIZE, // debug
 //    .psram_trans_align = 0, // 0 = use default values
@@ -88,7 +91,7 @@ esp_lcd_i80_bus_config_t s3_bus_config = {
 };
 
 esp_lcd_panel_io_i80_config_t s3_io_config = {
-        .cs_gpio_num = 0,
+        .cs_gpio_num = (gpio_num_t)0,
         .pclk_hz = 12000000, // >12Mhz doesn't work on my setup
         .trans_queue_depth = 4,
         .on_color_trans_done = s3_notify_dma_ready,
@@ -457,19 +460,19 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
     ESP_ERROR_CHECK(dedic_gpio_new_bundle(&bundleA_config, &bundleA));
     transfer_is_done = true;
 #else // USE_ESP32_GPIO
-    s3_bus_config.dc_gpio_num = u8DC;
-    s3_bus_config.wr_gpio_num = u8WR;
+    s3_bus_config.dc_gpio_num = (gpio_num_t)u8DC;
+    s3_bus_config.wr_gpio_num = (gpio_num_t)u8WR;
     s3_bus_config.bus_width = iBusWidth;
     for (int i=0; i<iBusWidth; i++) {
-        s3_bus_config.data_gpio_nums[i] = data_pins[i];
+        s3_bus_config.data_gpio_nums[i] = (gpio_num_t)data_pins[i];
     }
     ESP_ERROR_CHECK(esp_lcd_new_i80_bus(&s3_bus_config, &i80_bus));
 //    pinMode(u8CS, OUTPUT);
 //    digitalWrite(u8CS, LOW); // permanently active
     if (u8CS < 99)
-        s3_io_config.cs_gpio_num = u8CS;
+        s3_io_config.cs_gpio_num = (gpio_num_t)u8CS;
     else
-        s3_io_config.cs_gpio_num = -1;
+        s3_io_config.cs_gpio_num = (gpio_num_t)-1;
     s3_io_config.pclk_hz = u32Freq;
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_i80(i80_bus, &s3_io_config, &io_handle));
     transfer_is_done = true;
@@ -547,32 +550,34 @@ esp_lcd_rgb_panel_config_t panel_config;
 
    memset(&panel_config, 0, sizeof(panel_config));
    panel_config.num_fbs = 1; // single framebuffer
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
    panel_config.psram_trans_align = 64;
    panel_config.sram_trans_align = 8;
-   panel_config.data_width = 16;
    panel_config.bits_per_pixel = 16;
+#endif
+   panel_config.data_width = 16;
    panel_config.clk_src = LCD_CLK_SRC_DEFAULT; //LCD_CLK_SRC_PLL160M;
-   panel_config.disp_gpio_num = -1; // reset?
-   panel_config.pclk_gpio_num = pRGB->pclk; // pixel clock
-   panel_config.vsync_gpio_num = pRGB->vsync;
-   panel_config.hsync_gpio_num = pRGB->hsync;  
-   panel_config.de_gpio_num = pRGB->de;
-   panel_config.data_gpio_nums[0] = pRGB->g3;
-   panel_config.data_gpio_nums[1] = pRGB->g4;
-   panel_config.data_gpio_nums[2] = pRGB->g5;
-   panel_config.data_gpio_nums[3] = pRGB->r0;
-   panel_config.data_gpio_nums[4] = pRGB->r1;
-   panel_config.data_gpio_nums[5] = pRGB->r2;
-   panel_config.data_gpio_nums[6] = pRGB->r3;
-   panel_config.data_gpio_nums[7] = pRGB->r4;
-   panel_config.data_gpio_nums[8] = pRGB->b0;
-   panel_config.data_gpio_nums[9] = pRGB->b1;
-   panel_config.data_gpio_nums[10] = pRGB->b2;
-   panel_config.data_gpio_nums[11] = pRGB->b3;
-   panel_config.data_gpio_nums[12] = pRGB->b4;
-   panel_config.data_gpio_nums[13] = pRGB->g0;
-   panel_config.data_gpio_nums[14] = pRGB->g1;
-   panel_config.data_gpio_nums[15] = pRGB->g2;
+   panel_config.disp_gpio_num = (gpio_num_t)-1; // reset?
+   panel_config.pclk_gpio_num = (gpio_num_t)pRGB->pclk; // pixel clock
+   panel_config.vsync_gpio_num = (gpio_num_t)pRGB->vsync;
+   panel_config.hsync_gpio_num = (gpio_num_t)pRGB->hsync;  
+   panel_config.de_gpio_num = (gpio_num_t)pRGB->de;
+   panel_config.data_gpio_nums[0] = (gpio_num_t)pRGB->g3;
+   panel_config.data_gpio_nums[1] = (gpio_num_t)pRGB->g4;
+   panel_config.data_gpio_nums[2] = (gpio_num_t)pRGB->g5;
+   panel_config.data_gpio_nums[3] = (gpio_num_t)pRGB->r0;
+   panel_config.data_gpio_nums[4] = (gpio_num_t)pRGB->r1;
+   panel_config.data_gpio_nums[5] = (gpio_num_t)pRGB->r2;
+   panel_config.data_gpio_nums[6] = (gpio_num_t)pRGB->r3;
+   panel_config.data_gpio_nums[7] = (gpio_num_t)pRGB->r4;
+   panel_config.data_gpio_nums[8] = (gpio_num_t)pRGB->b0;
+   panel_config.data_gpio_nums[9] = (gpio_num_t)pRGB->b1;
+   panel_config.data_gpio_nums[10] = (gpio_num_t)pRGB->b2;
+   panel_config.data_gpio_nums[11] = (gpio_num_t)pRGB->b3;
+   panel_config.data_gpio_nums[12] = (gpio_num_t)pRGB->b4;
+   panel_config.data_gpio_nums[13] = (gpio_num_t)pRGB->g0;
+   panel_config.data_gpio_nums[14] = (gpio_num_t)pRGB->g1;
+   panel_config.data_gpio_nums[15] = (gpio_num_t)pRGB->g2;
    panel_config.flags.fb_in_psram = 1; // use PSRAM
    panel_config.timings.pclk_hz = pRGB->speed;
    panel_config.timings.h_res = pRGB->width;
