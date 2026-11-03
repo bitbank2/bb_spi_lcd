@@ -9121,6 +9121,12 @@ int BB_SPI_LCD::begin(int iDisplayType)
             qspiInit(&_lcd, LCD_ST77916, FLAGS_NONE, 40000000, 10,9,11,12,13,14,47,15);       
            break;
 
+        case DISPLAY_S31_ROUND_18: // Guition ESP32-S31 1.8" knob
+            _lcd.bUseDMA = 1; // allows DMA access
+            // CS=13, SCK=12, D0=14, D1=15, D2=16, D3=17 RST=18, BL=5
+            qspiInit(&_lcd, LCD_ST77916B, FLAGS_NONE, 40000000, 13,12,14,15,16,17,18,5);       
+            break;
+
         case DISPLAY_WS_ROUND_146: // Waveshare 1.46" 412x412 round IPS
             _lcd.bUseDMA = 1; // allows DMA access
             // CS=21, SCK=40, D0=46, D1=45, D2=42, D3=41, RST=-1, BL=5 

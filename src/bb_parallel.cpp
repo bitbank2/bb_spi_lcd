@@ -440,7 +440,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
       channel_config_set_dreq(&config, pio_get_dreq(parallel_pio, parallel_sm, true));
       dma_channel_configure(parallel_dma, &config, &parallel_pio->txf[parallel_sm], NULL, 0, false);
 #endif // ARDUINO_ARCH_RP2040
-#if defined(ARDUINO_ARCH_ESP32) && !(defined(ARDUINO_ESP32C3_DEV) || defined(ARDUINO_ESP32C5_DEV))
+#if defined(ARDUINO_ARCH_ESP32) && !(defined(ARDUINO_ESP32C3_DEV) || defined(ARDUINO_ESP32C5_DEV) || defined(ARDUINO_ESP32S31_DEV))
     if (iFlags & FLAGS_SWAP_COLOR) {
         s3_io_config.flags.swap_color_bytes = 1;
     }
@@ -482,7 +482,7 @@ void ParallelDataInit(uint8_t RD_PIN, uint8_t WR_PIN, uint8_t CS_PIN, uint8_t DC
 
 void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
 {
-#if defined(ARDUINO_ARCH_ESP32) && !(defined(ARDUINO_ESP32C3_DEV) || defined(ARDUINO_ESP32C5_DEV))
+#if defined(ARDUINO_ARCH_ESP32) && !(defined(ARDUINO_ESP32C3_DEV) || defined(ARDUINO_ESP32C5_DEV) || defined(ARDUINO_ESP32S31_DEV))
 #ifdef USE_ESP32_GPIO
     esp32_gpio_clear(u8DC); // clear DC
     spilcdParallelData(&ucCMD, 1);
@@ -502,7 +502,7 @@ void spilcdParallelCMDParams(uint8_t ucCMD, uint8_t *pParams, int iLen)
 
 void spilcdParallelData(uint8_t *pData, int iLen)
 {
-#if defined(ARDUINO_ARCH_ESP32) && !(defined(ARDUINO_ESP32C3_DEV) || defined(ARDUINO_ESP32C5_DEV))
+#if defined(ARDUINO_ARCH_ESP32) && !(defined(ARDUINO_ESP32C3_DEV) || defined(ARDUINO_ESP32C5_DEV) || defined(ARDUINO_ESP32S31_DEV))
 #ifdef USE_ESP32_GPIO
     uint8_t c, old = pData[0] -1;
         
